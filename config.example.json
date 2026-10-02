@@ -1,0 +1,33 @@
+{
+  "_readme": "BillsEtc config — copy this file to config.json and fill in your expected monthly values. Keys starting with _ are ignored by the scripts.",
+
+  "_income_note": "Your typical monthly take-home pay (after taxes). Do not count bonuses or tax refunds here.",
+  "monthly_income_tt": 4000.00,
+  "monthly_income_watt": 0.00,
+
+  "fixed_expenses": {
+    "_note": "Bills that hit every month for the same (or nearly the same) amount.",
+
+    "Rent/Mortgage": 1500.00,
+    "Savings": 500.00,
+    "Credit_Card_1": 100.00,
+    "Car_Insurance": 150.00,
+    "Internet": 60.00,
+    "Streaming": 15.00,
+    "Phone": 40.00
+  },
+
+  "variable_categories": [
+    "_note: These categories are day-scaled from your partial month data to project the full month.",
+    "Groceries",
+    "Dining Out",
+    "Entertainment",
+    "Shopping",
+    "Transport",
+    "Gas",
+    "Miscellaneous",
+    "Utilities"
+  ],
+
+  "_projection_note": "Projection formula: projected_variable = (spent_so_far / days_elapsed) * days_in_month. Fixed expenses are added on top regardless of partial data."
+}

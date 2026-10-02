@@ -1,0 +1,25 @@
+# --- Personal financial data (never commit) ---
+inputs/
+output_master_data/
+reports/
+config.json
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+.ipynb_checkpoints/
+
+# --- Secrets / local env ---
+.env
+.env.*
+
+# --- OS / editor ---
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+.claude/

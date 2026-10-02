@@ -1,0 +1,16 @@
+- Have a months worth of banking data ready to add? (generally do the 1st of the month)
+-- Citizensbank.com > grab just the month of data > export to csv
+-- Move file to /inputs/past_month
+-- Follow naming structure
+-- Run 1_*.py script (to process and add to Master)
+-- Check the Master data to make any corrections
+-- To view data run 2_*.py
+
+==========================================================================================
+
+- Want to check how we're doing in middle of month?
+-- Citizensbank.com > grab just the month of data > export to csv
+-- Move file to /inputs/current_month
+-- Run 3_*.py to get status with --ai argument
+-- Open processed_current_month to fix any categories
+-- Run 3_*.py without --ai to see updated report
