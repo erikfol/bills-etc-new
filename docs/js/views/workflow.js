@@ -1,7 +1,7 @@
 import * as fs from '../fs.js';
 import { PATHS } from '../data.js';
 import { backfill, processCurrentMonth, planClose, closeMonth } from '../workflow.js';
-import { pingOllama, ollamaSettings } from '../ollama.js';
+import { pingOllama, ollamaSettings, aiEnabled } from '../ollama.js';
 import { esc, money, toast } from '../util.js';
 import { requireFolder } from '../app.js';
 
@@ -10,9 +10,9 @@ let running = null; // AbortController of the active run
 const STEPS = [
     {
         n: 1, id: 'backfill', title: 'Backfill past months',
-        text: 'Categorizes every new transaction in <code>inputs/past_months/</code> and appends it to the master history. Merchants you’ve categorized before reuse that category; only new merchants go to the AI. Rows already in the master are skipped.',
+        text: 'Loads every new transaction in <code>inputs/past_months/</code> into the master history. Merchants you’ve categorized before reuse that category; new merchants get keyword rules (or the AI, if turned on in Setup). Rows already in the master are skipped. You can also do this from Setup → Add bank files / Refresh.',
         importTo: PATHS.pastMonths,
-        ai: 'on',
+        ai: 'off',
     },
     {
         n: 2, id: 'report', title: 'View the history report',
@@ -62,7 +62,7 @@ export default {
                         <div class="file-status" data-status="${s.id}">…</div>
                         <div class="row">
                             ${s.importTo ? `<button data-import="${s.id}">Import bank CSV…</button>` : ''}
-                            ${s.ai ? `<label class="check"><input type="checkbox" data-ai="${s.id}"${s.ai === 'on' ? ' checked' : ''}> Use AI for new merchants</label>` : ''}
+                            ${s.ai && aiEnabled() ? `<label class="check"><input type="checkbox" data-ai="${s.id}"${s.ai === 'on' ? ' checked' : ''}> Use AI for new merchants</label>` : ''}
                             <button class="primary" data-run="${s.id}">${s.id === 'report' ? 'Open dashboard' : s.id === 'close' ? 'Review & close…' : 'Run'}</button>
                         </div>
                         <div data-extra="${s.id}"></div>
@@ -167,7 +167,7 @@ export default {
 
         el.querySelector('[data-run="backfill"]').onclick = () => run(async signal => {
             el.querySelector('[data-extra="backfill"]').innerHTML = '';
-            const useAI = el.querySelector('[data-ai="backfill"]').checked;
+            const useAI = !!el.querySelector('[data-ai="backfill"]')?.checked;
             log(`\n=== Step 1: Backfill past months${useAI ? ' (AI for new merchants)' : ''} ===`);
             if (useAI && !(await needOllama('backfill'))) return;
             await backfill({ useAI, log, signal });
@@ -176,7 +176,7 @@ export default {
         el.querySelector('[data-run="report"]').onclick = () => { location.hash = '#dashboard'; };
 
         el.querySelector('[data-run="current"]').onclick = () => run(async signal => {
-            const useAI = el.querySelector('[data-ai="current"]').checked;
+            const useAI = !!el.querySelector('[data-ai="current"]')?.checked;
             log(`\n=== Step 3: Current month${useAI ? ' (with AI)' : ''} ===`);
             if (useAI && !(await needOllama('current'))) return;
             const projection = await processCurrentMonth({ useAI, log, signal });

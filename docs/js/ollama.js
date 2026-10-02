@@ -18,6 +18,14 @@ export const ollamaSettings = {
     },
 };
 
+/** AI features are off unless turned on in Setup; while off, nothing contacts Ollama. */
+export function aiEnabled() {
+    try { return localStorage.getItem('billsetc.ai') === 'on'; } catch { return false; }
+}
+export function setAiEnabled(on) {
+    try { localStorage.setItem('billsetc.ai', on ? 'on' : 'off'); } catch { /* session only */ }
+}
+
 /** Returns {ok, models, hasModel, error}. */
 export async function pingOllama() {
     try {

@@ -1,7 +1,7 @@
 import { PATHS, readTable } from '../data.js';
 import { normalizeMaster, buildReport, reportSummaryText } from '../finance.js';
 import { drawCashFlow, drawCategoryBars, drawTrends, CHART_COLORS } from '../charts.js';
-import { generate, insightsPrompt } from '../ollama.js';
+import { generate, insightsPrompt, aiEnabled } from '../ollama.js';
 import { monthLabel } from '../dates.js';
 import { esc, money, mdToHtml } from '../util.js';
 import { requireFolder } from '../app.js';
@@ -107,7 +107,7 @@ export default {
                 </table></div>
             </section>
 
-            <section>
+            <section${aiEnabled() ? '' : ' hidden'}>
                 <h2>AI Strategic Analysis</h2>
                 <div class="row"><button class="primary" id="ai-run">Generate analysis with local AI</button><span class="muted" id="ai-status" style="font-size:0.85em"></span></div>
                 <div class="ai-box" id="ai-out" style="margin-top:14px"></div>

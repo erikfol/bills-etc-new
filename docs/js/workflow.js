@@ -39,11 +39,13 @@ function txTypeMerchant(row, merchant) {
 
 // ── Step 1: backfill past months into the master ─────────────────────────────
 
+/** Returns totals: { added, history, ai, rules, files: [names that added rows] }. */
 export async function backfill({ useAI, log, signal }) {
+    const totals = { added: 0, history: 0, ai: 0, rules: 0, files: [] };
     const files = await fs.listFiles(PATHS.pastMonths);
     if (!files.length) {
         log(`No CSV files found in ${PATHS.pastMonths}/. Import your bank statements there first.`, 'err');
-        return;
+        return totals;
     }
 
     const master = (await readTable(PATHS.master)) || { columns: [...MASTER_COLS], rows: [] };
@@ -53,7 +55,6 @@ export async function backfill({ useAI, log, signal }) {
     const lookup = buildHistory(master.rows);
     log(`History knows ${lookup.size} merchant(s).`, 'dim');
 
-    let totalAdded = 0;
     try {
         for (const file of files) {
             log(`\n--- Processing File: ${file} ---`);
@@ -80,18 +81,21 @@ export async function backfill({ useAI, log, signal }) {
                 }
             } finally {
                 log(`  ${counts.history} from history, ${counts.ai} by AI, ${counts.rules} by rules.`, 'dim');
+                for (const k of ['history', 'ai', 'rules']) totals[k] += counts[k];
                 // Save whatever finished, even if cancelled mid-file; dedupe skips it next run.
                 if (added.length) {
                     master.rows.push(...added);
                     added.forEach(r => existing.add(keyOf(r)));
                     await writeTable(PATHS.master, master);
-                    totalAdded += added.length;
+                    totals.added += added.length;
+                    totals.files.push(file);
                     log(`Added ${added.length} new transactions from ${file} to master history.`, 'ok');
                 }
             }
         }
     } finally {
-        if (master.rows.length) {
+        // Only rewrite the master when rows were added (it may be open in Excel otherwise).
+        if (totals.added) {
             for (const r of master.rows) {
                 r['Cleaned Merchant'] = cleanupMerchant(r.Description, master.columns.includes('Transaction Type') ? r['Transaction Type'] : null, r['Cleaned Merchant']);
             }
@@ -99,7 +103,8 @@ export async function backfill({ useAI, log, signal }) {
             log('Master merchant names cleaned up.', 'dim');
         }
     }
-    log(`\nDone. ${totalAdded} transaction(s) added. Review them in Edit Categories → Master.`, 'ok');
+    log(`\nDone. ${totals.added} transaction(s) added. Review them in Edit Categories → Master.`, 'ok');
+    return totals;
 }
 
 // ── Step 3: categorize the current month ─────────────────────────────────────

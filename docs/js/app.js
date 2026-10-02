@@ -1,5 +1,5 @@
 import * as fs from './fs.js';
-import { pingOllama, ollamaSettings } from './ollama.js';
+import { pingOllama, ollamaSettings, aiEnabled } from './ollama.js';
 import { esc } from './util.js';
 import home from './views/home.js';
 import workflow from './views/workflow.js';
@@ -20,6 +20,9 @@ export async function refreshStatus() {
     f.className = 'pill ' + (root ? 'ok' : 'bad');
 
     const o = document.getElementById('st-ollama');
+    // With AI off, don't contact Ollama at all.
+    o.hidden = !aiEnabled();
+    if (o.hidden) return null;
     o.textContent = 'Ollama …';
     o.className = 'pill';
     const st = await pingOllama();
