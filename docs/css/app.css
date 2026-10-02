@@ -157,6 +157,38 @@ th.sortable:hover { background: #dde8ff; }
 .note-text { font-size: 0.85em; color: var(--muted); font-style: italic; }
 td.edit-cell input, td.edit-cell select { width: 100%; min-width: 120px; }
 tr.dirty td { background: #fffbea; }
+
+/* ── Excel-style column filters ──────────────────────────────────────── */
+.filter-table th { padding: 6px 8px 6px 13px; }
+.th-inner { display: flex; align-items: center; gap: 6px; }
+th.num .th-inner { justify-content: flex-end; }
+.th-label { cursor: pointer; user-select: none; }
+.th-label:hover { color: var(--blue-text); }
+.fbtn {
+    padding: 0 5px; min-width: 22px; height: 22px; line-height: 1; font-size: 0.8em;
+    border-radius: 4px; background: #fff; border: 1px solid var(--line-strong); color: #666;
+}
+.fbtn:hover { background: #dde8ff; }
+th.filtered { background: #e3edff; }
+th.filtered .fbtn { background: var(--blue); border-color: var(--blue); color: #fff; }
+th.filtered .fbtn::before { content: '⧩ '; font-size: 0.9em; }
+.fmenu {
+    position: absolute; z-index: 50; background: #fff; border: 1px solid var(--line-strong);
+    border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,0.16); padding: 6px; font-size: 0.88em;
+    display: flex; flex-direction: column; gap: 4px;
+}
+.fmenu-item { text-align: left; background: none; border: none; padding: 6px 8px; border-radius: 4px; font-weight: 400; }
+.fmenu-item:hover { background: var(--head); }
+.fmenu-sep { border-top: 1px solid var(--line); margin: 2px 0; }
+.fmenu-search { width: 100%; }
+.fmenu-all, .fmenu-row { display: flex; align-items: center; gap: 8px; padding: 3px 6px; cursor: pointer; border-radius: 4px; }
+.fmenu-all { border-bottom: 1px solid var(--line); padding-bottom: 6px; }
+.fmenu-row:hover { background: var(--hover); }
+.fmenu-list { max-height: 260px; overflow-y: auto; }
+.fmenu-label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fmenu-count { color: var(--faint); font-size: 0.85em; font-variant-numeric: tabular-nums; }
+.fmenu-more { color: var(--faint); font-style: italic; padding: 6px; }
+.fmenu-actions { display: flex; gap: 6px; padding-top: 6px; border-top: 1px solid var(--line); }
 .desc-cell { font-size: 0.85em; color: #666; max-width: 280px; }
 
 /* ── Cards / badges ──────────────────────────────────────────────────── */
