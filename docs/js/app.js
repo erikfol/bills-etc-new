@@ -1,6 +1,7 @@
 import * as fs from './fs.js';
 import { pingOllama, ollamaSettings, aiEnabled } from './ollama.js';
 import { esc } from './util.js';
+import { syncCategories } from './categories.js';
 import home from './views/home.js';
 import workflow from './views/workflow.js';
 import month from './views/month.js';
@@ -67,6 +68,7 @@ async function route(force = false) {
     document.querySelectorAll('#nav a').forEach(a => a.classList.toggle('active', a.getAttribute('href') === '#' + currentName));
     viewEl.innerHTML = '';
     try {
+        if (fs.folder()) await syncCategories();
         await view.render(viewEl);
     } catch (e) {
         console.error(e);

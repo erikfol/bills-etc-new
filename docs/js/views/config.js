@@ -1,6 +1,7 @@
 import * as fs from '../fs.js';
 import { PATHS, loadConfig, DEFAULT_CONFIG } from '../data.js';
-import { ALLOWED_CATEGORIES } from '../rules.js';
+import { getCategories } from '../rules.js';
+import { categoryUsage, addCategory, renameCategory, removeCategory, validateName, LOCKED } from '../categories.js';
 import { esc, money, toast } from '../util.js';
 import { requireFolder } from '../app.js';
 
@@ -29,7 +30,7 @@ export default {
         const incomes = Object.entries(cfg).filter(([k, v]) => k.startsWith('monthly_income') && typeof v === 'number');
         const fixed = Object.entries(cfg.fixed_expenses || {}).filter(([k, v]) => !k.startsWith('_') && typeof v === 'number');
         const vars = new Set((cfg.variable_categories || []).filter(c => typeof c === 'string' && !c.startsWith('_')));
-        const varChoices = [...ALLOWED_CATEGORIES.filter(c => c !== 'Income'), ...[...vars].filter(c => !ALLOWED_CATEGORIES.includes(c))];
+        const varChoices = [...getCategories().filter(c => c !== 'Income'), ...[...vars].filter(c => !getCategories().includes(c))];
 
         el.innerHTML = `<div id="cfg">
             <div class="row" style="margin-bottom:6px">
@@ -57,7 +58,17 @@ export default {
                 <h2>Variable Categories <span class="sub">day-scaled to project the full month</span></h2>
                 <div class="check-grid">${varChoices.map(c => `<label class="check"><input type="checkbox" value="${esc(c)}"${vars.has(c) ? ' checked' : ''}> ${esc(c)}</label>`).join('')}</div>
                 <p class="note">Projection = (spent so far ÷ days elapsed) × days in month. Fixed expenses are added on top.</p>
-            </section></div>`;
+            </section></div>
+            <section id="cats">
+                <h2>Categories <span class="sub">add, rename or merge; changes apply right away</span></h2>
+                <div id="cat-list"><p class="muted">Counting…</p></div>
+                <div class="row" style="margin-top:12px">
+                    <input type="text" id="new-cat" placeholder="New category name" style="width:220px">
+                    <button id="add-cat">+ Add category</button>
+                </div>
+                <p class="note">Renaming updates every transaction in your history and current month. Renaming into an existing category merges the two.
+                The built-in rules follow your renames. ${esc(LOCKED)} can't be renamed because the cash-flow totals depend on it.</p>
+            </section>`;
         const root = el.querySelector('#cfg');
 
         const totals = () => {
@@ -74,6 +85,84 @@ export default {
         el.querySelector('#add-income').onclick = () => { el.querySelector('#incomes').insertAdjacentHTML('beforeend', kvRow('', '', 'source name')); markDirty(); };
         el.querySelector('#add-fixed').onclick = () => { el.querySelector('#fixed').insertAdjacentHTML('beforeend', kvRow('', '', 'e.g. Internet')); markDirty(); };
         totals();
+
+        // ── Categories ──
+        const busyGuard = () => {
+            if (!dirty) return true;
+            toast('Save or discard your config changes above first.', 'bad');
+            return false;
+        };
+        const drawCats = async () => {
+            const usage = await categoryUsage();
+            const cats = getCategories();
+            const unknown = Object.keys(usage).filter(c => !cats.includes(c)).sort();
+            const row = (c, known) => `
+                <tr data-cat="${esc(c)}">
+                    <td class="cat-name">${esc(c)}${known ? '' : ' <span class="badge badge-warn" title="Used by transactions but not in your category list">not in list</span>'}</td>
+                    <td class="amt">${(usage[c] || 0).toLocaleString()}</td>
+                    <td style="text-align:right;white-space:nowrap">
+                        ${known ? '' : '<button class="small" data-act="adopt">Add to list</button>'}
+                        ${c === LOCKED ? '<span class="muted" style="font-size:0.85em">locked</span>' : '<button class="small" data-act="rename">Rename</button>'}
+                        ${known && c !== LOCKED && !usage[c] ? '<button class="small danger" data-act="remove">Remove</button>' : ''}
+                    </td>
+                </tr>`;
+            el.querySelector('#cat-list').innerHTML = `<div class="table-wrap"><table class="summary-table">
+                <thead><tr><th>Category</th><th class="num">Transactions</th><th></th></tr></thead>
+                <tbody>${cats.map(c => row(c, true)).join('')}${unknown.map(c => row(c, false)).join('')}</tbody></table></div>`;
+        };
+        const catList = el.querySelector('#cat-list');
+        catList.addEventListener('click', async e => {
+            const btn = e.target.closest('button[data-act]');
+            if (!btn) return;
+            const tr = btn.closest('tr'), name = tr.dataset.cat;
+            if (!busyGuard()) return;
+            try {
+                if (btn.dataset.act === 'rename') {
+                    tr.querySelector('.cat-name').innerHTML = `<input type="text" class="rename-to" value="${esc(name)}" style="width:200px">`;
+                    tr.lastElementChild.innerHTML = '<button class="small primary" data-act="do-rename">Save</button> <button class="small" data-act="cancel">Cancel</button>';
+                    const input = tr.querySelector('.rename-to');
+                    input.focus(); input.select();
+                    input.onkeydown = ev => {
+                        if (ev.key === 'Enter') tr.querySelector('[data-act="do-rename"]').click();
+                        if (ev.key === 'Escape') drawCats();
+                    };
+                } else if (btn.dataset.act === 'cancel') {
+                    drawCats();
+                } else if (btn.dataset.act === 'do-rename') {
+                    const to = tr.querySelector('.rename-to').value.trim();
+                    if (!to || to === name) return drawCats();
+                    const merge = getCategories().find(c => c.toLowerCase() === to.toLowerCase() && c !== name);
+                    if (merge && !confirm(`“${merge}” already exists. Merge “${name}” into “${merge}”? All its transactions move to “${merge}”.`)) return;
+                    btn.disabled = true;
+                    const n = await renameCategory(name, to);
+                    toast(`${merge ? 'Merged' : 'Renamed'} “${name}” → “${merge || to}” (${n} transaction${n === 1 ? '' : 's'} updated)`, 'ok');
+                    this.render(el);
+                } else if (btn.dataset.act === 'remove') {
+                    await removeCategory(name);
+                    toast(`Removed “${name}”`, 'ok');
+                    this.render(el);
+                } else if (btn.dataset.act === 'adopt') {
+                    await addCategory(name);
+                    toast(`Added “${name}” to your categories`, 'ok');
+                    this.render(el);
+                }
+            } catch (err) {
+                toast(err.message, 'bad');
+            }
+        });
+        el.querySelector('#add-cat').onclick = async () => {
+            if (!busyGuard()) return;
+            const input = el.querySelector('#new-cat');
+            const err = validateName(input.value, getCategories());
+            if (err) return toast(err, 'bad');
+            try {
+                await addCategory(input.value);
+                toast(`Added “${input.value.trim()}”`, 'ok');
+                this.render(el);
+            } catch (e) { toast(e.message, 'bad'); }
+        };
+        el.querySelector('#new-cat').onkeydown = e => { if (e.key === 'Enter') el.querySelector('#add-cat').click(); };
+        drawCats();
 
         el.querySelector('#save').onclick = async () => {
             const read = id => [...el.querySelectorAll(`#${id} .kv-row`)]

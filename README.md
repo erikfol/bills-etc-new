@@ -56,6 +56,8 @@ The categorization rules are duplicated in `docs/js/rules.js`. When you add an o
 | `monthly_income_*` | Expected monthly take-home pay; summed by script 3 |
 | `fixed_expenses` | Bills that hit every month (~same amount) |
 | `variable_categories` | Categories that are day-scaled to project the full month |
+| `categories` | Your category list (optional; defaults to the built-in 12). Managed on the GUI's Config page |
+| `category_renames` | Old → new names, so the built-in rules and older data follow a rename (managed by the GUI) |
 
 Keys starting with `_` are ignored. See the notes in the file itself.
 

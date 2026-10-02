@@ -1,9 +1,27 @@
 // Categorization rules — ported from the Python scripts. Keep these in sync with
 // CATEGORY_OVERRIDES / MERCHANT_CATEGORY_OVERRIDES there when adding merchants.
 
-export const ALLOWED_CATEGORIES = ['Groceries', 'Dining Out', 'Utilities', 'Rent/Mortgage',
+export const DEFAULT_CATEGORIES = ['Groceries', 'Dining Out', 'Utilities', 'Rent/Mortgage',
     'Entertainment', 'Shopping', 'Transport', 'Gas', 'Income',
     'Savings', 'Miscellaneous', 'Credit Card'];
+
+// The user's category list and renames come from config.json (see data.js syncCategories).
+// Renames map old → new names so the rules below keep producing the new name.
+let categories = [...DEFAULT_CATEGORIES];
+let renames = {};
+
+export const getCategories = () => categories;
+
+export function setCategorySettings(settings) {
+    categories = settings.categories;
+    renames = settings.renames;
+}
+
+/** Follow renames (a → b → c) to the current name. */
+export function renamed(cat) {
+    for (let i = 0; i < 20 && Object.hasOwn(renames, cat); i++) cat = renames[cat];
+    return cat;
+}
 
 const CATEGORY_MAP = {
     grocery: 'Groceries', groceries: 'Groceries',
@@ -63,18 +81,19 @@ const MERCHANT_CATEGORY_OVERRIDES = [
 ];
 
 export function normalizeCategory(cat) {
-    cat = String(cat ?? '').trim();
-    if (ALLOWED_CATEGORIES.includes(cat)) return cat;
+    cat = renamed(String(cat ?? '').trim());
+    const exact = categories.find(c => c.toLowerCase() === cat.toLowerCase());
+    if (exact) return exact;
     for (const word of cat.toLowerCase().replace(/\//g, ' ').replace(/-/g, ' ').split(/\s+/)) {
-        if (CATEGORY_MAP[word]) return CATEGORY_MAP[word];
+        if (CATEGORY_MAP[word]) return renamed(CATEGORY_MAP[word]);
     }
-    return 'Miscellaneous';
+    return renamed('Miscellaneous');
 }
 
 export function applyOverrides(description, category) {
     const desc = String(description ?? '').toUpperCase();
     for (const [keyword, forced] of CATEGORY_OVERRIDES) {
-        if (desc.includes(keyword.toUpperCase())) return forced;
+        if (desc.includes(keyword.toUpperCase())) return renamed(forced);
     }
     return category;
 }
@@ -83,7 +102,7 @@ export function applyOverrides(description, category) {
 export function applyMerchantCatOverrides(description) {
     const desc = String(description ?? '').toUpperCase();
     for (const [keyword, merchant, category] of MERCHANT_CATEGORY_OVERRIDES) {
-        if (desc.includes(keyword)) return { merchant, category };
+        if (desc.includes(keyword)) return { merchant, category: renamed(category) };
     }
     return null;
 }

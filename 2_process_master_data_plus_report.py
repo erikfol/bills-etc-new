@@ -1,6 +1,7 @@
 import pandas as pd
 import ollama
 import os
+from bills_config import category_settings, renamed
 import re
 import json
 from datetime import datetime
@@ -12,6 +13,9 @@ REPORTS_FOLDER = "reports"
 ALLOWED_CATEGORIES_LIST = ["Groceries", "Dining Out", "Utilities", "Rent/Mortgage",
                             "Entertainment", "Shopping", "Transport", "Gas", "Income",
                             "Savings", "Miscellaneous", "Credit Card"]
+
+# Your categories and renames from config.json (managed on the GUI's Config page)
+ALLOWED_CATEGORIES_LIST, CATEGORY_RENAMES = category_settings(ALLOWED_CATEGORIES_LIST)
 
 CATEGORY_MAP = {
     'grocery': 'Groceries', 'groceries': 'Groceries',
@@ -27,13 +31,13 @@ CATEGORY_MAP = {
 }
 
 def normalize_category(cat):
-    cat = str(cat).strip()
+    cat = renamed(CATEGORY_RENAMES, str(cat).strip())
     if cat in ALLOWED_CATEGORIES_LIST:
         return cat
     for word in cat.lower().replace('/', ' ').replace('-', ' ').split():
         if word in CATEGORY_MAP:
-            return CATEGORY_MAP[word]
-    return 'Miscellaneous'
+            return renamed(CATEGORY_RENAMES, CATEGORY_MAP[word])
+    return renamed(CATEGORY_RENAMES, 'Miscellaneous')
 
 CATEGORY_OVERRIDES = [
     ('ROCKET MORTGAGE',       'Rent/Mortgage'),
@@ -72,7 +76,7 @@ def apply_overrides(description, category):
     desc_upper = str(description).upper()
     for keyword, forced in CATEGORY_OVERRIDES:
         if keyword.upper() in desc_upper:
-            return forced
+            return renamed(CATEGORY_RENAMES, forced)
     return category
 
 MERCHANT_CATEGORY_OVERRIDES = [
@@ -88,7 +92,7 @@ def apply_merchant_cat_overrides(description):
     desc_upper = str(description).upper()
     for keyword, merchant, category in MERCHANT_CATEGORY_OVERRIDES:
         if keyword in desc_upper:
-            return merchant, category
+            return merchant, renamed(CATEGORY_RENAMES, category)
     return None, None
 
 def generate_ai_insights(summary_text):
