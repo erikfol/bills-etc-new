@@ -17,8 +17,6 @@ Personal spending tracker. Exports Come Citizens Bank transaction CSV, categoriz
   `setx OLLAMA_ORIGINS "https://erikfol.github.io"`
 - Pages: **Workflow** (run steps 1–4, import bank CSVs), **This Month** (projection), **Dashboard** (history report and AI analysis), **Edit Categories** (fix the processed month or the master), **Config** (edit `config.json`).
 
-**Viewing on your phone or another computer (encrypted snapshot):** on the Setup page, enter a passphrase and click **Export snapshot…**. The app saves your master history, current month and config as one `.betc` file, encrypted with AES-256-GCM using a key derived from your passphrase (PBKDF2-SHA256, 600,000 iterations). Put the file somewhere your other devices can reach, like OneDrive. On the other device, open the Pages site, choose the file under **Open a snapshot**, and enter the passphrase to see This Month and the Dashboard, read-only. The decrypted data stays only in that tab's memory: **Lock** or a reload clears it. There's no passphrase recovery. Re-export after each update. `*.betc` is git-ignored, so a snapshot never lands in the repo.
-
 To run it locally instead: `python -m http.server 8000 -d docs` and open http://localhost:8000. Ollama allows localhost by default.
 
 The categorization rules are duplicated in `docs/js/rules.js`. When you add an override to the scripts, add it there too.

@@ -5,7 +5,6 @@ import { generate, insightsPrompt } from '../ollama.js';
 import { monthLabel } from '../dates.js';
 import { esc, money, mdToHtml } from '../util.js';
 import { requireFolder } from '../app.js';
-import * as fs from '../fs.js';
 
 let onResize = null;
 
@@ -108,7 +107,7 @@ export default {
                 </table></div>
             </section>
 
-            <section${fs.isReadOnly() ? ' hidden' : ''}>
+            <section>
                 <h2>AI Strategic Analysis</h2>
                 <div class="row"><button class="primary" id="ai-run">Generate analysis with local AI</button><span class="muted" id="ai-status" style="font-size:0.85em"></span></div>
                 <div class="ai-box" id="ai-out" style="margin-top:14px"></div>

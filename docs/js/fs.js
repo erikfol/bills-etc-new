@@ -1,26 +1,13 @@
 // Access to the user's local bills-etc folder via the File System Access API (Chrome / Edge).
 // The folder handle is remembered in IndexedDB so it can be reconnected after a reload.
-// While an encrypted snapshot is open, reads come from it (in memory only) and writes are refused.
 
 let root = null;
-let snap = null; // { created: Date, files: Map<path, text> }
 
 export const isSupported = () => typeof window.showDirectoryPicker === 'function';
 export const folder = () => root;
 
 /** Use an already-obtained directory handle (e.g. the browser-private OPFS root for testing). */
 export const useFolder = handle => { root = handle; };
-
-export const snapshot = () => snap;
-export const useSnapshot = s => { snap = s; };
-export const lockSnapshot = () => { snap = null; };
-export const isReadOnly = () => snap !== null;
-/** True when there's something to show: a connected folder or an open snapshot. */
-export const hasData = () => snap !== null || root !== null;
-
-function refuseWrite() {
-    if (snap) throw new Error('This is a read-only snapshot. Lock it and connect your folder to make changes.');
-}
 
 function idb() {
     return new Promise((resolve, reject) => {
@@ -79,7 +66,6 @@ function split(path) {
 
 /** File text, or null if it doesn't exist. */
 export async function readText(path) {
-    if (snap) return snap.files.get(path) ?? null;
     const [d, name] = split(path);
     try {
         const fh = await (await dir(d)).getFileHandle(name);
@@ -91,7 +77,6 @@ export async function readText(path) {
 }
 
 export async function writeText(path, text) {
-    refuseWrite();
     const [d, name] = split(path);
     const fh = await (await dir(d, true)).getFileHandle(name, { create: true });
     const w = await fh.createWritable();
@@ -104,18 +89,12 @@ export async function exists(path) {
 }
 
 export async function removeFile(path) {
-    refuseWrite();
     const [d, name] = split(path);
     await (await dir(d)).removeEntry(name);
 }
 
 /** Names of files in `path` ending with `ext` (case-insensitive), sorted. Missing folder → []. */
 export async function listFiles(path, ext = '.csv') {
-    if (snap) {
-        return [...snap.files.keys()]
-            .filter(p => split(p)[0] === path && p.toLowerCase().endsWith(ext))
-            .map(p => split(p)[1]).sort();
-    }
     let d;
     try { d = await dir(path); } catch (e) { if (e.name === 'NotFoundError') return []; throw e; }
     const names = [];

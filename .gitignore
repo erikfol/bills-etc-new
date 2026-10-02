@@ -24,5 +24,3 @@ desktop.ini
 .idea/
 .claude/
 
-# --- Encrypted snapshots (keep out of the repo) ---
-*.betc

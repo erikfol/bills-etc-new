@@ -4,7 +4,6 @@ import { lastSources } from '../workflow.js';
 import { MONTH_NAMES } from '../dates.js';
 import { esc, money } from '../util.js';
 import { requireFolder } from '../app.js';
-import * as fs from '../fs.js';
 
 async function loadProjection() {
     const cfg = await loadConfig();
@@ -12,9 +11,7 @@ async function loadProjection() {
     const processed = await readTable(PATHS.processed);
     if (!processed) return { error: 'No processed current month yet — run step 3 on the <a href="#workflow">Workflow</a> page.' };
     const master = await readTable(PATHS.master);
-    // A snapshot is projected as of the day it was exported, not today.
-    const today = fs.snapshot()?.created ?? new Date();
-    return computeProjection({ config: parseConfig(cfg), rows: processed.rows, masterRows: master?.rows, today });
+    return computeProjection({ config: parseConfig(cfg), rows: processed.rows, masterRows: master?.rows });
 }
 
 const SOURCE_TAGS = {
@@ -44,7 +41,7 @@ export default {
                 <span class="spacer"></span>
                 <button id="reload">Refresh</button>
             </div>
-            <p class="lead">Day ${p.daysElapsed} of ${p.daysInMonth} · ${p.pctMonth}% through the month${fs.snapshot() ? ` · snapshot from ${esc(fs.snapshot().created.toLocaleString())}` : ''}</p>
+            <p class="lead">Day ${p.daysElapsed} of ${p.daysInMonth} · ${p.pctMonth}% through the month</p>
 
             <div class="cards">
                 <div class="card"><div class="label">Expected Income</div><div class="value" style="color:#2980b9">${money(p.income)}</div><div class="sub">per month, from config</div></div>

@@ -50,7 +50,6 @@ body {
 }
 #nav a:hover { color: #fff; background: rgba(255,255,255,0.08); }
 #nav a.active { color: #fff; background: rgba(255,255,255,0.16); }
-body.readonly #nav a.rw { display: none; }
 .status { margin-left: auto; display: flex; gap: 8px; flex-wrap: wrap; }
 .pill {
     font-size: 0.78em;
