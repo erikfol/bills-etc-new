@@ -6,7 +6,7 @@ import json
 from datetime import datetime
 
 MASTER_FILE = "output_master_data/all_time_finances.csv"
-MODEL_NAME = "qwen2.5:14b"
+MODEL_NAME = "qwen2.5:3b"
 REPORTS_FOLDER = "reports"
 
 ALLOWED_CATEGORIES_LIST = ["Groceries", "Dining Out", "Utilities", "Rent/Mortgage",

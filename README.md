@@ -5,7 +5,23 @@ Personal spending tracker. Exports Come Citizens Bank transaction CSV, categoriz
 ## Requirements
 
 - Python 3 with `pandas`
-- [Ollama](https://ollama.com) running locally with a pulled model matching `MODEL_NAME` in the scripts (currently `qwen2.5:14b`)
+- [Ollama](https://ollama.com) running locally with a pulled model matching `MODEL_NAME` in the scripts (currently `qwen2.5:3b`; run `ollama pull qwen2.5:3b` once)
+
+## GUI (GitHub Pages)
+
+`docs/` holds a browser version of the whole workflow, served by GitHub Pages at
+**https://erikfol.github.io/bills-etc-new/**. It's static HTML and JavaScript with no build step. Your data never leaves your computer:
+
+- In **Chrome or Edge** you connect this folder on the Setup page. The app then reads and writes the same files as the scripts (`inputs/`, `output_master_data/`, `config.json`), so you can mix the GUI and the scripts.
+- AI calls go straight from the browser to your local Ollama. Allow the page's origin once, then restart Ollama:
+  `setx OLLAMA_ORIGINS "https://erikfol.github.io"`
+- Pages: **Workflow** (run steps 1–4, import bank CSVs), **This Month** (projection), **Dashboard** (history report and AI analysis), **Edit Categories** (fix the processed month or the master), **Config** (edit `config.json`).
+
+**Viewing on your phone or another computer (encrypted snapshot):** on the Setup page, enter a passphrase and click **Export snapshot…**. The app saves your master history, current month and config as one `.betc` file, encrypted with AES-256-GCM using a key derived from your passphrase (PBKDF2-SHA256, 600,000 iterations). Put the file somewhere your other devices can reach, like OneDrive. On the other device, open the Pages site, choose the file under **Open a snapshot**, and enter the passphrase to see This Month and the Dashboard, read-only. The decrypted data stays only in that tab's memory: **Lock** or a reload clears it. There's no passphrase recovery. Re-export after each update. `*.betc` is git-ignored, so a snapshot never lands in the repo.
+
+To run it locally instead: `python -m http.server 8000 -d docs` and open http://localhost:8000. Ollama allows localhost by default.
+
+The categorization rules are duplicated in `docs/js/rules.js`. When you add an override to the scripts, add it there too.
 
 ## Workflow
 
@@ -13,7 +29,7 @@ Personal spending tracker. Exports Come Citizens Bank transaction CSV, categoriz
 
 1. Export the month's data from CitizensBank.com to CSV and move it to `inputs/past_months/`.
 2. Run `python 1_backfill_prev_months_to_master.py`
-   - Cleans merchants and categories via the local AI, applies hardcoded override rules, saves to `output_master_data/all_time_finances.csv`.
+   - Reuses the category from your history for merchants you've seen before, asks the local AI only about new merchants, applies hardcoded override rules, saves to `output_master_data/all_time_finances.csv`.
    - Skips transactions already in the master (dedupe on date + description + amount), and drops sensitive columns (account numbers, balance, etc.).
 3. Fix any mis-categorized rows directly in the master.
 4. Run `python 2_process_master_data_plus_report.py` to view the data —
@@ -60,7 +76,9 @@ Keys starting with `_` are ignored. See the notes in the file itself.
 
 `Groceries, Dining Out, Utilities, Rent/Mortgage, Entertainment, Shopping, Transport, Gas, Income, Savings, Credit Card, Miscellaneous`
 
-Categorization order: manual edits in the processed file → cache → AI (with `--ai`) → override/keyword rules. Known merchants that the AI gets wrong are pinned in each script's `CATEGORY_OVERRIDES` / `MERCHANT_CATEGORY_OVERRIDES` lists — add entries there for anything else it keeps miscategorizing.
+Categorization order: manual edits in the processed file → **your history** → cache → AI (with `--ai`) → override/keyword rules.
+
+**History-first:** a transaction whose merchant (first three words of the description, letters only, so store numbers are ignored) already appears in the master gets that merchant's most common category, as long as that category is a strict majority. That covers roughly 80% of transactions, so the AI only sees new merchants. Fixing a category in the master teaches the lookup. The logic is in `history_lookup.py` and `docs/js/history.js`; keep them in sync. Known merchants that the AI gets wrong are pinned in each script's `CATEGORY_OVERRIDES` / `MERCHANT_CATEGORY_OVERRIDES` lists — add entries there for anything else it keeps miscategorizing.
 
 ## Notes
 

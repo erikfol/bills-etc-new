@@ -2,6 +2,7 @@ import pandas as pd
 import json
 import os
 import argparse
+from history_lookup import merchant_key, load_history
 import calendar
 from datetime import datetime, date
 
@@ -11,7 +12,7 @@ INPUT_FOLDER     = "inputs/current_month"
 CACHE_FILE       = "output_master_data/categorized_cache.csv"
 PROCESSED_FILE   = "output_master_data/processed_current_month.csv"
 REPORTS_FOLDER   = "reports"
-MODEL_NAME       = "qwen2.5:14b"
+MODEL_NAME       = "qwen2.5:3b"
 
 # ── Category helpers (mirrors scripts 01/02) ────────────────────────────────
 
@@ -100,6 +101,17 @@ def apply_merchant_cat_overrides(description):
         if keyword in desc_upper:
             return merchant, category
     return None, None
+
+def lookup_history(history, description):
+    """(merchant, category) from merchant overrides or your history; (None, None) if the merchant is new."""
+    mc_merchant, mc_category = apply_merchant_cat_overrides(description)
+    if mc_merchant:
+        return mc_merchant, mc_category
+    hit = history.get(merchant_key(description))
+    if not hit:
+        return None, None
+    category, merchant = hit
+    return (merchant or str(description)), apply_overrides(description, category)
 
 # ── AI categorization ────────────────────────────────────────────────────────
 
@@ -282,6 +294,7 @@ def generate_html(monthly_income, fixed, variable_cats, variable_spent,
         elif cat == 'Income':    cat_extra = ' income'
         src_tag = ''
         if source == 'edited':     src_tag = '<span class="source-tag source-edited">edited</span>'
+        elif source == 'history':  src_tag = '<span class="source-tag source-history">history</span>'
         elif source == 'cache':    src_tag = '<span class="source-tag source-cache">cache</span>'
         elif source == 'ai':       src_tag = '<span class="source-tag source-ai">AI</span>'
         elif source == 'rules':    src_tag = '<span class="source-tag source-rules">rules</span>'
@@ -379,6 +392,7 @@ def generate_html(monthly_income, fixed, variable_cats, variable_spent,
         .source-tag {{ font-size: 0.75em; padding: 1px 6px; border-radius: 10px; font-weight: 500; }}
         .source-edited {{ background: #f3e8ff; color: #7b2ff7; font-weight: 600; }}
         .source-ai     {{ background: #e8f0fe; color: #3a5ca8; }}
+        .source-history {{ background: #e6f7f7; color: #138d8d; }}
         .source-cache  {{ background: #e8f8ef; color: #27ae60; }}
         .source-rules  {{ background: #fff8e1; color: #e67e22; }}
     </style>
@@ -461,7 +475,7 @@ def generate_html(monthly_income, fixed, variable_cats, variable_spent,
             </thead>
             <tbody>{tx_rows}</tbody>
         </table>
-        <p class="note">Source: <span class="source-tag source-edited">edited</span> = your manual edit &nbsp; <span class="source-tag source-cache">cache</span> = AI-categorized on a previous run &nbsp; <span class="source-tag source-ai">AI</span> = AI-categorized this run &nbsp; <span class="source-tag source-rules">rules</span> = override/keyword rules only</p>
+        <p class="note">Source: <span class="source-tag source-edited">edited</span> = your manual edit &nbsp; <span class="source-tag source-history">history</span> = same category as this merchant in your history &nbsp; <span class="source-tag source-cache">cache</span> = AI-categorized on a previous run &nbsp; <span class="source-tag source-ai">AI</span> = AI-categorized this run &nbsp; <span class="source-tag source-rules">rules</span> = override/keyword rules only</p>
     </section>
 
     <div class="footer">BillsEtc 2.0 &mdash; 100% offline &mdash; {generated}</div>
@@ -510,7 +524,7 @@ def main():
     sensitive = ['account', 'routing', 'balance', 'card number', 'ssn', 'address']
     df.drop(columns=[c for c in df.columns if any(s in c.lower() for s in sensitive)], inplace=True)
 
-    # ── Categorization: processed file → cache → AI (if --ai) → rules ────────
+    # ── Categorization: processed file → history → cache → AI (if --ai) → rules ────────
 
     def make_key(date_val, desc_val, amt_val):
         """Normalize all three components so Excel reformatting doesn't break matches."""
@@ -544,12 +558,15 @@ def main():
         key = make_key(crow['Date'], crow['Description'], crow['Amount'])
         cache_lookup[key] = (str(crow['AI Category']), str(crow['Cleaned Merchant']))
 
+    history = load_history(MASTER_FILE)
+
     categories     = []
     merchants      = []
     new_cache_rows = []
     sources        = []
     cached_hits    = 0
     edited_hits    = 0
+    history_hits   = 0
 
     for _, row in df.iterrows():
         key = make_key(row['Date'], row['Description'], row['Amount'])
@@ -557,6 +574,10 @@ def main():
             cat, merchant = processed_lookup[key]
             edited_hits += 1
             sources.append('edited')
+        elif lookup_history(history, row['Description'])[0] is not None:
+            merchant, cat = lookup_history(history, row['Description'])
+            history_hits += 1
+            sources.append('history')
         elif key in cache_lookup:
             cat, merchant = cache_lookup[key]
             cached_hits += 1
@@ -564,6 +585,8 @@ def main():
         elif args.ai:
             print(f"  [AI] Categorizing: {row['Description']} (${row['Amount']})")
             merchant, cat = ask_local_ai(row['Description'], row['Amount'])
+            if merchant_key(row['Description']):
+                history[merchant_key(row['Description'])] = (cat, merchant)
             new_cache_rows.append({
                 'Date': key[0], 'Description': key[1], 'Amount': key[2],
                 'AI Category': cat, 'Cleaned Merchant': merchant,
@@ -587,12 +610,14 @@ def main():
 
     if edited_hits:
         print(f"[*] {edited_hits} transaction(s) loaded from processed file (including any manual edits).")
+    if history_hits:
+        print(f"[*] {history_hits} transaction(s) categorized from your history.")
     if cached_hits:
         print(f"[*] {cached_hits} transaction(s) served from AI cache.")
     if new_cache_rows:
         save_cache(new_cache_rows, cache_df)
-    if not args.ai and (len(df) - edited_hits - cached_hits) > 0:
-        uncached = len(df) - edited_hits - cached_hits
+    if not args.ai and (len(df) - edited_hits - history_hits - cached_hits) > 0:
+        uncached = len(df) - edited_hits - history_hits - cached_hits
         print(f"[!] {uncached} transaction(s) used override-only categorization. Run with --ai to improve accuracy.")
 
     # ── Save processed CSV (same format as all_time_finances.csv) ─────────────

@@ -1,11 +1,12 @@
 import pandas as pd
 import ollama
 import os
+from history_lookup import merchant_key, load_history
 
 # --- CONFIGURATION ---
 INPUT_FOLDER = "inputs/past_months"      # The folder where you drop bank CSVs
 OUTPUT_FILE = "output_master_data/all_time_finances.csv" # The master file it appends to
-MODEL_NAME = "qwen2.5:14b"                 # Your local Ollama model
+MODEL_NAME = "qwen2.5:3b"                  # Your local Ollama model
 
 # Tell the AI exactly what categories you want to track
 ALLOWED_CATEGORIES = "Groceries, Dining Out, Utilities, Rent/Mortgage, Entertainment, Shopping, Transport, Gas, Income, Savings, Miscellaneous"
@@ -104,6 +105,17 @@ def apply_merchant_cat_overrides(description):
         if keyword in desc_upper:
             return merchant, category
     return None, None
+
+def lookup_history(history, description):
+    """(merchant, category) from merchant overrides or your history; (None, None) if the merchant is new."""
+    mc_merchant, mc_category = apply_merchant_cat_overrides(description)
+    if mc_merchant:
+        return mc_merchant, mc_category
+    hit = history.get(merchant_key(description))
+    if not hit:
+        return None, None
+    category, merchant = hit
+    return (merchant or str(description)), apply_overrides(description, category)
 
 def ask_local_ai(description, amount):
     """Sends the transaction description to Ollama for a clean name and category."""
@@ -226,6 +238,8 @@ def main():
     existing_keys = load_existing_keys(OUTPUT_FILE)
     if existing_keys:
         print(f"Master file has {len(existing_keys)} existing transactions. Duplicates will be skipped.")
+    history = load_history(OUTPUT_FILE)
+    print(f"History knows {len(history)} merchant(s); only new merchants go to the AI.")
 
     # Loop through every file you dropped in
     for file_name in csv_files:
@@ -262,13 +276,21 @@ def main():
         ai_merchants = []
         ai_categories = []
 
-        print(f"Processing {len(df)} new transactions with local AI (100% offline)...")
+        print(f"Processing {len(df)} new transactions (history first, then local AI)...")
+        from_history = 0
         for index, row in df.iterrows():
             desc = row[DESCRIPTION_COL]
             amt = row[AMOUNT_COL]
 
-            print(f" Analyzing: {desc} (${amt})")
-            clean_merchant, category = ask_local_ai(desc, amt)
+            clean_merchant, category = lookup_history(history, desc)
+            if clean_merchant is not None:
+                from_history += 1
+            else:
+                print(f" [AI] Analyzing: {desc} (${amt})")
+                clean_merchant, category = ask_local_ai(desc, amt)
+                # Remember it so repeats of this new merchant skip the model
+                if merchant_key(desc):
+                    history[merchant_key(desc)] = (category, clean_merchant)
             tx_type_val = str(row.get('Transaction Type', '')).lower()
             if 'Transaction Type' in df.columns and 'atm' in tx_type_val:
                 clean_merchant = 'ATM'
@@ -279,6 +301,8 @@ def main():
 
             ai_merchants.append(clean_merchant)
             ai_categories.append(category)
+
+        print(f"  {from_history} from history, {len(df) - from_history} by AI.")
 
         # Append the smart local AI data back into this specific file's dataframe
         df['Cleaned Merchant'] = ai_merchants
