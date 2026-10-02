@@ -1,8 +1,7 @@
 import { PATHS, readTable, writeTable } from '../data.js';
 import { parseDate, yearMonth, monthLabel } from '../dates.js';
-import { getCategories } from '../rules.js';
-import { addCategory } from '../categories.js';
 import { esc, money, amountOf, toast } from '../util.js';
+import { bindCellEditing, merchantInput, categorySelect, notesInput } from '../celledit.js';
 import { openFilterMenu, closeFilterMenu } from '../filtermenu.js';
 import { requireFolder } from '../app.js';
 
@@ -35,15 +34,6 @@ function compare(col, a, b) {
 }
 
 let state = null; // { file, table, yms, dirty: Set<rowIndex>, filters: Map<colId, Set>, sort: {col, dir} }
-
-const NEW_CATEGORY = '__new__'; // category names can't start with _, so this can't clash
-
-function catOptions(value) {
-    const all = getCategories();
-    const cats = all.includes(value) ? all : [value ?? '', ...all];
-    return cats.map(c => `<option${c === value ? ' selected' : ''}>${esc(c)}</option>`).join('')
-        + `<option value="${NEW_CATEGORY}">＋ New category…</option>`;
-}
 
 export default {
     async render(el, file = state?.file || 'processed') {
@@ -147,9 +137,9 @@ export default {
                     <td style="white-space:nowrap">${esc(r.Date)}</td>
                     <td class="desc-cell">${esc(r.Description)}</td>
                     <td class="${a > 0 ? 'income-amt' : 'expense-amt'}">${esc(fmtAmount(r.Amount))}</td>
-                    <td class="edit-cell"><input type="text" data-col="Cleaned Merchant" value="${esc(r['Cleaned Merchant'])}"></td>
-                    <td class="edit-cell"><select data-col="AI Category">${catOptions(r['AI Category'])}</select></td>
-                    <td class="edit-cell"><input type="text" data-col="Notes" value="${esc(r.Notes)}" placeholder="—"></td>
+                    <td class="edit-cell">${merchantInput(i, r['Cleaned Merchant'])}</td>
+                    <td class="edit-cell">${categorySelect(i, r['AI Category'])}</td>
+                    <td class="edit-cell">${notesInput(i, r.Notes)}</td>
                 </tr>`;
             }).join('');
             drawHeaders();
@@ -182,37 +172,12 @@ export default {
             };
         });
 
-        const onEdit = async e => {
-            const col = e.target.dataset.col;
-            if (!col) return;
-            const tr = e.target.closest('tr');
-            const i = +tr.dataset.i;
-            if (e.target.value === NEW_CATEGORY) {
-                if (e.type !== 'change') return;
-                const name = prompt('Name of the new category:');
-                try {
-                    if (!name?.trim()) throw null;
-                    await addCategory(name);
-                    toast(`Added category “${name.trim()}”`, 'ok');
-                } catch (err) {
-                    if (err) toast(err.message, 'bad');
-                    e.target.value = table.rows[i][col];
-                    return;
-                }
-                // Refresh every dropdown so the new category is offered everywhere.
-                tbody.querySelectorAll('select[data-col="AI Category"]').forEach(sel => {
-                    const row = table.rows[+sel.closest('tr').dataset.i];
-                    sel.innerHTML = catOptions(sel === e.target ? name.trim() : row['AI Category']);
-                });
-            }
-            table.rows[i][col] = e.target.value;
+        bindCellEditing(body.querySelector('#rows'), (i, col) => table.rows[i][col] ?? '', (i, col, value, input) => {
+            table.rows[i][col] = value;
             state.dirty.add(i);
-            tr.classList.add('dirty');
+            input.closest('tr').classList.add('dirty');
             updateDirty();
-        };
-        const tbody = body.querySelector('#rows');
-        tbody.addEventListener('input', onEdit);
-        tbody.addEventListener('change', onEdit);
+        });
 
         fMonth.onchange = draw;
         fQ.oninput = draw;

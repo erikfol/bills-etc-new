@@ -29,12 +29,12 @@ const keyOf = (col, row) => { const v = col.value(row); return isBlank(v) ? '' :
 const textOf = (col, v) => isBlank(v) ? '(Blanks)' : col.text ? col.text(v) : String(v);
 
 /**
- * Render into `container`. Options: { columns, rows, sort?: {col, dir}, footer?: (rows, filtered) => '<tr>…</tr>',
+ * Render into `container`. Options: { columns, rows, sort?: {col, dir}, footer?: (rows, filtered) => '<tr>…</tr>', rowClass?: row => string,
  * onChange?: (visibleRows) => void, rowLimit?: number, empty?: string }.
  * Returns { setRows(rows), setFilter(fn), redraw() }; setFilter adds an outside filter (e.g. a month picker).
  */
 export function dataTable(container, opts) {
-    const { columns, footer, onChange, rowLimit = 0, empty = 'No rows' } = opts;
+    const { columns, footer, onChange, rowClass, rowLimit = 0, empty = 'No rows' } = opts;
     let rows = opts.rows || [];
     let outside = null;
     let sort = opts.sort || null;
@@ -62,7 +62,7 @@ export function dataTable(container, opts) {
             visible.sort((a, b) => sign * compare(col, col.value(a), col.value(b)));
         }
         const shown = rowLimit ? visible.slice(0, rowLimit) : visible;
-        tbody.innerHTML = shown.length ? shown.map(r => `<tr>${columns.map(c => {
+        tbody.innerHTML = shown.length ? shown.map(r => `<tr${rowClass?.(r) ? ` class="${rowClass(r)}"` : ''}>${columns.map(c => {
             const cls = [c.num ? 'amt' : '', c.tdClass?.(r) || ''].filter(Boolean).join(' ');
             const v = c.value(r);
             const html = c.cell ? c.cell(r) : isBlank(v) ? '' : esc(textOf(c, v));

@@ -1,6 +1,6 @@
 // Report and projection math — ports of scripts 2 and 3.
 import { parseDate, yearMonth, monthLabel } from './dates.js';
-import { applyOverrides, applyMerchantCatOverrides, cleanupMerchant, normalizeCategory, renamed } from './rules.js';
+import { normalizeCategory, renamed } from './rules.js';
 import { amountOf, money, round2 } from './util.js';
 
 /** Attach parsed _date, _ym, _amt to each row (non-destructive). */
@@ -12,16 +12,14 @@ export function withParsed(rows) {
     });
 }
 
-/** Script 2's load-time cleanup: normalize categories, apply overrides, fix merchant names. */
+/**
+ * Prepare master rows for display: follow category renames and map names missing from the
+ * category list to Miscellaneous. The rules are NOT re-applied here — they run when rows are
+ * added, and anything you've changed since then is kept.
+ */
 export function normalizeMaster(rows) {
     return withParsed(rows).map(r => {
-        const desc = r.Description ?? '';
-        if ('AI Category' in r) {
-            r['AI Category'] = applyOverrides(desc, normalizeCategory(r['AI Category']));
-            const mc = applyMerchantCatOverrides(desc);
-            if (mc) { r['Cleaned Merchant'] = mc.merchant; r['AI Category'] = mc.category; }
-        }
-        if ('Cleaned Merchant' in r) r['Cleaned Merchant'] = cleanupMerchant(desc, r['Transaction Type'], r['Cleaned Merchant']);
+        if ('AI Category' in r) r['AI Category'] = normalizeCategory(r['AI Category']);
         return r;
     });
 }

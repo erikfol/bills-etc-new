@@ -788,25 +788,10 @@ def main():
     df = pd.read_csv(MASTER_FILE)
     df.columns = df.columns.str.strip()
 
+    # Follow category renames and map unknown names to Miscellaneous. The override rules are not
+    # re-applied: they ran when rows were added, and edits made since then (in the master or the GUI) win.
     if 'AI Category' in df.columns:
         df['AI Category'] = df['AI Category'].apply(normalize_category)
-        df['AI Category'] = df.apply(lambda r: apply_overrides(r['Description'], r['AI Category']), axis=1)
-        mc_results = df['Description'].apply(apply_merchant_cat_overrides)
-        mc_mask = mc_results.apply(lambda x: x[0] is not None)
-        if mc_mask.any():
-            df.loc[mc_mask, 'Cleaned Merchant'] = mc_results[mc_mask].apply(lambda x: x[0])
-            df.loc[mc_mask, 'AI Category']      = mc_results[mc_mask].apply(lambda x: x[1])
-
-    if 'Cleaned Merchant' in df.columns and 'Description' in df.columns:
-        df.loc[df['Description'].str.contains('onlyfans', case=False, na=False), 'Cleaned Merchant'] = 'OF'
-        df.loc[df['Description'].str.contains('to savings', case=False, na=False), 'Cleaned Merchant'] = 'TO SAVINGS'
-        df.loc[df['Description'].str.contains('tomtom|tom tom', case=False, na=False, regex=True), 'Cleaned Merchant'] = 'TOMTOM'
-        df.loc[df['Description'].str.contains('irving', case=False, na=False), 'Cleaned Merchant'] = 'Irving Gas'
-        df.loc[df['Description'].str.contains('mori', case=False, na=False), 'Cleaned Merchant'] = 'Marriott Loan'
-        if 'Transaction Type' in df.columns:
-            df.loc[df['Transaction Type'].str.contains('atm', case=False, na=False), 'Cleaned Merchant'] = 'ATM'
-            df.loc[df['Transaction Type'].str.contains('check', case=False, na=False), 'Cleaned Merchant'] = 'CHECK'
-            df.loc[df['Transaction Type'].str.contains('transfer', case=False, na=False), 'Cleaned Merchant'] = 'TRANSFER'
 
     df['Date'] = pd.to_datetime(df['Date'], format='mixed', errors='coerce')
     df['YearMonth'] = df['Date'].dt.to_period('M')

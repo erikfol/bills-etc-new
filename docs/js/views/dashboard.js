@@ -1,15 +1,17 @@
-import { PATHS, readTable } from '../data.js';
+import { PATHS, readTable, writeTable } from '../data.js';
 import { normalizeMaster, buildReport, reportSummaryText, monthlyBreakdown, baseline } from '../finance.js';
 import { drawMonthBars, drawTrends, CHART_COLORS } from '../charts.js';
 import { generate, insightsPrompt, aiEnabled } from '../ollama.js';
 import { monthLabel, longMonthLabel, yearMonth, MONTH_NAMES } from '../dates.js';
-import { esc, money, mdToHtml } from '../util.js';
+import { esc, money, mdToHtml, toast } from '../util.js';
+import { bindCellEditing, merchantInput, categorySelect, notesInput } from '../celledit.js';
 import { requireFolder } from '../app.js';
-import { dataTable, dateColumn, moneyColumn, categoryColumn, closeFilterMenu } from '../datatable.js';
+import { dataTable, dateColumn, moneyColumn, closeFilterMenu } from '../datatable.js';
 import { renamed, getCategories } from '../rules.js';
 
 let onResize = null;
 let remembered = null; // selected month, kept while you move between pages
+let dirty = new Set(); // master row indexes with unsaved edits
 
 const shortLabel = ym => `${MONTH_NAMES[+ym.slice(5) - 1].slice(0, 3)} ’${ym.slice(2, 4)}`;
 
@@ -39,7 +41,10 @@ export default {
         // Categories typed into the data but missing from the list get counted as Miscellaneous; say so.
         const listed = new Set(getCategories());
         const unlisted = [...new Set(master.rows.map(r => renamed(String(r['AI Category'] ?? '').trim())).filter(c => c && !listed.has(c)))].sort();
+        for (const c of ['Cleaned Merchant', 'AI Category', 'Notes']) if (!master.columns.includes(c)) master.columns.push(c);
         const rows = normalizeMaster(master.rows);
+        rows.forEach((r, i) => { r._i = i; }); // index back into master.rows for saving edits
+        dirty = new Set();
         const months = monthlyBreakdown(rows);
         const yms = months.map(m => m.ym);
         const thisYm = yearMonth(new Date());
@@ -86,6 +91,13 @@ export default {
                     <span id="tx-chip"></span>
                     <span class="spacer"></span><span class="muted" id="tx-count" style="font-size:0.85em"></span>
                 </div>
+                <div class="save-bar" id="tx-save-bar" hidden>
+                    <span id="tx-dirty"></span>
+                    <span class="spacer"></span>
+                    <button id="tx-discard">Discard</button>
+                    <button class="primary" id="tx-save">Save changes</button>
+                </div>
+                <p class="note" style="margin:0 0 8px">Edit the merchant, category or notes right in the table, then click Save changes. The description is the bank's original text and can't be changed (it's how duplicates are recognised).</p>
                 <div id="t-tx"></div>
             </section>
 
@@ -116,15 +128,16 @@ export default {
         const tx = dataTable($('#t-tx'), {
             columns: [
                 dateColumn('date', 'Date', r => r.Date),
-                { id: 'merchant', label: 'Merchant', value: r => r['Cleaned Merchant'] || r.Description || '',
-                    cell: r => `<span title="${esc(r.Description)}">${esc(r['Cleaned Merchant'] || r.Description)}</span>` },
+                { id: 'desc', label: 'Description', value: r => r.Description ?? '', tdClass: () => 'desc-cell' },
+                { id: 'merchant', label: 'Merchant', value: r => r['Cleaned Merchant'] ?? '', tdClass: () => 'edit-cell', cell: r => merchantInput(r._i, r['Cleaned Merchant']) },
                 moneyColumn('amt', 'Amount', r => r._amt, { signed: true }),
-                categoryColumn('cat', 'Category', r => r['AI Category']),
-                { id: 'notes', label: 'Notes', value: r => (r.Notes ?? '').trim(), cell: r => r.Notes?.trim() ? `<span class="note-text">${esc(r.Notes)}</span>` : '' },
+                { id: 'cat', label: 'Category', value: r => r['AI Category'] ?? '', tdClass: () => 'edit-cell', cell: r => categorySelect(r._i, r['AI Category']) },
+                { id: 'notes', label: 'Notes', value: r => (r.Notes ?? '').trim(), tdClass: () => 'edit-cell', cell: r => notesInput(r._i, r.Notes) },
             ],
             rows,
             sort: { col: 'date', dir: 'asc' },
             rowLimit: 500,
+            rowClass: r => (dirty.has(r._i) ? 'dirty' : ''),
             onChange: list => { $('#tx-count').textContent = `${list.length} transaction${list.length === 1 ? '' : 's'}`; },
         });
         const applyTx = () => {
@@ -138,6 +151,34 @@ export default {
             el.querySelectorAll('#where [data-cat], #moved [data-cat]').forEach(b => b.classList.toggle('active', b.dataset.cat === catFilter));
         };
         $('#tx-q').oninput = applyTx;
+
+        // ── Editing ──
+        const updateSaveBar = () => {
+            $('#tx-save-bar').hidden = !dirty.size;
+            $('#tx-dirty').textContent = `${dirty.size} unsaved change${dirty.size === 1 ? '' : 's'}`;
+        };
+        bindCellEditing($('#t-tx'), (i, col) => rows[i][col] ?? '', (i, col, value, input) => {
+            rows[i][col] = value;
+            master.rows[i][col] = value;
+            dirty.add(i);
+            input.closest('tr').classList.add('dirty');
+            updateSaveBar();
+        });
+        $('#tx-save').onclick = async () => {
+            try {
+                await writeTable(PATHS.master, master);
+                toast(`Saved ${dirty.size} change${dirty.size === 1 ? '' : 's'}`, 'ok');
+                dirty.clear();
+                this.render(el); // recompute the totals with the new categories
+            } catch (e) {
+                toast(`Save failed: ${e.message}. Is the file open in Excel?`, 'bad');
+            }
+        };
+        $('#tx-discard').onclick = () => {
+            if (!confirm('Discard your unsaved changes?')) return;
+            dirty.clear();
+            this.render(el);
+        };
         const setCat = c => { catFilter = c === catFilter ? null : c; applyTx(); };
 
         // ── Month chart ──
@@ -289,6 +330,14 @@ export default {
                 btn.disabled = false;
             }
         };
+    },
+
+    canLeave(unloading) {
+        if (!dirty.size) return true;
+        if (unloading) return false;
+        if (!confirm('You have unsaved changes to transactions. Leave without saving?')) return false;
+        dirty.clear();
+        return true;
     },
 
     destroy() {
