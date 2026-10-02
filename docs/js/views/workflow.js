@@ -102,7 +102,11 @@ export default {
                 return await fn(running.signal);
             } catch (e) {
                 if (e.name === 'AbortError') log('Cancelled. Finished rows were saved.', 'err');
-                else { console.error(e); log(`Error: ${e.message}`, 'err'); }
+                else {
+                    console.error(e);
+                    log(`Error: ${e.message}`, 'err');
+                    toast(e.name === 'NotAllowedError' ? 'Lost access to your folder. Reconnect it on the Setup page.' : `Error: ${e.message}`, 'bad');
+                }
             } finally {
                 running = null;
                 setBusy(false);
@@ -110,10 +114,28 @@ export default {
             }
         };
 
-        const needOllama = async () => {
+        /** True if AI is usable; otherwise explain right under the step and offer to run without it. */
+        const needOllama = async stepId => {
             const st = await pingOllama();
             if (st.ok && st.hasModel) return true;
-            log(st.ok ? `Model ${ollamaSettings.model} isn't installed in Ollama.` : `Ollama ${st.error}. See the Setup page.`, 'err');
+            const fix = st.ok
+                ? `Ollama is running, but the model <code>${esc(ollamaSettings.model)}</code> isn't installed. In a terminal, run:<pre class="cmd">ollama pull ${esc(ollamaSettings.model)}</pre>`
+                : location.hostname === 'localhost' || location.hostname === '127.0.0.1'
+                    ? 'Ollama isn’t reachable. Is it running?'
+                    : `This page can’t reach Ollama. Run this once in a terminal, then quit Ollama from the system tray and start it again:<pre class="cmd">setx OLLAMA_ORIGINS "${esc(location.origin)}"</pre>`;
+            log(st.ok ? `Model ${ollamaSettings.model} isn't installed in Ollama.` : `Ollama ${st.error}.`, 'err');
+            const extra = el.querySelector(`[data-extra="${stepId}"]`);
+            extra.innerHTML = `
+                <div class="banner bad" style="margin-top:12px">
+                    <strong>Didn't run: AI isn't available.</strong> ${fix}
+                    You can also run without AI. Merchants you've categorized before use your history, and new ones get keyword rules you can fix in Edit Categories.
+                    <div class="row" style="margin-top:10px"><button class="primary" data-noai>Run without AI</button></div>
+                </div>`;
+            extra.querySelector('[data-noai]').onclick = () => {
+                extra.innerHTML = '';
+                el.querySelector(`[data-ai="${stepId}"]`).checked = false;
+                el.querySelector(`[data-run="${stepId}"]`).click();
+            };
             return false;
         };
 
@@ -144,9 +166,10 @@ export default {
         };
 
         el.querySelector('[data-run="backfill"]').onclick = () => run(async signal => {
+            el.querySelector('[data-extra="backfill"]').innerHTML = '';
             const useAI = el.querySelector('[data-ai="backfill"]').checked;
             log(`\n=== Step 1: Backfill past months${useAI ? ' (AI for new merchants)' : ''} ===`);
-            if (useAI && !(await needOllama())) return;
+            if (useAI && !(await needOllama('backfill'))) return;
             await backfill({ useAI, log, signal });
         });
 
@@ -155,7 +178,7 @@ export default {
         el.querySelector('[data-run="current"]').onclick = () => run(async signal => {
             const useAI = el.querySelector('[data-ai="current"]').checked;
             log(`\n=== Step 3: Current month${useAI ? ' (with AI)' : ''} ===`);
-            if (useAI && !(await needOllama())) return;
+            if (useAI && !(await needOllama('current'))) return;
             const projection = await processCurrentMonth({ useAI, log, signal });
             if (projection) {
                 el.querySelector('[data-extra="current"]').innerHTML =

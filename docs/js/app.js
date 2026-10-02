@@ -36,13 +36,24 @@ export function requireFolder(el) {
             <h2>No folder connected</h2>
             <p>Connect your <code>bills-etc-new</code> folder on the <a href="#home">Setup</a> page first.
             The app reads and writes the same files as the Python scripts; nothing is uploaded.</p>
+            <div class="row" style="margin-top:12px"><button class="primary" id="reconnect-here" hidden></button></div>
         </section>`;
+    // After a page refresh Chrome needs one click to re-allow the folder; offer it right here.
+    fs.rememberedFolder().then(rem => {
+        const btn = el.querySelector('#reconnect-here');
+        if (!rem || !btn) return;
+        btn.hidden = false;
+        btn.textContent = `Reconnect “${rem.handle.name}”`;
+        btn.onclick = async () => {
+            if (await fs.reconnect(rem.handle)) { await refreshStatus(); route(true); }
+        };
+    }).catch(() => {});
     return false;
 }
 
-async function route() {
+async function route(force = false) {
     const name = location.hash.slice(1) || 'home';
-    if (current?.canLeave && name !== currentName && !current.canLeave()) {
+    if (!force && current?.canLeave && name !== currentName && !current.canLeave()) {
         history.replaceState(null, '', '#' + currentName);
         return;
     }
@@ -60,7 +71,7 @@ async function route() {
     }
 }
 
-window.addEventListener('hashchange', route);
+window.addEventListener('hashchange', () => route());
 window.addEventListener('beforeunload', e => {
     if (current?.canLeave && !current.canLeave(true)) { e.preventDefault(); e.returnValue = ''; }
 });
