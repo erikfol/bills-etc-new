@@ -20,7 +20,7 @@ const STEPS = [
     },
     {
         n: 3, id: 'current', title: 'Mid-month check',
-        text: 'Categorizes the current month’s bank export (your edits → history → cache → AI → rules) and projects the full month against your config and history. Fix categories in <a href="#edit">Edit Categories</a> and re-run.',
+        text: 'Categorizes the current month’s bank export (your edits → history → cache → AI → rules) and projects the full month against your config and history. Fix categories in <a href="#edit">Finance Table</a> and re-run.',
         importTo: PATHS.currentMonth,
         ai: 'off',
     },
@@ -128,7 +128,7 @@ export default {
             extra.innerHTML = `
                 <div class="banner bad" style="margin-top:12px">
                     <strong>Didn't run: AI isn't available.</strong> ${fix}
-                    You can also run without AI. Merchants you've categorized before use your history, and new ones get keyword rules you can fix in Edit Categories.
+                    You can also run without AI. Merchants you've categorized before use your history, and new ones get keyword rules you can fix in Finance Table.
                     <div class="row" style="margin-top:10px"><button class="primary" data-noai>Run without AI</button></div>
                 </div>`;
             extra.querySelector('[data-noai]').onclick = () => {

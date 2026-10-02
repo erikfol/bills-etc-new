@@ -1,4 +1,4 @@
-// Read-only table with Excel-style sort and filter on every column (same menu as Edit Categories).
+// Read-only table with Excel-style sort and filter on every column (same menu as Finance Table).
 import { openFilterMenu, closeFilterMenu } from './filtermenu.js';
 import { esc, money } from './util.js';
 import { parseDate } from './dates.js';

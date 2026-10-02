@@ -4,6 +4,7 @@ import { PATHS, MASTER_COLS, CACHE_COLS, readTable, writeTable, readBankCsv, key
 import { aiCategorize } from './ollama.js';
 import { categorizeByRules, cleanupMerchant } from './rules.js';
 import { buildHistory, historyLookup, merchantKey } from './history.js';
+import { applyMerchantRules } from './merchants.js';
 import { parseDate, yearMonth, longMonthLabel, normalizeDateCell } from './dates.js';
 import { computeProjection } from './finance.js';
 import { amountOf, money } from './util.js';
@@ -12,20 +13,21 @@ import { amountOf, money } from './util.js';
 export const lastSources = new Map();
 
 /**
- * Categorize one row: merchant overrides → your history → AI (if enabled) → keyword rules.
+ * Categorize one row: merchant overrides → your history → AI (if enabled) → keyword rules,
+ * then your merchant rules from Config (clean name, and category if the rule has one).
  * A merchant the AI just categorized is remembered so repeats in the same run skip the model.
  */
 async function categorize(row, lookup, useAI, signal) {
     const hit = historyLookup(lookup, row.Description);
-    if (hit) return hit;
+    if (hit) return applyMerchantRules(hit, row.Description);
     if (useAI) {
         if (signal.aborted) throw new DOMException('Cancelled', 'AbortError');
-        const ai = await aiCategorize(row.Description, row.Amount, signal);
+        const ai = applyMerchantRules(await aiCategorize(row.Description, row.Amount, signal), row.Description);
         const key = merchantKey(row.Description);
         if (key && ai.parsed) lookup.set(key, { category: ai.category, merchant: ai.merchant });
         return { ...ai, source: 'ai' };
     }
-    return { ...categorizeByRules(row.Description), source: 'rules' };
+    return applyMerchantRules({ ...categorizeByRules(row.Description), source: 'rules' }, row.Description);
 }
 
 function txTypeMerchant(row, merchant) {
@@ -103,7 +105,7 @@ export async function backfill({ useAI, log, signal }) {
             log('Master merchant names cleaned up.', 'dim');
         }
     }
-    log(`\nDone. ${totals.added} transaction(s) added. Review them in Edit Categories → Master.`, 'ok');
+    log(`\nDone. ${totals.added} transaction(s) added. Review them in Finance Table → Master.`, 'ok');
     return totals;
 }
 
@@ -156,6 +158,7 @@ export async function processCurrentMonth({ useAI, log, signal }) {
                     newCache.push({ Date: d, Description: desc, Amount: amt, 'AI Category': hit.category, 'Cleaned Merchant': hit.merchant });
                 }
             }
+            if (source !== 'edited') hit = applyMerchantRules(hit, row.Description); // your edits always win
             counts[source]++;
             lastSources.set(key, source);
             out.push({ ...row, 'Cleaned Merchant': hit.merchant, 'AI Category': hit.category, Notes: hit.notes ?? row.Notes ?? '' });
@@ -171,10 +174,10 @@ export async function processCurrentMonth({ useAI, log, signal }) {
     if (counts.edited) log(`${counts.edited} transaction(s) loaded from processed file.`, 'dim');
     if (counts.history) log(`${counts.history} transaction(s) categorized from your history.`, 'dim');
     if (counts.cache) log(`${counts.cache} transaction(s) served from AI cache.`, 'dim');
-    if (!useAI && counts.rules) log(`${counts.rules} new merchant(s) used keyword rules only. Run with AI, or fix them in Edit Categories.`, 'err');
+    if (!useAI && counts.rules) log(`${counts.rules} new merchant(s) used keyword rules only. Run with AI, or fix them in Finance Table.`, 'err');
 
     await writeTable(PATHS.processed, { columns: MASTER_COLS, rows: out });
-    log(`Processed data saved to ${PATHS.processed}. Fix categories in Edit Categories, then re-run.`, 'ok');
+    log(`Processed data saved to ${PATHS.processed}. Fix categories in Finance Table, then re-run.`, 'ok');
 
     const projection = computeProjection({ config, rows: out, masterRows: master?.rows });
     log(`Day ${projection.daysElapsed} of ${projection.daysInMonth}. Projected ${projection.surplus >= 0 ? 'surplus' : 'deficit'}: ${money(projection.surplus, true)}`, 'ok');

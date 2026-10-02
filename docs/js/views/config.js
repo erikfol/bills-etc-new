@@ -4,6 +4,8 @@ import { getCategories } from '../rules.js';
 import { categoryUsage, addCategory, renameCategory, removeCategory, validateName, LOCKED } from '../categories.js';
 import { esc, money, toast } from '../util.js';
 import { requireFolder } from '../app.js';
+import { merchantSummary, suggestGroups, mergeMerchants, removeMerchantRule, setRuleCategory, getMerchantRules } from '../merchants.js';
+import { dataTable, closeFilterMenu } from '../datatable.js';
 
 let dirty = false;
 
@@ -68,6 +70,29 @@ export default {
                 </div>
                 <p class="note">Renaming updates every transaction in your history and current month. Renaming into an existing category merges the two.
                 The built-in rules follow your renames. ${esc(LOCKED)} can't be renamed because the cash-flow totals depend on it.</p>
+            </section>
+            <section id="merchants">
+                <h2>Merchants <span class="sub">merge different spellings of the same merchant</span></h2>
+                <p style="font-size:0.9em;color:#555;margin-bottom:12px">Tick the spellings that are the same merchant (or start from a suggestion), choose the name to keep and, optionally, a category for all of them.</p>
+                <div id="m-suggest"><p class="muted">Looking for similar names…</p></div>
+                <div class="merge-bar" id="m-bar" hidden>
+                    <div class="row">
+                        <span id="m-what"></span>
+                        <label class="field" style="flex-direction:row;align-items:center;gap:6px">into <input type="text" id="m-name" style="width:200px"></label>
+                        <label class="field" style="flex-direction:row;align-items:center;gap:6px">Category <select id="m-cat"></select></label>
+                    </div>
+                    <div class="row" style="margin-top:8px">
+                        <label class="check"><input type="checkbox" id="m-remember" checked> Apply to new transactions too</label>
+                        <span class="muted" id="m-cats-now" style="font-size:0.85em"></span>
+                        <span class="spacer"></span>
+                        <button id="m-clear">Clear selection</button>
+                        <button class="primary" id="m-go">Merge</button>
+                    </div>
+                </div>
+                <div class="row" style="margin:12px 0 6px"><strong style="font-size:0.9em">All merchants</strong><span class="spacer"></span><button class="small" id="m-showall" hidden>Show all merchants</button></div>
+                <div id="m-table"></div>
+                <h3 style="font-size:0.95em;color:#555;margin:18px 0 8px">Merchant rules for new transactions</h3>
+                <div id="m-rules"></div>
             </section>`;
         const root = el.querySelector('#cfg');
 
@@ -164,6 +189,137 @@ export default {
         el.querySelector('#new-cat').onkeydown = e => { if (e.key === 'Enter') el.querySelector('#add-cat').click(); };
         drawCats();
 
+        // ── Merchants ──
+        const summary = await merchantSummary();
+        const selected = new Set();
+        const ruleOf = new Map(getMerchantRules().flatMap(r => r.match.map(k => [k, r.name])));
+        const catText = m => Object.entries(m.cats).sort((a, b) => b[1] - a[1]).map(([c, n]) => `${c} ${n}`).join(' · ');
+        const mTable = dataTable(el.querySelector('#m-table'), {
+            columns: [
+                { id: 'sel', label: '✓', value: m => (selected.has(m.name) ? 'Selected' : ''), text: v => v,
+                    cell: m => `<input type="checkbox" data-sp="${summary.indexOf(m)}"${selected.has(m.name) ? ' checked' : ''} aria-label="Select ${esc(m.name)}">` },
+                { id: 'name', label: 'Merchant', value: m => m.name },
+                { id: 'count', label: 'Transactions', num: true, value: m => m.count, text: v => String(v) },
+                { id: 'cats', label: 'Categories', value: m => Object.entries(m.cats).sort((a, b) => b[1] - a[1])[0]?.[0] ?? '',
+                    cell: m => `<span class="muted" style="font-size:0.88em">${esc(catText(m))}</span>` },
+                { id: 'rule', label: 'Rule', value: m => ruleOf.get(m.key) || '', cell: m => ruleOf.has(m.key) ? `<span class="badge badge-ok">→ ${esc(ruleOf.get(m.key))}</span>` : '' },
+            ],
+            rows: summary,
+            sort: { col: 'count', dir: 'desc' },
+            rowLimit: 300,
+            empty: 'No merchants yet',
+            rowClass: m => (selected.has(m.name) ? 'selected-row' : ''),
+        });
+
+        const catSelect = el.querySelector('#m-cat');
+        const refreshBar = () => {
+            const picked = summary.filter(m => selected.has(m.name));
+            el.querySelector('#m-bar').hidden = !picked.length;
+            if (!picked.length) return;
+            const n = picked.reduce((a, m) => a + m.count, 0);
+            el.querySelector('#m-what').innerHTML = `Merge <strong>${picked.length}</strong> spelling${picked.length === 1 ? '' : 's'} (${n} transaction${n === 1 ? '' : 's'})`;
+            const nameInput = el.querySelector('#m-name');
+            if (!nameInput.dataset.touched) nameInput.value = picked.slice().sort((a, b) => b.count - a.count)[0].name;
+            const cats = {};
+            for (const m of picked) for (const [c, k] of Object.entries(m.cats)) cats[c] = (cats[c] || 0) + k;
+            el.querySelector('#m-cats-now').textContent = 'Now: ' + Object.entries(cats).sort((a, b) => b[1] - a[1]).map(([c, k]) => `${c} ${k}`).join(' · ');
+            const keep = catSelect.value;
+            catSelect.innerHTML = `<option value="">Keep each transaction's category</option>` + getCategories().map(c => `<option${c === keep ? ' selected' : ''}>${esc(c)}</option>`).join('');
+        };
+        el.querySelector('#m-name').addEventListener('input', e => { e.target.dataset.touched = '1'; });
+        el.querySelector('#m-table').addEventListener('change', e => {
+            const i = e.target.dataset?.sp;
+            if (i == null) return;
+            const m = summary[+i];
+            e.target.checked ? selected.add(m.name) : selected.delete(m.name);
+            e.target.closest('tr').classList.toggle('selected-row', e.target.checked);
+            refreshBar();
+        });
+        const showOnly = names => {
+            const set = names && new Set(names);
+            mTable.setFilter(set ? m => set.has(m.name) : null);
+            el.querySelector('#m-showall').hidden = !set;
+        };
+        el.querySelector('#m-showall').onclick = () => showOnly(null);
+        el.querySelector('#m-clear').onclick = () => {
+            selected.clear(); delete el.querySelector('#m-name').dataset.touched;
+            showOnly(null); refreshBar();
+        };
+
+        const groups = suggestGroups(summary).filter(g => !g.spellings.every(m => ruleOf.get(m.key) === ruleOf.get(g.spellings[0].key) && ruleOf.has(m.key)));
+        // Confident groups: 2+ spellings that are identical once cleaned up. Others are only possible matches.
+        const sure = groups.filter(g => g.likely.length > 1), maybe = groups.filter(g => g.likely.length <= 1);
+        const groupRow = g => `
+            <div class="suggest-row">
+                <span class="suggest-names">${g.spellings.map(m => `<span class="${g.likely.includes(m.name) ? '' : 'muted'}">${esc(m.name)} <small>(${m.count})</small></span>`).join(' · ')}</span>
+                <button class="small" data-group="${groups.indexOf(g)}">Review</button>
+            </div>`;
+        const showGroups = limit => {
+            el.querySelector('#m-suggest').innerHTML = `
+                <p style="font-size:0.88em;color:#555;margin-bottom:6px"><strong>Same name, different spelling</strong> (${sure.length})</p>
+                ${sure.length ? `<div class="suggest-list">${sure.slice(0, limit).map(groupRow).join('')}</div>
+                    ${sure.length > limit ? `<button class="small" id="m-more" style="margin-top:6px">Show ${sure.length - limit} more</button>` : ''}`
+                    : '<p class="muted" style="font-size:0.9em">None left. Nice and tidy.</p>'}
+                ${maybe.length ? `<details style="margin-top:10px"><summary style="cursor:pointer;font-size:0.88em;color:#555"><strong>Possible matches</strong> (${maybe.length}): names that start the same; check before merging</summary>
+                    <div class="suggest-list" style="margin-top:6px">${maybe.map(groupRow).join('')}</div></details>` : ''}`;
+            el.querySelector('#m-more')?.addEventListener('click', () => showGroups(sure.length));
+        };
+        el.querySelector('#m-suggest').addEventListener('click', e => {
+            const gi = e.target.dataset?.group;
+            if (gi == null) return;
+            const g = groups[+gi];
+            selected.clear();
+            g.likely.forEach(n => selected.add(n));
+            delete el.querySelector('#m-name').dataset.touched;
+            showOnly(g.spellings.map(m => m.name));
+            refreshBar();
+            el.querySelector('#m-bar').scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        });
+        showGroups(12);
+
+        el.querySelector('#m-go').onclick = async () => {
+            if (!busyGuard()) return;
+            const spellings = [...selected];
+            const name = el.querySelector('#m-name').value.trim();
+            const category = catSelect.value || null;
+            const n = summary.filter(m => selected.has(m.name)).reduce((a, m) => a + m.count, 0);
+            if (!name) return toast('Enter the merchant name to keep.', 'bad');
+            if (!confirm(`Rename ${n} transaction${n === 1 ? '' : 's'} to “${name}”${category ? ` and set their category to ${category}` : ''}?`)) return;
+            try {
+                const changed = await mergeMerchants({ spellings, name, category, remember: el.querySelector('#m-remember').checked });
+                toast(`Updated ${changed} transaction${changed === 1 ? '' : 's'} → “${name}”`, 'ok');
+                this.render(el);
+            } catch (e) { toast(e.message, 'bad'); }
+        };
+
+        const drawRules = () => {
+            const rules = getMerchantRules();
+            el.querySelector('#m-rules').innerHTML = rules.length ? `<div class="table-wrap"><table class="summary-table">
+                <thead><tr><th>Merchant</th><th>Matches spellings like</th><th>Category for new transactions</th><th></th></tr></thead>
+                <tbody>${rules.map((r, ri) => `<tr>
+                    <td><strong>${esc(r.name)}</strong></td>
+                    <td class="muted" style="font-size:0.88em">${r.match.map(esc).join(', ')}</td>
+                    <td><select data-rule-cat="${ri}"><option value="">Keep whatever it's categorized as</option>${getCategories().map(c => `<option${c === r.category ? ' selected' : ''}>${esc(c)}</option>`).join('')}</select></td>
+                    <td style="text-align:right"><button class="small danger" data-rule-del="${ri}">Remove</button></td></tr>`).join('')}</tbody></table></div>`
+                : '<p class="muted" style="font-size:0.9em">None yet. Merging with “Apply to new transactions too” ticked creates one.</p>';
+        };
+        el.querySelector('#m-rules').addEventListener('change', async e => {
+            const ri = e.target.dataset?.ruleCat;
+            if (ri == null || !busyGuard()) return;
+            await setRuleCategory(getMerchantRules()[+ri].name, e.target.value || null);
+            toast('Rule updated', 'ok');
+        });
+        el.querySelector('#m-rules').addEventListener('click', async e => {
+            const ri = e.target.dataset?.ruleDel;
+            if (ri == null || !busyGuard()) return;
+            const r = getMerchantRules()[+ri];
+            if (!confirm(`Stop renaming new transactions to “${r.name}”? Existing transactions keep their names.`)) return;
+            await removeMerchantRule(r.name);
+            toast(`Removed the rule for “${r.name}”`, 'ok');
+            this.render(el);
+        });
+        drawRules();
+
         el.querySelector('#save').onclick = async () => {
             const read = id => [...el.querySelectorAll(`#${id} .kv-row`)]
                 .map(r => [r.querySelector('.k').value.trim(), parseFloat(r.querySelector('.v').value) || 0])
@@ -205,6 +361,10 @@ export default {
                 toast(`Save failed: ${e.message}`, 'bad');
             }
         };
+    },
+
+    destroy() {
+        closeFilterMenu();
     },
 
     canLeave(unloading) {

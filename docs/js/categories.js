@@ -3,6 +3,7 @@
 import * as fs from './fs.js';
 import { PATHS, DEFAULT_CONFIG, readTable, writeTable, loadConfig } from './data.js';
 import { DEFAULT_CATEGORIES, setCategorySettings, renamed } from './rules.js';
+import { setMerchantRules } from './merchants.js';
 
 /** Categories the math depends on: Income can't be renamed or removed; Miscellaneous can't be removed. */
 export const LOCKED = 'Income';
@@ -20,11 +21,12 @@ export function categorySettings(cfg) {
     return { categories, renames };
 }
 
-/** Load the folder's category settings into the rules. Called before each page renders. */
+/** Load the folder's category settings and merchant rules. Called before each page renders. */
 export async function syncCategories() {
     let cfg = null;
     try { cfg = await loadConfig(); } catch { /* invalid JSON: keep defaults; Config page reports it */ }
     setCategorySettings(categorySettings(cfg));
+    setMerchantRules(cfg);
 }
 
 /** {category: number of transactions} across the master and the current month. */

@@ -1,7 +1,7 @@
 import pandas as pd
 import json
 import os
-from bills_config import category_settings, renamed
+from bills_config import category_settings, renamed, merchant_rules, apply_merchant_rules
 import argparse
 from history_lookup import merchant_key, load_history
 import calendar
@@ -23,6 +23,7 @@ ALLOWED_CATEGORIES_LIST = ["Groceries", "Dining Out", "Utilities", "Rent/Mortgag
 
 # Your categories and renames from config.json (managed on the GUI's Config page)
 ALLOWED_CATEGORIES_LIST, CATEGORY_RENAMES = category_settings(ALLOWED_CATEGORIES_LIST)
+MERCHANT_RULES = merchant_rules()
 
 CATEGORY_MAP = {
     'grocery': 'Groceries', 'groceries': 'Groceries',
@@ -605,6 +606,8 @@ def main():
                                            normalize_category(str(row.get('Description', ''))))
                 merchant = str(row.get('Description', ''))
             sources.append('rules')
+        if sources[-1] != 'edited':  # your edits always win
+            merchant, cat = apply_merchant_rules(MERCHANT_RULES, CATEGORY_RENAMES, merchant, cat, row['Description'])
         categories.append(cat)
         merchants.append(merchant)
 

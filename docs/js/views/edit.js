@@ -40,11 +40,11 @@ export default {
         if (!requireFolder(el)) return;
         el.innerHTML = `
             <div class="row" style="margin-bottom:6px">
-                <h1 class="page">Edit Categories</h1>
+                <h1 class="page">Finance Table</h1>
                 <span class="spacer"></span>
                 <select id="file">${Object.entries(FILES).map(([k, f]) => `<option value="${k}"${k === file ? ' selected' : ''}>${esc(f.label)}</option>`).join('')}</select>
             </div>
-            <p class="lead">Fix categories, merchant names and notes, then save. Use the ▾ on each column to sort or filter, like Excel. Edits in the current month are kept when you re-run step 3.</p>
+            <p class="lead">All your transactions in one table: fix categories, merchant names and notes, then save. Use the ▾ on each column to sort or filter, like Excel. Edits in the current month are kept when you re-run step 3.</p>
             <div id="body"><p class="muted">Loading…</p></div>`;
 
         el.querySelector('#file').onchange = e => {

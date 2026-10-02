@@ -192,7 +192,7 @@ const home = {
                 let html = '';
                 if (t.added) {
                     html += `<div class="banner ok"><strong>Loaded ${t.added} new transaction${t.added === 1 ? '' : 's'}</strong> from ${t.files.map(esc).join(', ')}.
-                        ${t.history} matched merchants from your history${t.rules ? `; <strong>${t.rules} are new merchants</strong> categorized by keyword rules (mostly “Miscellaneous”). Check them in <a href="#edit">Edit Categories</a> → Master history, filtering Category to Miscellaneous` : ''}.</div>`;
+                        ${t.history} matched merchants from your history${t.rules ? `; <strong>${t.rules} are new merchants</strong> categorized by keyword rules (mostly “Miscellaneous”). Check them in <a href="#edit">Finance Table</a> → Master history, filtering Category to Miscellaneous` : ''}.</div>`;
                 }
                 if (current) {
                     const p = await processCurrentMonth({ useAI: false, log, signal: new AbortController().signal });

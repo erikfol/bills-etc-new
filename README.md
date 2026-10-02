@@ -15,7 +15,7 @@ Personal spending tracker. Exports Come Citizens Bank transaction CSV, categoriz
 - In **Chrome or Edge** you connect this folder on the Setup page. The app then reads and writes the same files as the scripts (`inputs/`, `output_master_data/`, `config.json`), so you can mix the GUI and the scripts.
 - AI calls go straight from the browser to your local Ollama. Allow the page's origin once, then restart Ollama:
   `setx OLLAMA_ORIGINS "https://erikfol.github.io"`
-- Pages: **Workflow** (run steps 1–4, import bank CSVs), **This Month** (projection), **Dashboard** (history report and AI analysis), **Edit Categories** (fix the processed month or the master), **Config** (edit `config.json`).
+- Pages: **Workflow** (run steps 1–4, import bank CSVs), **This Month** (projection), **Dashboard** (history report and AI analysis), **Finance Table** (fix the processed month or the master), **Config** (edit `config.json`).
 
 To run it locally instead: `python -m http.server 8000 -d docs` and open http://localhost:8000. Ollama allows localhost by default.
 
@@ -58,6 +58,7 @@ The categorization rules are duplicated in `docs/js/rules.js`. When you add an o
 | `variable_categories` | Categories that are day-scaled to project the full month |
 | `categories` | Your category list (optional; defaults to the built-in 12). Managed on the GUI's Config page |
 | `category_renames` | Old → new names, so the built-in rules and older data follow a rename (managed by the GUI) |
+| `merchant_rules` | Merchant spellings to merge into one name (and optionally one category) for new transactions; created from Config → Merchants |
 
 Keys starting with `_` are ignored. See the notes in the file itself.
 

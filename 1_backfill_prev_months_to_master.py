@@ -1,7 +1,7 @@
 import pandas as pd
 import ollama
 import os
-from bills_config import category_settings, renamed
+from bills_config import category_settings, renamed, merchant_rules, apply_merchant_rules
 from history_lookup import merchant_key, load_history
 
 # --- CONFIGURATION ---
@@ -16,6 +16,7 @@ ALLOWED_CATEGORIES_LIST = [c.strip() for c in ALLOWED_CATEGORIES.split(',')]
 
 # Your categories and renames from config.json (managed on the GUI's Config page)
 ALLOWED_CATEGORIES_LIST, CATEGORY_RENAMES = category_settings(ALLOWED_CATEGORIES_LIST)
+MERCHANT_RULES = merchant_rules()
 
 CATEGORY_MAP = {
     'grocery': 'Groceries', 'groceries': 'Groceries',
@@ -295,6 +296,8 @@ def main():
                 # Remember it so repeats of this new merchant skip the model
                 if merchant_key(desc):
                     history[merchant_key(desc)] = (category, clean_merchant)
+            # Your merchant rules from config.json (clean name, and category if the rule has one)
+            clean_merchant, category = apply_merchant_rules(MERCHANT_RULES, CATEGORY_RENAMES, clean_merchant, category, desc)
             tx_type_val = str(row.get('Transaction Type', '')).lower()
             if 'Transaction Type' in df.columns and 'atm' in tx_type_val:
                 clean_merchant = 'ATM'
