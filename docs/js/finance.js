@@ -1,6 +1,6 @@
 // Report and projection math — ports of scripts 2 and 3.
 import { parseDate, yearMonth, monthLabel } from './dates.js';
-import { applyOverrides, applyMerchantCatOverrides, cleanupMerchant, normalizeCategory } from './rules.js';
+import { applyOverrides, applyMerchantCatOverrides, cleanupMerchant, normalizeCategory, renamed } from './rules.js';
 import { amountOf, money, round2 } from './util.js';
 
 /** Attach parsed _date, _ym, _amt to each row (non-destructive). */
@@ -125,3 +125,47 @@ export function statusBadge(proj, hist) {
 }
 
 export { monthLabel };
+
+// ── Month-at-a-time dashboard ────────────────────────────────────────────────
+
+/**
+ * Per-month totals that separate real spending from money moved: credit-card payments and
+ * transfers to savings. Spending is money going out only; money coming in under a spending
+ * category (refunds, transfers from savings) is `otherIn`, so it can't make spending look smaller.
+ * Left over = what changed in checking = income + otherIn − spending − card − saved.
+ * Returns [{ ym, income, otherIn, spending, card, saved, leftover, byCat: {cat: amount}, counts: {cat: n} }] oldest first.
+ */
+export function monthlyBreakdown(rows) {
+    const card = renamed('Credit Card'), savings = renamed('Savings');
+    const map = new Map();
+    for (const r of rows) {
+        if (!r._ym) continue;
+        let m = map.get(r._ym);
+        if (!m) map.set(r._ym, m = { ym: r._ym, income: 0, otherIn: 0, spending: 0, card: 0, saved: 0, byCat: {}, counts: {} });
+        const c = r['AI Category'];
+        if (c === 'Income') m.income += r._amt;
+        else if (c === card) m.card -= r._amt;
+        else if (c === savings) m.saved -= r._amt;
+        else if (r._amt > 0) m.otherIn += r._amt;
+        else {
+            m.spending -= r._amt;
+            m.byCat[c] = (m.byCat[c] || 0) - r._amt;
+            m.counts[c] = (m.counts[c] || 0) + 1;
+        }
+    }
+    return [...map.values()].sort((a, b) => a.ym.localeCompare(b.ym))
+        .map(m => ({ ...m, leftover: m.income + m.otherIn - m.spending - m.card - m.saved }));
+}
+
+/** Average of up to `n` months before index `i` (missing categories count as 0). */
+export function baseline(months, i, n = 12) {
+    const prev = months.slice(Math.max(0, i - n), i);
+    const avg = f => prev.length ? prev.reduce((a, m) => a + f(m), 0) / prev.length : 0;
+    const cats = new Set(prev.flatMap(m => Object.keys(m.byCat)));
+    return {
+        count: prev.length,
+        income: avg(m => m.income), otherIn: avg(m => m.otherIn), spending: avg(m => m.spending), card: avg(m => m.card),
+        saved: avg(m => m.saved), leftover: avg(m => m.leftover),
+        byCat: Object.fromEntries([...cats].map(c => [c, avg(m => m.byCat[c] || 0)])),
+    };
+}

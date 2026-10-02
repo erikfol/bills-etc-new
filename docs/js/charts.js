@@ -16,6 +16,15 @@ function setup(canvas) {
     return { ctx, W, H };
 }
 
+/** Round up to a clean axis step (1, 2, 2.5, 3, 4, 5, 6, 8 × 10^n). */
+function niceStep(x) {
+    if (x <= 0) return 1;
+    const p = 10 ** Math.floor(Math.log10(x));
+    return [1, 2, 2.5, 3, 4, 5, 6, 8, 10].map(m => m * p).find(v => v >= x);
+}
+/** Axis max that splits into 4 clean steps. */
+const niceMax = v => niceStep(v / 4) * 4;
+
 const kFmt = v => '$' + (v >= 1000 ? (v / 1000).toFixed(v >= 10000 ? 0 : 1).replace(/\.0$/, '') + 'k' : v.toFixed(0));
 
 function yGrid(ctx, pad, chartW, chartH, maxVal) {
@@ -31,86 +40,6 @@ function yGrid(ctx, pad, chartW, chartH, maxVal) {
     }
 }
 
-/** Grouped income/expense bars with a dashed net line. */
-export function drawCashFlow(canvas, { months, income, expenses }) {
-    const s = setup(canvas);
-    const n = months.length;
-    if (!s || !n) return;
-    const { ctx, W, H } = s;
-    const pad = { top: 24, right: 20, bottom: 44, left: 72 };
-    const chartW = W - pad.left - pad.right, chartH = H - pad.top - pad.bottom;
-    const maxVal = Math.max(...income, ...expenses) * 1.15 || 1;
-    yGrid(ctx, pad, chartW, chartH, maxVal);
-
-    const groupW = chartW / n;
-    const barW = Math.min(groupW * 0.32, 42);
-    const gap = Math.min(groupW * 0.05, 6);
-    const gOff = (groupW - 2 * barW - gap) / 2;
-    const labelEvery = Math.ceil(n / Math.max(1, Math.floor(chartW / 60)));
-    for (let i = 0; i < n; i++) {
-        const gx = pad.left + i * groupW + gOff;
-        const incH = (income[i] / maxVal) * chartH;
-        ctx.fillStyle = '#4a90d9';
-        ctx.fillRect(gx, pad.top + chartH - incH, barW, incH);
-        const expH = (expenses[i] / maxVal) * chartH;
-        ctx.fillStyle = '#e74c3c';
-        ctx.fillRect(gx + barW + gap, pad.top + chartH - expH, barW, expH);
-        if (i % labelEvery === 0) {
-            ctx.fillStyle = '#666';
-            ctx.textAlign = 'center';
-            ctx.fillText(months[i], pad.left + i * groupW + groupW / 2, pad.top + chartH + 18);
-        }
-    }
-
-    const pt = i => ({
-        x: pad.left + i * groupW + groupW / 2,
-        y: pad.top + chartH - (Math.max(income[i] - expenses[i], 0) / maxVal) * chartH,
-    });
-    ctx.strokeStyle = '#27ae60';
-    ctx.lineWidth = 2;
-    ctx.setLineDash([5, 4]);
-    ctx.beginPath();
-    for (let i = 0; i < n; i++) { const p = pt(i); i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y); }
-    ctx.stroke();
-    ctx.setLineDash([]);
-    ctx.fillStyle = '#27ae60';
-    for (let i = 0; i < n; i++) { const p = pt(i); ctx.beginPath(); ctx.arc(p.x, p.y, 3.5, 0, 2 * Math.PI); ctx.fill(); }
-}
-
-/** Horizontal bars, pairs = [[category, total], ...] sorted desc. */
-export function drawCategoryBars(canvas, pairs) {
-    const s = setup(canvas);
-    if (!s || !pairs.length) return;
-    const { ctx, W, H } = s;
-    const n = pairs.length;
-    const pad = { top: 14, right: 88, bottom: 14, left: 118 };
-    const chartW = W - pad.left - pad.right, chartH = H - pad.top - pad.bottom;
-    const rowH = chartH / n;
-    const barH = Math.min(rowH * 0.55, 22);
-    const maxVal = Math.max(...pairs.map(p => p[1])) * 1.05 || 1;
-
-    ctx.strokeStyle = '#f0f0f0';
-    ctx.lineWidth = 1;
-    [0.25, 0.5, 0.75, 1].forEach(f => {
-        const x = pad.left + f * chartW;
-        ctx.beginPath(); ctx.moveTo(x, pad.top); ctx.lineTo(x, pad.top + chartH); ctx.stroke();
-    });
-
-    ctx.font = `12px ${FONT}`;
-    pairs.forEach(([cat, total], i) => {
-        const y = pad.top + i * rowH;
-        const barLen = (total / maxVal) * chartW;
-        ctx.fillStyle = CHART_COLORS[i % CHART_COLORS.length];
-        ctx.fillRect(pad.left, y + (rowH - barH) / 2, barLen, barH);
-        ctx.fillStyle = '#444';
-        ctx.textAlign = 'right';
-        ctx.fillText(cat, pad.left - 8, y + rowH / 2 + 4);
-        ctx.fillStyle = '#555';
-        ctx.textAlign = 'left';
-        ctx.fillText(total >= 1000 ? '$' + (total / 1000).toFixed(1) + 'k' : '$' + total.toFixed(0), pad.left + barLen + 6, y + rowH / 2 + 4);
-    });
-}
-
 /** One line per active category; byMonth = {label: {cat: value}}; colorOf(cat) → color. */
 export function drawTrends(canvas, { months, cats, byMonth, active, colorOf }) {
     const s = setup(canvas);
@@ -122,7 +51,7 @@ export function drawTrends(canvas, { months, cats, byMonth, active, colorOf }) {
 
     let maxVal = 0;
     cats.forEach(c => { if (active.has(c)) months.forEach(m => { maxVal = Math.max(maxVal, byMonth[m]?.[c] || 0); }); });
-    maxVal = maxVal * 1.15 || 1;
+    maxVal = niceMax(maxVal * 1.05) || 1;
     yGrid(ctx, pad, chartW, chartH, maxVal);
 
     const xOf = i => pad.left + (n === 1 ? chartW / 2 : i * chartW / (n - 1));
@@ -143,4 +72,51 @@ export function drawTrends(canvas, { months, cats, byMonth, active, colorOf }) {
         ctx.fillStyle = color;
         pts.forEach(p => { ctx.beginPath(); ctx.arc(p.x, p.y, 4, 0, 2 * Math.PI); ctx.fill(); });
     });
+}
+
+/**
+ * Income vs spending bars per month, with the selected month highlighted.
+ * Sets canvas._hit(x) → month index under that x (or -1) for click handling.
+ */
+export function drawMonthBars(canvas, { labels, income, spending, selected }) {
+    const s = setup(canvas);
+    const n = labels.length;
+    canvas._hit = () => -1;
+    if (!s || !n) return;
+    const { ctx, W, H } = s;
+    const pad = { top: 16, right: 12, bottom: 30, left: 56 };
+    const chartW = W - pad.left - pad.right, chartH = H - pad.top - pad.bottom;
+    const maxVal = niceMax(Math.max(...income, ...spending, 1) * 1.05);
+    yGrid(ctx, pad, chartW, chartH, maxVal);
+
+    const groupW = chartW / n;
+    const labelEvery = Math.ceil(52 / groupW);
+    const barW = Math.min(groupW * 0.32, 26);
+    const gOff = (groupW - 2 * barW - 3) / 2;
+    for (let i = 0; i < n; i++) {
+        const gx = pad.left + i * groupW;
+        if (i === selected) {
+            ctx.fillStyle = '#eef3ff';
+            ctx.fillRect(gx + 2, pad.top, groupW - 4, chartH);
+        }
+        const dim = i === selected ? 1 : 0.55;
+        ctx.globalAlpha = dim;
+        const ih = (Math.max(income[i], 0) / maxVal) * chartH, sh = (Math.max(spending[i], 0) / maxVal) * chartH;
+        ctx.fillStyle = '#4a90d9';
+        ctx.fillRect(gx + gOff, pad.top + chartH - ih, barW, ih);
+        ctx.fillStyle = '#e74c3c';
+        ctx.fillRect(gx + gOff + barW + 3, pad.top + chartH - sh, barW, sh);
+        ctx.globalAlpha = 1;
+        // Skip labels when they'd overlap, but always label the selected month.
+        if (i === selected || i % labelEvery === 0) {
+            ctx.fillStyle = i === selected ? '#1a1a2e' : '#888';
+            ctx.font = `${i === selected ? '600 ' : ''}11px ${FONT}`;
+            ctx.textAlign = 'center';
+            ctx.fillText(labels[i], gx + groupW / 2, pad.top + chartH + 18);
+        }
+    }
+    canvas._hit = x => {
+        const i = Math.floor((x - pad.left) / groupW);
+        return i >= 0 && i < n ? i : -1;
+    };
 }

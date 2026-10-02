@@ -278,3 +278,39 @@ th.filtered .fbtn::before { content: '⧩ '; font-size: 0.9em; }
 
 .nowrap { white-space: nowrap; }
 .dt-bar { display: flex; align-items: center; gap: 10px; font-size: 0.85em; color: var(--muted); margin-bottom: 8px; }
+
+/* ── Dashboard ───────────────────────────────────────────────────────── */
+.dash-head { margin-bottom: 4px; }
+.month-nav { display: flex; align-items: center; gap: 6px; }
+.month-nav select { font-weight: 600; min-width: 170px; }
+.month-nav button { padding: 6px 12px; }
+.kpis .value { font-size: 1.7em; }
+.kpis .cmp { font-size: 0.82em; margin-top: 6px; line-height: 1.4; color: var(--muted); }
+.delta-good { color: var(--green); font-weight: 600; }
+.delta-bad { color: var(--red); font-weight: 600; }
+.where-row {
+    display: grid; grid-template-columns: minmax(120px, 190px) 1fr 100px minmax(120px, 170px);
+    align-items: center; gap: 12px; width: 100%; text-align: left;
+    background: none; border: none; border-radius: 6px; padding: 7px 8px; font-weight: 400;
+}
+.where-row:hover { background: var(--hover); }
+.where-row.active { background: #e3edff; }
+.where-name { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.where-name .muted { font-size: 0.8em; font-weight: 400; }
+.where-bar { height: 12px; background: #f0f2f7; border-radius: 6px; overflow: hidden; }
+.where-bar span { display: block; height: 100%; background: #4a90d9; border-radius: 6px; }
+.where-row.active .where-bar span { background: var(--navy-2); }
+.where-amt { text-align: right; font-family: Consolas, 'SF Mono', monospace; font-weight: 600; }
+.where-delta { font-size: 0.82em; }
+.moved { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); font-size: 0.9em; }
+.chip { border-radius: 16px; padding: 4px 12px; font-size: 0.88em; background: var(--head); }
+.chip.active { background: var(--navy-2); border-color: var(--navy-2); color: #fff; }
+.dash-more { background: var(--surface); border-radius: 10px; padding: 14px 26px; margin-bottom: 18px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
+.dash-more > summary { cursor: pointer; font-weight: 600; color: #555; text-transform: uppercase; letter-spacing: 0.5px; font-size: 0.9em; }
+.dash-more[open] > summary { margin-bottom: 14px; }
+.dash-more h3 { font-size: 0.95em; color: #555; margin: 14px 0 8px; }
+@media (max-width: 640px) {
+    .where-row { grid-template-columns: 1fr 90px; }
+    .where-bar { grid-column: 1 / -1; grid-row: 2; }
+    .where-delta { grid-column: 1 / -1; }
+}
