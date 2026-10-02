@@ -19,6 +19,7 @@
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
+[hidden] { display: none !important; }
 body {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     color: var(--text);
@@ -274,3 +275,6 @@ th.filtered .fbtn::before { content: '⧩ '; font-size: 0.9em; }
     section { padding: 16px; }
     .kv-row { grid-template-columns: 1fr 100px 36px; }
 }
+
+.nowrap { white-space: nowrap; }
+.dt-bar { display: flex; align-items: center; gap: 10px; font-size: 0.85em; color: var(--muted); margin-bottom: 8px; }

@@ -5,6 +5,7 @@ import { generate, insightsPrompt, aiEnabled } from '../ollama.js';
 import { monthLabel } from '../dates.js';
 import { esc, money, mdToHtml } from '../util.js';
 import { requireFolder } from '../app.js';
+import { dataTable, dateColumn, moneyColumn, categoryColumn, closeFilterMenu } from '../datatable.js';
 
 let onResize = null;
 
@@ -56,12 +57,7 @@ export default {
                     </div>
                     <canvas id="c-cash" style="height:260px"></canvas>
                 </div>
-                <div class="table-wrap"><table>
-                    <thead><tr><th>Month</th><th class="num">Income</th><th class="num">Expenses</th><th class="num">Net</th></tr></thead>
-                    <tbody>${rep.monthly.map((m, i) => `<tr>
-                        <td>${labels[i]}</td><td class="amt">${money(m.income)}</td><td class="amt">${money(Math.abs(m.expenses))}</td>
-                        <td class="amt ${m.net >= 0 ? 'positive' : 'negative'}">${money(m.net)}</td></tr>`).join('')}</tbody>
-                </table></div>
+                <div id="t-cash"></div>
             </section>
 
             <section>
@@ -72,13 +68,7 @@ export default {
                     </label>
                 </div>
                 <div class="chart-wrap"><canvas id="c-cat" style="height:${Math.max(200, rep.categories.length * 36 + 50)}px"></canvas></div>
-                <div class="table-wrap"><table>
-                    <thead><tr><th>Month</th>${rep.categories.map(c => `<th class="num">${esc(c)}</th>`).join('')}</tr></thead>
-                    <tbody>${rep.months.map((ym, i) => `<tr><td><strong>${labels[i]}</strong></td>${rep.categories.map(c => {
-                        const v = rep.trends[ym][c];
-                        return v ? `<td class="amt">${money(Math.abs(v))}</td>` : '<td class="zero num">-</td>';
-                    }).join('')}</tr>`).join('')}</tbody>
-                </table></div>
+                <div id="t-cat"></div>
             </section>
 
             <section>
@@ -90,21 +80,11 @@ export default {
             <section>
                 <h2>Transaction Detail</h2>
                 <div class="row" style="margin-bottom:12px">
-                    <label class="check">Month: <select id="tx-month">${allTxMonths.map(ym => `<option value="${ym}">${monthLabel(ym)}</option>`).join('')}</select></label>
-                    <label class="check">Category: <select id="tx-cat"></select></label>
-                    <input type="search" id="tx-q" placeholder="Search merchant / description" style="min-width:220px">
+                    <label class="check">Month: <select id="tx-month"><option value="">All months</option>${allTxMonths.map(ym => `<option value="${ym}">${monthLabel(ym)}</option>`).join('')}</select></label>
+                    <input type="search" id="tx-q" placeholder="Search merchant / description / notes" style="min-width:240px">
                     <span class="spacer"></span><span class="muted" id="tx-count" style="font-size:0.85em"></span>
                 </div>
-                <div class="table-wrap"><table id="tx-table">
-                    <thead><tr>
-                        <th class="sortable" data-sort="date">Date ↕</th>
-                        <th class="sortable" data-sort="merchant">Merchant ↕</th>
-                        <th class="sortable num" data-sort="amount">Amount ↕</th>
-                        <th class="sortable" data-sort="cat">Category ↕</th>
-                        <th>Notes</th>
-                    </tr></thead>
-                    <tbody></tbody>
-                </table></div>
+                <div id="t-tx"></div>
             </section>
 
             <section${aiEnabled() ? '' : ' hidden'}>
@@ -146,47 +126,69 @@ export default {
         window.addEventListener('resize', onResize);
         requestAnimationFrame(drawAll);
 
-        // Transaction table
-        const txMonth = el.querySelector('#tx-month'), txCat = el.querySelector('#tx-cat'), txQ = el.querySelector('#tx-q');
-        txMonth.value = allTxMonths.at(-1);
-        let sort = { key: 'date', asc: true };
-        const sorters = {
-            date: r => r._date?.getTime() ?? 0,
-            merchant: r => String(r['Cleaned Merchant'] || r.Description || '').toLowerCase(),
-            amount: r => r._amt,
-            cat: r => r['AI Category'] || '',
-        };
-        const fillCats = () => {
-            const cats = [...new Set(rows.filter(r => r._ym === txMonth.value).map(r => r['AI Category']))].sort();
-            txCat.innerHTML = '<option value="">All categories</option>' + cats.map(c => `<option>${esc(c)}</option>`).join('');
-        };
-        const drawTable = () => {
-            const q = txQ.value.trim().toLowerCase();
-            const list = rows.filter(r => r._ym === txMonth.value
-                && (!txCat.value || r['AI Category'] === txCat.value)
-                && (!q || `${r['Cleaned Merchant']} ${r.Description} ${r.Notes}`.toLowerCase().includes(q)));
-            const f = sorters[sort.key];
-            list.sort((a, b) => { const x = f(a), y = f(b); return (x < y ? -1 : x > y ? 1 : 0) * (sort.asc ? 1 : -1); });
-            el.querySelector('#tx-table tbody').innerHTML = list.map(r => `<tr>
-                <td style="white-space:nowrap">${esc(r.Date)}</td>
-                <td title="${esc(r.Description)}">${esc(r['Cleaned Merchant'] || r.Description)}</td>
-                <td class="${r._amt > 0 ? 'income-amt' : 'expense-amt'}">${money(r._amt, r._amt > 0)}</td>
-                <td><span class="cat-badge">${esc(r['AI Category'])}</span></td>
-                <td>${r.Notes?.trim() ? `<span class="note-text">${esc(r.Notes)}</span>` : ''}</td></tr>`).join('');
-            const spent = list.filter(r => r['AI Category'] !== 'Income').reduce((a, r) => a + r._amt, 0);
-            el.querySelector('#tx-count').textContent = `${list.length} transaction${list.length === 1 ? '' : 's'} · net ${money(spent)} excl. income`;
-        };
-        txMonth.onchange = () => { fillCats(); drawTable(); };
-        txCat.onchange = drawTable;
-        txQ.oninput = drawTable;
-        el.querySelectorAll('#tx-table th[data-sort]').forEach(th => th.onclick = () => {
-            sort = { key: th.dataset.sort, asc: sort.key === th.dataset.sort ? !sort.asc : true };
-            el.querySelectorAll('#tx-table th[data-sort]').forEach(h => { h.textContent = h.textContent.replace(/ [↕↑↓]$/, ' ↕'); });
-            th.textContent = th.textContent.replace(/ [↕↑↓]$/, sort.asc ? ' ↑' : ' ↓');
-            drawTable();
+        // Tables
+        const sumOf = (list, f) => list.reduce((a, r) => a + f(r), 0);
+        const monthCol = { id: 'month', label: 'Month', value: r => r.ym, text: monthLabel, sortLabels: ['Oldest → Newest', 'Newest → Oldest'] };
+
+        dataTable(el.querySelector('#t-cash'), {
+            columns: [
+                monthCol,
+                moneyColumn('inc', 'Income', r => r.income),
+                moneyColumn('exp', 'Expenses', r => Math.abs(r.expenses)),
+                { ...moneyColumn('net', 'Net', r => r.net), tdClass: r => (r.net >= 0 ? 'positive' : 'negative') },
+            ],
+            rows: rep.monthly,
+            sort: { col: 'month', dir: 'asc' },
+            footer: (list, filtered) => {
+                const net = sumOf(list, r => r.net);
+                return `<tr class="total-row"><td><strong>Total${filtered ? ' (filtered)' : ''}</strong></td>
+                    <td class="amt"><strong>${money(sumOf(list, r => r.income))}</strong></td>
+                    <td class="amt"><strong>${money(sumOf(list, r => Math.abs(r.expenses)))}</strong></td>
+                    <td class="amt ${net >= 0 ? 'positive' : 'negative'}"><strong>${money(net)}</strong></td></tr>`;
+            },
         });
-        fillCats();
-        drawTable();
+
+        dataTable(el.querySelector('#t-cat'), {
+            columns: [
+                { ...monthCol, cell: r => `<strong>${esc(monthLabel(r.ym))}</strong>` },
+                ...rep.categories.map(c => ({
+                    ...moneyColumn('c:' + c, c, r => Math.abs(rep.trends[r.ym][c])),
+                    cell: r => { const v = Math.abs(rep.trends[r.ym][c]); return v ? esc(money(v)) : '<span class="zero">-</span>'; },
+                })),
+            ],
+            rows: rep.months.map(ym => ({ ym })),
+            sort: { col: 'month', dir: 'asc' },
+            footer: (list, filtered) => `<tr class="total-row"><td><strong>Total${filtered ? ' (filtered)' : ''}</strong></td>${rep.categories.map(c =>
+                `<td class="amt"><strong>${money(Math.abs(sumOf(list, r => rep.trends[r.ym][c])))}</strong></td>`).join('')}</tr>`,
+        });
+
+        const txMonth = el.querySelector('#tx-month'), txQ = el.querySelector('#tx-q');
+        txMonth.value = allTxMonths.at(-1) ?? '';
+        const tx = dataTable(el.querySelector('#t-tx'), {
+            columns: [
+                dateColumn('date', 'Date', r => r.Date),
+                { id: 'merchant', label: 'Merchant', value: r => r['Cleaned Merchant'] || r.Description || '',
+                    cell: r => `<span title="${esc(r.Description)}">${esc(r['Cleaned Merchant'] || r.Description)}</span>` },
+                moneyColumn('amt', 'Amount', r => r._amt, { signed: true }),
+                categoryColumn('cat', 'Category', r => r['AI Category']),
+                { id: 'notes', label: 'Notes', value: r => (r.Notes ?? '').trim(), cell: r => r.Notes?.trim() ? `<span class="note-text">${esc(r.Notes)}</span>` : '' },
+            ],
+            rows,
+            sort: { col: 'date', dir: 'asc' },
+            rowLimit: 500,
+            onChange: list => {
+                const net = list.filter(r => r['AI Category'] !== 'Income').reduce((a, r) => a + r._amt, 0);
+                el.querySelector('#tx-count').textContent = `${list.length} transaction${list.length === 1 ? '' : 's'} · net ${money(net)} excl. income`;
+            },
+        });
+        const applyTxFilter = () => {
+            const q = txQ.value.trim().toLowerCase();
+            tx.setFilter(r => (!txMonth.value || r._ym === txMonth.value)
+                && (!q || `${r['Cleaned Merchant']} ${r.Description} ${r.Notes}`.toLowerCase().includes(q)));
+        };
+        txMonth.onchange = applyTxFilter;
+        txQ.oninput = applyTxFilter;
+        applyTxFilter();
 
         // AI analysis
         el.querySelector('#ai-run').onclick = async () => {
@@ -208,5 +210,6 @@ export default {
     destroy() {
         if (onResize) window.removeEventListener('resize', onResize);
         onResize = null;
+        closeFilterMenu();
     },
 };

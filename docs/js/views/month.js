@@ -1,9 +1,10 @@
 import { PATHS, readTable, loadConfig, parseConfig, keyOf } from '../data.js';
 import { computeProjection, statusBadge } from '../finance.js';
 import { lastSources } from '../workflow.js';
-import { MONTH_NAMES } from '../dates.js';
+import { MONTH_NAMES, parseDate, yearMonth } from '../dates.js';
 import { esc, money } from '../util.js';
 import { requireFolder } from '../app.js';
+import { dataTable, dateColumn, moneyColumn, categoryColumn, closeFilterMenu } from '../datatable.js';
 
 async function loadProjection() {
     const cfg = await loadConfig();
@@ -11,7 +12,13 @@ async function loadProjection() {
     const processed = await readTable(PATHS.processed);
     if (!processed) return { error: 'No processed current month yet — run step 3 on the <a href="#workflow">Workflow</a> page.' };
     const master = await readTable(PATHS.master);
-    return computeProjection({ config: parseConfig(cfg), rows: processed.rows, masterRows: master?.rows });
+    // If the file is for a month that has already ended, show that month as complete instead of
+    // scaling its full spending by today's day-of-month.
+    const latest = processed.rows.map(r => parseDate(r.Date)).filter(Boolean).sort((a, b) => b - a)[0];
+    const now = new Date();
+    const ended = latest && yearMonth(latest) < yearMonth(now);
+    const today = ended ? new Date(latest.getFullYear(), latest.getMonth() + 1, 0) : now;
+    return { ...computeProjection({ config: parseConfig(cfg), rows: processed.rows, masterRows: master?.rows, today }), ended };
 }
 
 const SOURCE_TAGS = {
@@ -33,7 +40,6 @@ export default {
         const label = `${MONTH_NAMES[p.today.getMonth()]} ${p.today.getFullYear()}`;
         const sdColor = p.surplus >= 0 ? 'var(--green)' : 'var(--red)';
         const hasSources = lastSources.size > 0;
-        const rows = [...p.rows].sort((a, b) => (a._date?.getTime() ?? 0) - (b._date?.getTime() ?? 0));
 
         el.innerHTML = `
             <div class="row" style="margin-bottom:6px">
@@ -41,7 +47,8 @@ export default {
                 <span class="spacer"></span>
                 <button id="reload">Refresh</button>
             </div>
-            <p class="lead">Day ${p.daysElapsed} of ${p.daysInMonth} · ${p.pctMonth}% through the month</p>
+            <p class="lead">${p.ended ? 'Completed month: totals are actual, not projected.' : `Day ${p.daysElapsed} of ${p.daysInMonth} · ${p.pctMonth}% through the month`}</p>
+            ${p.ended ? `<div class="banner">This file is for ${esc(label)}, which has ended. Add this month's bank export on <a href="#home">Setup</a> to see a live projection, or close ${esc(label)} with <a href="#workflow">Workflow → step 4</a>.</div>` : ''}
 
             <div class="cards">
                 <div class="card"><div class="label">Expected Income</div><div class="value" style="color:#2980b9">${money(p.income)}</div><div class="sub">per month, from config</div></div>
@@ -56,60 +63,71 @@ export default {
                 <p class="note">Variable spending is projected by scaling your current pace to the full month: (spent ÷ ${p.daysElapsed} days) × ${p.daysInMonth} days.</p>
             </section>
 
-                <section>
-                    <h2>Fixed Expenses <span class="sub">(from config)</span></h2>
-                    <table>
-                        <thead><tr><th>Item</th><th class="num">Monthly</th></tr></thead>
-                        <tbody>
-                            ${Object.entries(p.fixed).map(([k, v]) => `<tr><td>${esc(k.replace(/_/g, ' '))}</td><td class="amt">${money(v)}</td></tr>`).join('')}
-                            <tr class="total-row"><td><strong>Total Fixed</strong></td><td class="amt"><strong>${money(p.totalFixed)}</strong></td></tr>
-                        </tbody>
-                    </table>
-                </section>
-                <section>
-                    <h2>Variable Spending</h2>
-                    <div class="table-wrap"><table>
-                        <thead><tr><th>Category</th><th class="num">Spent</th><th class="num">Projected</th><th class="num">Avg (${p.hist.months} mo)</th><th class="num">vs Avg</th><th>Status</th></tr></thead>
-                        <tbody>
-                            ${p.variableCats.map(cat => {
-                                const spent = p.spent[cat], proj = p.projected[cat], hist = p.hist.avgs[cat] || 0;
-                                const [cls, txt] = statusBadge(proj, hist);
-                                const delta = proj - hist;
-                                return `<tr>
-                                    <td>${esc(cat)}</td>
-                                    <td class="amt">${money(spent)}</td>
-                                    <td class="amt"><strong>${money(proj)}</strong></td>
-                                    <td class="amt muted">${hist > 0 ? money(hist) : '—'}</td>
-                                    <td class="amt">${hist > 0 ? `<span style="color:${delta > 0 ? 'var(--red)' : 'var(--green)'}">${money(delta, true)}</span>` : '<span class="muted">—</span>'}</td>
-                                    <td><span class="badge ${cls}">${txt}</span></td>
-                                </tr>`;
-                            }).join('')}
-                            <tr class="total-row"><td><strong>Total</strong></td><td></td><td class="amt"><strong>${money(p.totalVariable)}</strong></td><td></td><td></td><td></td></tr>
-                        </tbody>
-                    </table></div>
-                    <p class="note">Historical average covers ${p.hist.months} completed month(s); the current month is excluded.</p>
-                </section>
-
             <section>
-                <h2>Transactions <span class="sub">(${rows.length} rows)</span><span class="spacer"></span><a href="#edit" style="font-size:0.85em;text-transform:none;letter-spacing:0">Edit categories →</a></h2>
-                <div class="table-wrap"><table>
-                    <thead><tr><th>Date</th><th>Description</th><th>Merchant</th><th class="num">Amount</th><th>Category</th>${hasSources ? '<th>Source</th>' : ''}</tr></thead>
-                    <tbody>${rows.map(r => {
-                        const cat = r['AI Category'] || '';
-                        const extra = cat === 'Credit Card' ? ' credit-card' : cat === 'Income' ? ' income' : '';
-                        return `<tr>
-                            <td style="white-space:nowrap">${esc(r.Date)}</td>
-                            <td class="desc-cell">${esc(r.Description)}</td>
-                            <td>${esc(r['Cleaned Merchant'])}</td>
-                            <td class="${r._amt > 0 ? 'income-amt' : 'expense-amt'}">${money(r._amt, r._amt > 0)}</td>
-                            <td><span class="cat-badge${extra}">${esc(cat)}</span></td>
-                            ${hasSources ? `<td>${SOURCE_TAGS[lastSources.get(keyOf(r))] || ''}</td>` : ''}
-                        </tr>`;
-                    }).join('')}</tbody>
-                </table></div>
+                <h2>Fixed Expenses <span class="sub">(from config)</span></h2>
+                <div id="t-fixed"></div>
+            </section>
+            <section>
+                <h2>Variable Spending</h2>
+                <div id="t-var"></div>
+                <p class="note">Historical average covers ${p.hist.months} completed month(s); the current month is excluded.</p>
+            </section>
+            <section>
+                <h2>Transactions <span class="sub">(${p.rows.length} rows)</span><span class="spacer"></span><a href="#edit" style="font-size:0.85em;text-transform:none;letter-spacing:0">Edit categories →</a></h2>
+                <div id="t-tx"></div>
                 ${hasSources ? `<p class="note">Source: ${SOURCE_TAGS.edited} your manual edit · ${SOURCE_TAGS.history} same category as this merchant in your history · ${SOURCE_TAGS.cache} AI-categorized on an earlier run · ${SOURCE_TAGS.ai} AI-categorized this run · ${SOURCE_TAGS.rules} override/keyword rules only</p>` : ''}
             </section>`;
 
+        const sumOf = (rows, f) => rows.reduce((a, r) => a + (f(r) || 0), 0);
+
+        dataTable(el.querySelector('#t-fixed'), {
+            columns: [
+                { id: 'item', label: 'Item', value: r => r.item },
+                moneyColumn('amt', 'Monthly', r => r.amount),
+            ],
+            rows: Object.entries(p.fixed).map(([k, v]) => ({ item: k.replace(/_/g, ' '), amount: v })),
+            footer: (rows, filtered) => `<tr class="total-row"><td><strong>Total Fixed${filtered ? ' (filtered)' : ''}</strong></td><td class="amt"><strong>${money(sumOf(rows, r => r.amount))}</strong></td></tr>`,
+            empty: 'No fixed expenses in config',
+        });
+
+        const STATUS_ORDER = { 'On track': 0, 'Watch': 1, 'Over': 2, 'No history': 3 };
+        dataTable(el.querySelector('#t-var'), {
+            columns: [
+                { id: 'cat', label: 'Category', value: r => r.cat },
+                moneyColumn('spent', 'Spent', r => r.spent),
+                moneyColumn('proj', 'Projected', r => r.proj, { bold: true }),
+                { ...moneyColumn('hist', `Avg (${p.hist.months} mo)`, r => r.hist || NaN), tdClass: () => 'muted' },
+                { ...moneyColumn('delta', 'vs Avg', r => r.hist ? r.delta : NaN),
+                    cell: r => r.hist ? `<span style="color:${r.delta > 0 ? 'var(--red)' : 'var(--green)'}">${money(r.delta, true)}</span>` : '<span class="muted">—</span>',
+                    text: v => money(v, true) },
+                { id: 'status', label: 'Status', value: r => r.status[1], sortKey: v => STATUS_ORDER[v] ?? 9,
+                    cell: r => `<span class="badge ${r.status[0]}">${r.status[1]}</span>`, sortLabels: ['On track → Over', 'Over → On track'] },
+            ],
+            rows: p.variableCats.map(cat => {
+                const hist = p.hist.avgs[cat] || 0;
+                return { cat, spent: p.spent[cat], proj: p.projected[cat], hist, delta: p.projected[cat] - hist, status: statusBadge(p.projected[cat], hist) };
+            }),
+            footer: (rows, filtered) => `<tr class="total-row"><td><strong>Total${filtered ? ' (filtered)' : ''}</strong></td>
+                <td class="amt">${money(sumOf(rows, r => r.spent))}</td><td class="amt"><strong>${money(sumOf(rows, r => r.proj))}</strong></td><td></td><td></td><td></td></tr>`,
+        });
+
+        dataTable(el.querySelector('#t-tx'), {
+            columns: [
+                dateColumn('date', 'Date', r => r.Date),
+                { id: 'desc', label: 'Description', value: r => r.Description ?? '', tdClass: () => 'desc-cell' },
+                { id: 'merchant', label: 'Merchant', value: r => r['Cleaned Merchant'] ?? '' },
+                moneyColumn('amt', 'Amount', r => r._amt, { signed: true }),
+                categoryColumn('cat', 'Category', r => r['AI Category']),
+                ...(hasSources ? [{ id: 'src', label: 'Source', value: r => lastSources.get(keyOf(r)) || '', cell: r => SOURCE_TAGS[lastSources.get(keyOf(r))] || '' }] : []),
+            ],
+            rows: p.rows,
+            sort: { col: 'date', dir: 'asc' },
+        });
+
         el.querySelector('#reload').onclick = () => this.render(el);
+    },
+
+    destroy() {
+        closeFilterMenu();
     },
 };

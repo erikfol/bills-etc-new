@@ -6,6 +6,7 @@ import { parseDate, yearMonth, monthLabel } from '../dates.js';
 import { backfill, processCurrentMonth } from '../workflow.js';
 import { esc, toast } from '../util.js';
 import { refreshStatus } from '../app.js';
+import { dataTable, closeFilterMenu } from '../datatable.js';
 
 let busy = false;
 
@@ -55,12 +56,7 @@ function statusHtml(st) {
         ${st.config ? '' : `<div class="banner">No <code>config.json</code> yet, so This Month can't project. Create it on the <a href="#config">Config</a> page.</div>`}
         <details${pending.length ? ' open' : ''}>
             <summary style="cursor:pointer;color:#555;font-size:0.9em">Bank files in <code>${PATHS.pastMonths}/</code> (${st.past.length})</summary>
-            <div class="table-wrap" style="margin-top:8px"><table class="summary-table">
-                <thead><tr><th>File</th><th>Covers</th><th>Status</th></tr></thead>
-                <tbody>${st.past.slice().reverse().map(f => `<tr>
-                    <td><code>${esc(f.name)}</code></td><td>${esc(rangeLabel(f.months))}</td>
-                    <td>${f.pending ? `<span class="badge badge-warn">${f.pending} new rows</span>` : '<span class="badge badge-ok">Loaded</span>'}</td></tr>`).join('')}</tbody>
-            </table></div>
+            <div id="t-files" style="margin-top:8px"></div>
         </details>`;
 }
 
@@ -168,7 +164,19 @@ const home = {
             el.querySelector('#pick').classList.toggle('primary', !root);
             if (!root) return;
             try {
-                el.querySelector('#folder-status').innerHTML = statusHtml(await folderStatus());
+                const st = await folderStatus();
+                el.querySelector('#folder-status').innerHTML = statusHtml(st);
+                dataTable(el.querySelector('#t-files'), {
+                    columns: [
+                        { id: 'name', label: 'File', value: f => f.name, cell: f => `<code>${esc(f.name)}</code>` },
+                        { id: 'covers', label: 'Covers', value: f => f.months.at(-1) ?? '', text: monthLabel, sortLabels: ['Oldest → Newest', 'Newest → Oldest'], cell: f => esc(rangeLabel(f.months)) },
+                        { id: 'status', label: 'Status', value: f => (f.pending ? 'New rows' : 'Loaded'),
+                            cell: f => f.pending ? `<span class="badge badge-warn">${f.pending} new rows</span>` : '<span class="badge badge-ok">Loaded</span>' },
+                    ],
+                    rows: st.past,
+                    sort: { col: 'name', dir: 'desc' },
+                    empty: 'No bank files yet',
+                });
             } catch (e) {
                 el.querySelector('#folder-status').innerHTML = `<div class="banner bad">Couldn't read the folder: ${esc(e.message)}</div>`;
             }
@@ -269,6 +277,10 @@ const home = {
             showOllama();
         };
         if (ai) showOllama();
+    },
+
+    destroy() {
+        closeFilterMenu();
     },
 
     canLeave(unloading) {
