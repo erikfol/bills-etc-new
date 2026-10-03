@@ -122,6 +122,26 @@ async function renderElectric(el) {
                 </div>
             </div>
             <div class="cards kpis" id="yr-cards" style="margin-bottom:0"></div>
+            <div class="grid-2 yr-charts">
+                <div>
+                    <h3 class="chart-title">Cost by month</h3>
+                    <div class="chart-legend">
+                        <span><span class="legend-dot" style="background:#e74c3c"></span><span class="yr-this"></span> amount due</span>
+                        <span id="yr-credit-key"><span class="legend-dot" style="background:#27ae60"></span><span class="yr-this"></span> credit</span>
+                        <span id="yr-prev-key"><span class="legend-dot" style="background:#c5cbd6"></span><span class="yr-last"></span></span>
+                    </div>
+                    <canvas id="c-yr-amount" style="display:block;width:100%;height:210px"></canvas>
+                </div>
+                <div>
+                    <h3 class="chart-title">Energy by month</h3>
+                    <div class="chart-legend">
+                        <span><span class="legend-dot" style="background:#e67e22"></span>Used from the grid</span>
+                        <span><span class="legend-dot" style="background:#27ae60"></span>Sent to the grid</span>
+                    </div>
+                    <canvas id="c-yr-energy" style="display:block;width:100%;height:210px"></canvas>
+                </div>
+            </div>
+            <p class="note" style="margin-top:6px">Each bill sits in the month its service period ended.</p>
         </section>
 
         <section>
@@ -257,8 +277,43 @@ async function renderElectric(el) {
     // ── Annual averages for one year (per bill; price per kWh is the year's total ÷ its kWh) ──
     const yearList = years.map(y => y.year).sort((a, b) => a - b);
     $('#yr').innerHTML = [...yearList].reverse().map(y => `<option value="${y}">${y}</option>`).join('');
+    /** 12 monthly slots (by the month each bill ended) for one year; NaN where there's no bill. */
+    const byMonth = (y, f) => {
+        const out = Array(12).fill(NaN);
+        for (const b of bills) {
+            if (b.end.getFullYear() !== y || !Number.isFinite(f(b))) continue;
+            const m = b.end.getMonth();
+            out[m] = (Number.isFinite(out[m]) ? out[m] : 0) + f(b);
+        }
+        return out;
+    };
+    const drawYear = () => {
+        const y = rememberedYear;
+        if (y == null) return;
+        const hasPrev = yearList.includes(y - 1);
+        drawBars($('#c-yr-amount'), {
+            labels: MON,
+            series: [
+                ...(hasPrev ? [{ values: byMonth(y - 1, b => b.amount), color: '#c5cbd6', negColor: '#c5cbd6' }] : []),
+                { values: byMonth(y, b => b.amount), color: '#e74c3c', negColor: '#27ae60' },
+            ],
+            fmt: axisMoney,
+        });
+        drawBars($('#c-yr-energy'), {
+            labels: MON,
+            series: [
+                { values: byMonth(y, b => b.used), color: '#e67e22' },
+                { values: byMonth(y, b => b.received), color: '#27ae60' },
+            ],
+            fmt: axisKwh,
+        });
+    };
     const showYear = y => {
         rememberedYear = y;
+        el.querySelectorAll('.yr-this').forEach(s => { s.textContent = y; });
+        el.querySelectorAll('.yr-last').forEach(s => { s.textContent = `${y - 1} (for comparison)`; });
+        $('#yr-prev-key').hidden = !yearList.includes(y - 1);
+        $('#yr-credit-key').hidden = !bills.some(b => b.end.getFullYear() === y && b.amount < 0);
         const Y = years.find(x => x.year === y), k = yearList.indexOf(y);
         $('#yr').value = String(y);
         $('#yr-prev').disabled = k === 0;
@@ -275,6 +330,7 @@ async function renderElectric(el) {
                 '<span class="muted">year total ÷ kWh used</span>'),
             c(Y.net < 0 ? 'Year total credit' : 'Year total cost', money(Math.abs(Y.net)), `<span class="muted">all ${Y.count} bills</span>`, tone(Y.net)),
         ].join('');
+        drawYear();
     };
     $('#yr').onchange = e => showYear(+e.target.value);
     $('#yr-prev').onclick = () => showYear(yearList[yearList.indexOf(rememberedYear) - 1]);
@@ -406,8 +462,8 @@ async function renderElectric(el) {
     };
 
     if (onResize) window.removeEventListener('resize', onResize);
-    onResize = draw;
+    onResize = () => { draw(); drawYear(); };
     window.addEventListener('resize', onResize);
     show(i);
-    requestAnimationFrame(draw); // canvases have their real width once laid out
+    requestAnimationFrame(onResize); // canvases have their real width once laid out
 }

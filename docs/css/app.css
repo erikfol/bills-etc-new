@@ -340,3 +340,5 @@ h2.page-sub { font-size: 1.2em; }
 .add-preview { font-size: 0.9em; color: #555; margin: 4px 0 12px; min-height: 1.2em; }
 .ext-link { font-size: 0.85rem; font-weight: 600; text-transform: none; letter-spacing: 0; color: var(--blue-text); text-decoration: none; padding: 3px 10px; border: 1px solid var(--line-strong); border-radius: 14px; background: #fff; white-space: nowrap; }
 .ext-link:hover { background: #dde8ff; }
+.yr-charts { margin-top: 18px; }
+.chart-title { font-size: 0.9em; color: #555; margin-bottom: 8px; }
