@@ -4,20 +4,45 @@ import { readSheet, insertRow, parseBillDate, parseMoney, num, sheetDate, sheetM
 export const ELECTRIC_PATH = 'inputs/electric/master_electric.csv';
 
 /** The sheet plus its column indexes by meaning. */
-async function readElectric() {
-    const sheet = await readSheet(ELECTRIC_PATH);
-    if (!sheet) return null;
-    const { idx, head } = sheet;
-    // "kWh's used" appears twice: meter difference first, then after the multiplier (the billed amount).
-    sheet.I = {
+/** Column indexes by meaning, from a sheet read with readSheet. */
+// "kWh's used" appears twice: meter difference first, then after the multiplier (the billed amount).
+const electricColumns = ({ idx, head }) => ({
         id: idx('id'), start: idx('service date start'), end: idx('service date end'), days: idx('service days'),
         due: idx('bill due date'), curRead: idx('current kwh'), prevRead: idx('previous kwh'),
         rawUsed: head.indexOf("kwh's used"), multiplier: idx('multiplier'), used: idx("kwh's used", 'kwh used'),
         curRec: idx('current kwh (rec)'), prevRec: idx('previous kwh (rec)'),
         received: idx("kwh's recieved", "kwh's received", 'kwh received'),
         amount: idx('amount due'), perKwh: idx('price/unit'), notes: idx('notes'),
-    };
+});
+
+async function readElectric() {
+    const sheet = await readSheet(ELECTRIC_PATH);
+    if (sheet) sheet.I = electricColumns(sheet);
     return sheet;
+}
+
+/** Columns worked out from others, which the table editor fills in again when it saves a row. */
+export const ELECTRIC_CALCULATED = "Service Days, both kWh's used, kWh's recieved and price/unit";
+/**
+ * Work out a bill row's calculated cells (days, kWh used, kWh received, price/unit) again, in place — only those
+ * whose inputs are among the `changed` column indexes.
+ */
+export function recalcElectricRow(cells, sheet, changed) {
+    const I = electricColumns(sheet);
+    const touched = (...keys) => keys.some(k => changed.has(I[k]));
+    const set = (k, v) => { if (I[k] >= 0) cells[I[k]] = v; };
+    const start = parseBillDate(cells[I.start]), end = parseBillDate(cells[I.end]);
+    if (touched('start', 'end') && start && end) set('days', String(serviceDays(start, end)));
+    const cur = num(cells[I.curRead]), prev = num(cells[I.prevRead]), mult = I.multiplier >= 0 ? num(cells[I.multiplier]) : 1;
+    let used = num(cells[I.used]);
+    if (touched('curRead', 'prevRead', 'multiplier') && Number.isFinite(cur) && Number.isFinite(prev)) {
+        set('rawUsed', String(cur - prev));
+        if (Number.isFinite(mult)) { used = (cur - prev) * mult; set('used', String(used)); }
+    }
+    const curRec = num(cells[I.curRec]), prevRec = num(cells[I.prevRec]);
+    if (touched('curRec', 'prevRec') && Number.isFinite(curRec) && Number.isFinite(prevRec)) set('received', String(curRec - prevRec));
+    const amount = parseMoney(cells[I.amount]);
+    if (touched('amount', 'curRead', 'prevRead', 'multiplier', 'used') && Number.isFinite(amount) && used > 0) set('perKwh', sheetMoney(amount / used));
 }
 
 /**

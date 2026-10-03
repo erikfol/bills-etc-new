@@ -1,5 +1,7 @@
 // Utilities: one sub-page per utility (#utilities/electric, …).
-import { loadElectric, sameBillLastYear, addElectricBill, serviceDays, chargeOf, ELECTRIC_PATH } from '../electric.js';
+import {
+    loadElectric, sameBillLastYear, addElectricBill, serviceDays, chargeOf, recalcElectricRow, ELECTRIC_CALCULATED, ELECTRIC_PATH,
+} from '../electric.js';
 import { drawBars } from '../charts.js';
 import { esc, money, sum, toast } from '../util.js';
 import { requireFolder } from '../app.js';
@@ -10,6 +12,7 @@ import {
 } from './utilcommon.js';
 import renderWater from './water.js';
 import renderHeating from './heating.js';
+import { editableSheet, hasUnsavedEdits, resetUnsaved } from './sheeteditor.js';
 
 // The electric company's customer portal, where statements are downloaded.
 const ELECTRIC_PORTAL = 'https://myaccount.libertyenergyandwater.com/portal/#/login?LUNH';
@@ -35,6 +38,7 @@ const vsLastYear = (cur, prev, prevBill, opts) => vsEarlier(cur, prev, prevBill 
 export default {
     async render(el) {
         if (!requireFolder(el)) return;
+        resetUnsaved();
         const want = location.hash.split('/')[1];
         const page = SUBPAGES.find(p => p.id === want) || SUBPAGES[0];
         el.innerHTML = `
@@ -42,6 +46,14 @@ export default {
             <nav class="subnav">${SUBPAGES.map(p => `<a href="#utilities/${p.id}"${p === page ? ' class="active"' : ''}>${esc(p.label)}</a>`).join('')}</nav>
             <div id="sub"></div>`;
         await page.render(el.querySelector('#sub'));
+    },
+
+    canLeave(unloading) {
+        if (!hasUnsavedEdits()) return true;
+        if (unloading) return false;
+        if (!confirm('You have unsaved edits in a table. Leave without saving?')) return false;
+        resetUnsaved();
+        return true;
     },
 
     destroy() {
@@ -377,6 +389,7 @@ async function renderElectric(el) {
         sort: { col: 'end', dir: 'desc' },
         onChange: list => { $('#bill-count').textContent = `${list.length} bill${list.length === 1 ? '' : 's'} · from ${ELECTRIC_PATH}`; },
     });
+    editableSheet($('#t-bills'), { path: ELECTRIC_PATH, onSaved: () => renderElectric(el), recalc: recalcElectricRow, calculated: ELECTRIC_CALCULATED });
 
     // ── Add a bill: prefilled from the latest bill (readings carry over, the new period starts the next day) ──
     const form = $('#add-form'), last = bills.at(-1);

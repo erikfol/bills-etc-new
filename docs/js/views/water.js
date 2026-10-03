@@ -1,8 +1,11 @@
 // Utilities → Water: quarterly bills from inputs/water/master_water.csv.
-import { loadWater, addWaterBill, setWaterPaid, calcWater, nextQuarter, quarterDates, WATER_PATH } from '../water.js';
+import {
+    loadWater, addWaterBill, setWaterPaid, calcWater, nextQuarter, quarterDates, recalcWaterRow, WATER_CALCULATED, WATER_PATH,
+} from '../water.js';
 import { drawBars } from '../charts.js';
 import { esc, money, sum, toast } from '../util.js';
 import { dataTable } from '../datatable.js';
+import { editableSheet } from './sheeteditor.js';
 import {
     dLong, period, addMonths, today, axisMoney, axisNum, isoDate, dateOf, numOf,
     card, vsEarlier, dateCol, moneyCol, numCol, setResize, yearChips,
@@ -354,6 +357,7 @@ export default async function renderWater(el) {
         sort: { col: 'quarter', dir: 'desc' },
         onChange: list => { $('#bill-count').textContent = `${list.length} quarter${list.length === 1 ? '' : 's'} · from ${WATER_PATH}`; },
     });
+    editableSheet($('#t-bills'), { path: WATER_PATH, onSaved: () => renderWater(el), recalc: recalcWaterRow, calculated: WATER_CALCULATED });
 
     // ── Banners: a quarter to add, and anything not marked paid ──
     const last = bills.at(-1), lastDue = last.due || last.end;

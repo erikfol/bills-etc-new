@@ -18,19 +18,43 @@ export const nextQuarter = ({ q, year }) => (q === 4 ? { q: 1, year: year + 1 } 
 export const quarterDates = ({ q, year }) => [new Date(year, (q - 1) * 3, 1), new Date(year, q * 3, 0)];
 
 /** The sheet plus its column indexes by meaning. */
-async function readWater() {
-    const sheet = await readSheet(WATER_PATH);
-    if (!sheet) return null;
-    const { idx, idxStart } = sheet;
-    sheet.I = {
+/** Column indexes by meaning, from a sheet read with readSheet. */
+const waterColumns = ({ idx, idxStart }) => ({
         quarter: idx('quarter'), start: idx('bill period start'), end: idx('bill period end'), due: idx('payment due date'),
         flatRate: idx('water -- 1 flat unit(s)'), flat: idx('water -- 1 flat unit(s) cost'),
         gallons: idx('gallons used'), rate: idx('gallons charged at'), usage: idx('gallons cost'),
         fixed: idxStart('water fixed cost'), meter: idxStart('meter charge'),
         calc: idx('calc amount due'), statement: idx('true amount due'), diff: idx('diff'),
         fee: idxStart('service fee'), total: idx('total due'), paid: idxStart('paid'), paidDate: idx('date paid'),
-    };
+});
+
+async function readWater() {
+    const sheet = await readSheet(WATER_PATH);
+    if (sheet) sheet.I = waterColumns(sheet);
     return sheet;
+}
+
+/** Columns worked out from others, which the table editor fills in again when it saves a row. */
+export const WATER_CALCULATED = 'Gallons cost, Calc Amount Due, Diff and Total Due';
+/**
+ * Work out a row's calculated cells (usage, calc, diff, total) again, in place — only those whose inputs are among
+ * the `changed` column indexes, so amounts copied from the bill are left alone when you edit something else.
+ */
+export function recalcWaterRow(cells, sheet, changed) {
+    const I = waterColumns(sheet);
+    const touched = (...keys) => keys.some(k => changed.has(I[k]));
+    const m = k => parseMoney(cells[I[k]]), n = k => num(String(cells[I[k]] ?? '').replace(/[$\s]/g, '').split('/')[0]);
+    const gallons = num(cells[I.gallons]), rate = n('rate'), flat = m('flat'), fixed = m('fixed'), meter = m('meter');
+    const set = (k, v) => { if (I[k] >= 0) cells[I[k]] = v; };
+    if (touched('gallons', 'rate', 'flat', 'fixed', 'meter') && [gallons, rate, flat, fixed, meter].every(Number.isFinite)) {
+        const { usage, calc } = calcWater({ gallons, rate, flat, fixed, meter });
+        if (touched('gallons', 'rate')) set('usage', sheetMoney(usage));
+        set('calc', sheetMoney(touched('gallons', 'rate') ? calc : round2(flat + m('usage') + fixed + meter)));
+    }
+    if (touched('gallons', 'rate', 'flat', 'fixed', 'meter', 'statement') && Number.isFinite(m('calc')) && Number.isFinite(m('statement'))) {
+        set('diff', sheetMoney(round2(m('calc') - m('statement')), true));
+    }
+    if (touched('statement', 'fee') && Number.isFinite(m('statement')) && Number.isFinite(m('fee'))) set('total', sheetMoney(round2(m('statement') + m('fee'))));
 }
 
 /**

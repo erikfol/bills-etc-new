@@ -2,11 +2,12 @@
 // from inputs/heat_home/heatable_cost_trend.csv.
 import {
     loadDeliveries, loadPriceChecks, addDelivery, addPriceCheck, setPaidBack, daysBetween, seasonOf, seasonLabel,
-    HEAT_PATH, PRICE_PATH,
+    recalcDeliveryRow, DELIVERY_CALCULATED, HEAT_PATH, PRICE_PATH,
 } from '../heating.js';
 import { drawBars } from '../charts.js';
 import { esc, money, sum, toast } from '../util.js';
 import { dataTable } from '../datatable.js';
+import { editableSheet } from './sheeteditor.js';
 import {
     MON, dLong, today, axisMoney, axisNum, isoDate, dateOf, numOf,
     card, vsEarlier, dateCol, moneyCol, numCol, setResize, yearChips,
@@ -231,7 +232,7 @@ export default async function renderHeating(el) {
         $('#kpis').innerHTML = [
             card(`Cost <span class="paid-tag">${paidBadge(d)}</span>${d.isPaidBack ? '' : ` ${markBtn(d, 'Mark paid back', 'paid-btn')}`}`,
                 money(d.actual),
-                `<span class="muted">${esc(gal(d.gallons))} × ${esc(perGal(d.price))}${fees ? ` + ${esc(money(d.extra))} fees` : ''}</span><br>`
+                `<span class="muted">${esc(gal(d.gallons))} × ${esc(perGal(d.price))}${fees ? (d.extra > 0 ? ` + ${esc(money(d.extra))} fees` : ` − ${esc(money(-d.extra))} credit`) : ''}</span><br>`
                 + vsEarlier(d.actual, prev?.actual, prevLabel, { higherIsGood: false, fmt: money, none: 'first delivery on record' }), 'var(--red)'),
             card('Gallons delivered', gal(d.gallons),
                 Number.isFinite(d.days) ? `<span class="muted">${d.days} days after the previous delivery</span>` : '<span class="muted">first delivery on record</span>'),
@@ -359,6 +360,7 @@ export default async function renderHeating(el) {
         sort: { col: 'date', dir: 'desc' },
         empty: 'No Heatable price checks yet',
     });
+    editableSheet($('#t-checks'), { path: PRICE_PATH, onSaved: () => renderHeating(el) });
     const checkForm = $('#check-form');
     checkForm.date.value = isoDate(new Date());
     checkForm.onsubmit = async e => {
@@ -398,6 +400,7 @@ export default async function renderHeating(el) {
         sort: { col: 'date', dir: 'desc' },
         onChange: list => { $('#count').textContent = `${list.length} deliver${list.length === 1 ? 'y' : 'ies'} · from ${HEAT_PATH}`; },
     });
+    editableSheet($('#t-deliveries'), { path: HEAT_PATH, onSaved: () => renderHeating(el), recalc: recalcDeliveryRow, calculated: DELIVERY_CALCULATED });
 
     // ── Banners: where things stand, and deliveries not yet paid back ──
     const since = daysBetween(last.date, today());

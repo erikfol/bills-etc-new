@@ -6,7 +6,7 @@ import { readSheet, insertRow, addColumn, parseBillDate, parseMoney, num, sheetD
 export const HEAT_PATH = 'inputs/heat_home/master_heat_home.csv';
 export const PRICE_PATH = 'inputs/heat_home/heatable_cost_trend.csv';
 
-const round2 = n => Math.round(n * 100) / 100;
+const round2 = n => Math.round((n + Math.sign(n) * 1e-9) * 100) / 100; // 4.93 × 148.5 = 732.105 → 732.11
 const DAY = 864e5;
 export const daysBetween = (a, b) => Math.round((b - a) / DAY);
 
@@ -16,18 +16,39 @@ export const seasonOf = d => (d.getMonth() >= 6 ? d.getFullYear() : d.getFullYea
 export const seasonLabel = y => `${y}–${String(y + 1).slice(2)}`;
 
 /** The deliveries sheet plus its column indexes by meaning. */
-async function readDeliveries() {
-    const sheet = await readSheet(HEAT_PATH);
-    if (!sheet) return null;
-    const { idx, idxStart } = sheet;
-    sheet.I = {
+/** Column indexes by meaning, from a sheet read with readSheet. */
+const deliveryColumns = ({ idx, idxStart }) => ({
         date: idx('date delivered'), last: idx('last delivery'), days: idxStart('days since'),
         provider: idx('provider'), price: idx('price/gal'), gallons: idx('gallons'),
         calc: idx('calc price'), actual: idx('actual price'), extra: idx('extra fees'),
         perDay: idx('gal/day used'), notes: idx('notes'), paidBack: idxStart('paid cc back'),
         paidBackDate: idx('date paid back'),
-    };
+});
+
+async function readDeliveries() {
+    const sheet = await readSheet(HEAT_PATH);
+    if (sheet) sheet.I = deliveryColumns(sheet);
     return sheet;
+}
+
+/** Columns worked out from others, which the table editor fills in again when it saves a row. */
+export const DELIVERY_CALCULATED = 'Days since last delivery, Calc Price, Extra Fees and Gal/Day Used';
+/**
+ * Work out a delivery row's calculated cells (days, calc price, extra fees, gal/day) again, in place — only those
+ * whose inputs are among the `changed` column indexes.
+ */
+export function recalcDeliveryRow(cells, sheet, changed) {
+    const I = deliveryColumns(sheet);
+    const touched = (...keys) => keys.some(k => changed.has(I[k]));
+    const set = (k, v) => { if (I[k] >= 0) cells[I[k]] = v; };
+    const date = parseBillDate(cells[I.date]), last = parseBillDate(cells[I.last]);
+    const price = parseMoney(cells[I.price]), gallons = num(cells[I.gallons]), actual = parseMoney(cells[I.actual]);
+    const days = date && last ? daysBetween(last, date) : NaN;
+    if (touched('date', 'last') && Number.isFinite(days)) set('days', String(days));
+    if (touched('price', 'gallons') && Number.isFinite(price) && Number.isFinite(gallons)) set('calc', sheetMoney(round2(price * gallons)));
+    const calc = parseMoney(cells[I.calc]);
+    if (touched('price', 'gallons', 'actual') && Number.isFinite(actual) && Number.isFinite(calc)) set('extra', `$${round2(actual - calc).toFixed(2)}`);
+    if (touched('date', 'last', 'gallons') && days > 0 && Number.isFinite(gallons)) set('perDay', (gallons / days).toFixed(2));
 }
 
 /**

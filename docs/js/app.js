@@ -14,6 +14,7 @@ const VIEWS = { home, workflow, month, dashboard, utilities, edit, config };
 const viewEl = document.getElementById('view');
 let current = null;
 let currentName = null;
+let currentHash = null; // full hash, so moving between sub-pages (#utilities/water) also asks canLeave
 
 export async function refreshStatus() {
     const f = document.getElementById('st-folder');
@@ -58,14 +59,16 @@ export function requireFolder(el) {
 
 async function route(force = false) {
     const name = (location.hash.slice(1) || 'home').split('/')[0]; // '#utilities/electric' → utilities view
-    if (!force && current?.canLeave && name !== currentName && !current.canLeave()) {
-        history.replaceState(null, '', '#' + currentName);
+    const hash = location.hash || '#home';
+    if (!force && current?.canLeave && hash !== currentHash && !current.canLeave()) {
+        history.replaceState(null, '', currentHash || '#' + currentName);
         return;
     }
     const view = VIEWS[name] || VIEWS.home;
     current?.destroy?.();
     current = view;
     currentName = VIEWS[name] ? name : 'home';
+    currentHash = hash;
     document.querySelectorAll('#nav a').forEach(a => a.classList.toggle('active', a.getAttribute('href') === '#' + currentName));
     viewEl.innerHTML = '';
     try {

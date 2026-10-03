@@ -358,3 +358,13 @@ h2.page-sub { font-size: 1.2em; }
 .chart-tip { position: fixed; z-index: 200; pointer-events: none; background: #1a1a2e; color: #fff; border-radius: 6px; padding: 7px 10px; font-size: 0.82em; line-height: 1.5; box-shadow: 0 4px 14px rgba(0,0,0,0.2); white-space: nowrap; }
 .chart-tip .tip-head { font-weight: 600; margin-bottom: 2px; color: #cfd6e6; }
 .tip-dot { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 6px; vertical-align: 0; }
+/* Edit mode for the utility sheets */
+.table-tools { gap: 8px; margin-bottom: 8px; font-size: 0.9em; }
+.sheet-grid .table-wrap { max-height: 450px; overflow: auto; border: 1px solid var(--line-strong); border-radius: 6px; }
+.sheet-table th { position: sticky; top: 0; z-index: 1; font-size: 0.85em; }
+.sheet-table td { padding: 2px 4px; }
+.sheet-table input { font: inherit; font-size: 0.88em; padding: 3px 6px; border: 1px solid transparent; border-radius: 4px; background: transparent; width: auto; }
+.sheet-table input:hover { border-color: var(--line-strong); background: #fff; }
+.sheet-table input:focus { border-color: var(--blue); background: #fff; }
+.sheet-table input.changed { background: #fffbea; border-color: #f5e1a4; }
+.sheet-table .rownum { color: var(--faint); font-size: 0.8em; text-align: right; }
