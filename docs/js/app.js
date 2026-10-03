@@ -66,6 +66,16 @@ async function route(force = false) {
         history.replaceState(null, '', currentHash || '#' + currentName);
         return;
     }
+    // A page the menu links to but this copy of the app doesn't know: the browser is running older, cached code.
+    if (name !== 'home' && !VIEWS[name] && document.querySelector(`#nav a[href="#${name}"]`)) {
+        current?.destroy?.();
+        current = null;
+        currentName = name;
+        currentHash = hash;
+        document.querySelectorAll('#nav a').forEach(a => a.classList.toggle('active', a.getAttribute('href') === '#' + name));
+        viewEl.innerHTML = `<div class="banner"><strong>This page needs the latest version of the app.</strong> Your browser is still using an older copy. Press <strong>Ctrl+F5</strong> to reload it.</div>`;
+        return;
+    }
     const view = VIEWS[name] || VIEWS.home;
     current?.destroy?.();
     current = view;
