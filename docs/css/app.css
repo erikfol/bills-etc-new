@@ -368,3 +368,9 @@ h2.page-sub { font-size: 1.2em; }
 .sheet-table input:focus { border-color: var(--blue); background: #fff; }
 .sheet-table input.changed { background: #fffbea; border-color: #f5e1a4; }
 .sheet-table .rownum { color: var(--faint); font-size: 0.8em; text-align: right; }
+/* Loan/CC */
+.loan h2 .badge { font-size: 0.7em; text-transform: none; letter-spacing: 0; }
+.loan-grid { max-height: 450px; overflow: auto; border: 1px solid var(--line-strong); border-radius: 6px; }
+.loan-grid input[type=date] { width: 140px; }
+.loan-grid input[type=number] { width: 110px; }
+.loan-grid input[data-k=notes] { width: 100%; min-width: 180px; }
