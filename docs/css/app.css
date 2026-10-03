@@ -353,3 +353,4 @@ h2.page-sub { font-size: 1.2em; }
 .short-table thead th { position: sticky; top: 0; z-index: 1; }
 .paid-edit { display: inline-flex; align-items: center; gap: 4px; }
 .paid-edit input { padding: 2px 6px; font-size: 0.85em; }
+.year-chips { gap: 6px; margin-bottom: 12px; }
