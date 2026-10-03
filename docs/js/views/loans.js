@@ -1,9 +1,10 @@
 // Loan/CC: loans and credit cards you set up yourself, each with its own payments table.
 import {
     loadAccounts, addAccount, updateAccount, removeAccount, moveAccount, loadPayments, loadActivity, ledger, saveLedger, estimatePayoff,
+    interestModel, simulate, paymentFor, minimumOf, nextPaymentDate, plusMonths,
     ACCOUNT_TYPES, ACTIVITY_TYPES, LOANS_DIR, cleanUrl,
 } from '../loans.js';
-import { drawBars } from '../charts.js';
+import { drawBars, drawLines } from '../charts.js';
 import { esc, money, sum, toast } from '../util.js';
 import { requireFolder } from '../app.js';
 import { dataTable, closeFilterMenu } from '../datatable.js';
@@ -13,7 +14,17 @@ import {
 
 let editing = new Set(); // account ids being edited with unsaved changes possible
 const shortDate = d => `${MON[d.getMonth()]} ${d.getDate()} ’${String(d.getFullYear()).slice(2)}`;
-const madeBadge = p => (p.made ? '<span class="badge badge-ok">Y</span>' : '<span class="badge badge-over">N</span>');
+/** Made, Planned (date still to come) or Overdue (date has passed, not made). */
+const statusOf = p => (p.made ? 'Made' : p.date && p.date > today() ? 'Planned' : 'Overdue');
+const statusBadge = p => {
+    const st = statusOf(p);
+    return `<span class="badge ${st === 'Made' ? 'badge-ok' : st === 'Planned' ? 'badge-plan' : 'badge-over'}">${st}</span>`;
+};
+const MON_LONG = d => `${MON[d.getMonth()]} ${d.getFullYear()}`;
+/** 38 → '3 years 2 months' */
+const duration = m => { const y = Math.floor(m / 12), r = m % 12; return [y ? `${y} year${y === 1 ? '' : 's'}` : '', r ? `${r} month${r === 1 ? '' : 's'}` : ''].filter(Boolean).join(' ') || '0 months'; };
+let plannerOpen = new Set(); // accounts whose planner is unfolded
+const plannerPay = new Map(); // account id → payment being tried in the planner
 const typeIcon = t => (t === 'Credit card' ? '💳' : t === 'Loan' ? '🏦' : '📄');
 const DAY = 864e5;
 /** '1234 5678 9012 4421' → '•••• 4421' */
@@ -194,6 +205,11 @@ function renderAccount(sec, account, rawPayments, rawActivity, { first, last, re
                     + `${activity.length} activity entr${activity.length === 1 ? 'y' : 'ies'}</span>`)}
             </div>
             ${L.points.length > 1 ? '<h3 class="chart-title">Balance over time</h3><canvas class="c-bal" style="display:block;width:100%;height:200px;margin-bottom:14px"></canvas>' : ''}
+            <div class="insights"></div>
+            <details class="planner"${plannerOpen.has(account.id) ? ' open' : ''}>
+                <summary>📉 Payoff planner and burn-down</summary>
+                <div class="planner-body"></div>
+            </details>
             <div class="loan-tables">
                 <div>
                     <h3 class="chart-title">Payments</h3>
@@ -244,11 +260,12 @@ function renderAccount(sec, account, rawPayments, rawActivity, { first, last, re
             moneyCol('payment', 'Payment', p => p.payment),
             moneyCol('before', 'Before', p => p.before),
             { ...moneyCol('after', 'After', p => p.after), tdClass: p => `nowrap${p.made ? '' : ' muted'}` },
-            { id: 'made', label: 'Made', value: p => (p.made ? 'Y' : 'N'), cell: madeBadge },
+            { id: 'made', label: 'Status', value: statusOf, cell: statusBadge },
             { id: 'notes', label: 'Notes', value: p => p.notes, tdClass: () => 'note-text' },
         ],
         rows: payments,
         sort: { col: 'date', dir: 'desc' },
+        rowClass: p => (statusOf(p) === 'Planned' ? 'planned-row' : ''),
         empty: 'No payments yet',
     });
     dataTable($('.t-act'), {
@@ -333,6 +350,9 @@ function renderAccount(sec, account, rawPayments, rawActivity, { first, last, re
             toast(`Save failed: ${err.message}. Is the file open in Excel?`, 'bad');
         }
     };
+
+    // ── Insights and the payoff planner ──
+    const drawPlanner = renderPlanner(sec, account, L, P, rerender);
 
     // ── Account number: masked until "show" ──
     const tog = $('.acct-num-toggle');
@@ -469,5 +489,166 @@ function renderAccount(sec, account, rawPayments, rawActivity, { first, last, re
         }
     });
 
-    return draw;
+    return () => { draw(); drawPlanner(); };
+}
+
+/**
+ * Insights (a few plain sentences) and the planner: try a monthly payment or a payoff month, see the burn-down
+ * (actual balance so far, your plan, minimum only), compare scenarios, and save a payment as the planned one.
+ * Returns the burn-down redraw.
+ */
+function renderPlanner(sec, account, L, P, rerender) {
+    const $ = s => sec.querySelector(s);
+    const model = interestModel(account, L);
+    const balance = L.balanceNow, minimum = minimumOf(L), start = nextPaymentDate(L);
+    const limit = Number(account.creditLimit);
+    const overdue = L.payments.filter(p => statusOf(p) === 'Overdue');
+    const sim = pay => simulate(balance, pay, model);
+    const payoffMonth = s => MON_LONG(plusMonths(start, s.months - 1));
+
+    // ── Insights ──
+    const tips = [];
+    if (!(balance > 0.005)) tips.push('🎉 <strong>Paid off.</strong> The balance is zero.');
+    else {
+        if (P.status === 'ok') {
+            tips.push(`At <strong>${esc(money(P.payment))}</strong> a month (${esc(P.basis)}) you'll be debt-free by <strong>${esc(MON_LONG(P.date))}</strong>, after ${P.months} payment${P.months === 1 ? '' : 's'}${P.interest > 0.5 ? ` and about <strong>${esc(money(P.interest))}</strong> in interest` : ''}.`);
+            const more = sim(P.payment + 50);
+            if (more.status === 'ok' && more.months < P.months) {
+                const saved = P.interest - more.interest;
+                tips.push(`Paying $50 more (${esc(money(P.payment + 50))}) finishes ${duration(P.months - more.months)} sooner${saved > 0.5 ? ` and saves about ${esc(money(saved))} in interest` : ''}.`);
+            }
+        } else if (P.status === 'never') {
+            tips.push(`<span class="delta-bad">At ${esc(money(P.payment))} a month the balance never goes down</span>: the interest is about ${esc(money(P.monthlyInterest))} a month. Try a bigger payment in the planner below.`);
+        }
+        if (Number.isFinite(minimum) && !(P.status === 'ok' && minimum >= P.payment)) {
+            const m = sim(minimum);
+            tips.push(m.status === 'ok'
+                ? `Paying only the ${esc(money(minimum))} minimum would take ${duration(m.months)}${m.interest > 0.5 ? ` and cost about ${esc(money(m.interest))} in interest` : ''}.`
+                : `Paying only the ${esc(money(minimum))} minimum wouldn't pay it off at this interest.`);
+        }
+        const firstInterest = model.rate ? balance * model.rate : model.flat;
+        if (firstInterest > 0.005 && P.payment > 0) tips.push(`About ${esc(money(firstInterest))} of your next payment goes to interest (${Math.round(firstInterest / P.payment * 100)}%).`);
+        if (limit > 0) {
+            const used = balance / limit;
+            tips.push(`You're using ${Math.round(used * 100)}% of your ${esc(money(limit))} limit${used > 0.3 ? `; getting it under 30% (below ${esc(money(limit * 0.3))}) is better for your credit score` : ', under the 30% that helps your credit score'}.`);
+        }
+        if (!(Number(account.apr) > 0)) tips.push(`<span class="muted">Add the APR in Edit to make these estimates more accurate (now: ${esc(model.text)}).</span>`);
+    }
+    if (overdue.length) tips.push(`<span class="delta-bad">${overdue.length} payment${overdue.length === 1 ? ' is' : 's are'} past ${overdue.length === 1 ? 'its' : 'their'} date and not marked made</span> (${overdue.map(p => esc(dLong(p.date))).join(', ')}).`);
+    $('.insights').innerHTML = tips.length ? `<h3 class="chart-title">Insights</h3><ul class="insight-list">${tips.map(t => `<li>${t}</li>`).join('')}</ul>` : '';
+
+    const details = $('.planner'), body = $('.planner-body');
+    details.ontoggle = () => { details.open ? plannerOpen.add(account.id) : plannerOpen.delete(account.id); if (details.open) requestAnimationFrame(drawBurn); };
+    if (!(balance > 0.005)) { body.innerHTML = '<p class="muted">Nothing to plan: the balance is zero.</p>'; return () => {}; }
+
+    const basePay = P.payment > 0 ? P.payment : Number.isFinite(minimum) ? minimum : Math.max(25, Math.ceil(balance / 24));
+    const floor = Math.ceil((model.rate ? balance * model.rate : model.flat) + 1);
+    const maxPay = Math.max(Math.ceil(balance * 1.02 + floor), Math.ceil(basePay * 3));
+    body.innerHTML = `
+        <div class="row planner-controls">
+            <label class="field">Monthly payment ($)<input type="number" name="pay" min="${floor}" step="1"></label>
+            <input type="range" name="payRange" min="${Math.max(1, floor)}" max="${maxPay}" step="1" aria-label="Monthly payment">
+            <label class="field">…or paid off by<input type="month" name="target"></label>
+            <span class="spacer"></span>
+            <button type="button" class="small primary" data-use-plan>Use as my planned payment</button>
+        </div>
+        <p class="planner-result"></p>
+        <div class="chart-legend">
+            <span><span class="legend-dot" style="background:#1a1a2e"></span>Actual balance</span>
+            <span><span class="legend-dot" style="background:#4a90d9"></span>Your plan</span>
+            ${Number.isFinite(minimum) ? '<span><span class="legend-line" style="border-top-color:#b0b8c8"></span>Minimum only</span>' : ''}
+        </div>
+        <canvas class="c-burn" style="display:block;width:100%;height:260px"></canvas>
+        <h3 class="chart-title" style="margin-top:14px">Scenarios <span class="muted" style="font-weight:400">click one to try it</span></h3>
+        <div class="table-wrap"><table class="scen-table"><thead><tr>
+            <th>Monthly payment</th><th>Paid off</th><th class="num">Payments</th><th class="num">Total interest</th><th class="num">Saved vs minimum</th>
+        </tr></thead><tbody></tbody></table></div>
+        <p class="note">Estimates assume no new charges, ${esc(model.text)}, and payments starting ${esc(dLong(start))}.</p>`;
+    const payIn = body.querySelector('[name=pay]'), range = body.querySelector('[name=payRange]'), target = body.querySelector('[name=target]');
+
+    // Actual balance at the end of each month so far (from the ledger), then "Now".
+    const monthKey = d => d.getFullYear() * 12 + d.getMonth();
+    const nowKey = monthKey(today());
+    const firstKey = L.points.length ? Math.min(...L.points.map(p => monthKey(p.date))) : nowKey;
+    const history = [];
+    for (let k = firstKey; k < nowKey; k++) {
+        const end = new Date(Math.floor(k / 12), (k % 12) + 1, 0);
+        const before = L.points.filter(p => p.date <= end);
+        if (before.length) history.push({ label: `${MON[k % 12]} ’${String(Math.floor(k / 12)).slice(2)}`, value: before.at(-1).balance });
+    }
+    let current = basePay;
+    const drawBurn = () => {
+        const c = body.querySelector('.c-burn');
+        if (!details.open || !c) return;
+        const plan = sim(current), minS = Number.isFinite(minimum) ? sim(minimum) : null;
+        const planLen = plan.status === 'ok' ? plan.months : 120;
+        const minLen = minS ? (minS.status === 'ok' ? minS.months : 120) : 0;
+        const len = Math.max(planLen, Math.min(minLen, Math.max(planLen * 2, 60), 240));
+        const months = Array.from({ length: len }, (_, k) => plusMonths(start, k));
+        const labels = [...history.map(h => h.label), 'Now', ...months.map(d => `${MON[d.getMonth()]} ’${String(d.getFullYear()).slice(2)}`)];
+        const H = history.length;
+        const proj = s => [...Array(H).fill(NaN), balance, ...months.map((_, k) => (k < s.balances.length ? s.balances[k] : s.status === 'ok' ? NaN : NaN))];
+        drawLines(c, {
+            labels,
+            series: [
+                { name: 'Actual balance', values: [...history.map(h => h.value), balance, ...months.map(() => NaN)], color: '#1a1a2e', width: 2.5 },
+                ...(minS ? [{ name: `Minimum only (${money(minimum)})`, values: proj(minS), color: '#b0b8c8', dash: [6, 4] }] : []),
+                { name: `Your plan (${money(current)})`, values: proj(plan), color: '#4a90d9', width: 2.5 },
+            ],
+            fmt: v => '$' + Math.round(v).toLocaleString('en-US'), tipFmt: money, markIndex: H,
+            tipHead: i => (i === H ? `Now · ${dLong(today())}` : i > H ? `Payment ${i - H} · ${dLong(months[i - H - 1])}` : labels[i]),
+        });
+    };
+    const update = (pay, from) => {
+        current = Math.max(1, Math.round(pay * 100) / 100);
+        plannerPay.set(account.id, current);
+        if (from !== 'pay') payIn.value = current.toFixed(2);
+        if (from !== 'range') range.value = Math.round(current);
+        const s = sim(current);
+        if (from !== 'target') target.value = s.status === 'ok' ? (d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`)(plusMonths(start, s.months - 1)) : '';
+        const base = sim(basePay);
+        body.querySelector('.planner-result').innerHTML = s.status === 'ok'
+            ? `<strong>${esc(money(current))}</strong> a month → debt-free by <strong>${esc(payoffMonth(s))}</strong> · ${s.months} payment${s.months === 1 ? '' : 's'}`
+                + `${s.interest > 0.5 ? ` · about ${esc(money(s.interest))} interest` : ''}`
+                + (base.status === 'ok' && Math.abs(current - basePay) >= 0.01
+                    ? ` <span class="${s.months < base.months ? 'delta-good' : 'delta-bad'}">(${s.months === base.months ? 'same finish' : `${duration(Math.abs(base.months - s.months))} ${s.months < base.months ? 'sooner' : 'later'}`}${Math.abs(base.interest - s.interest) > 0.5 ? `, ${esc(money(Math.abs(base.interest - s.interest)))} ${s.interest < base.interest ? 'less' : 'more'} interest` : ''} than ${esc(money(basePay))})</span>` : '')
+            : `<span class="delta-bad">${esc(money(current))} a month doesn't cover the interest (about ${esc(money(s.monthlyInterest))}), so the balance never goes down.</span>`;
+        body.querySelector('[data-use-plan]').disabled = Math.abs(current - (Number(account.planPayment) || 0)) < 0.01;
+        drawBurn();
+    };
+    payIn.oninput = () => { const v = numOf(payIn.value); if (v > 0) update(v, 'pay'); };
+    range.oninput = () => update(+range.value, 'range');
+    target.oninput = () => {
+        const m = target.value.match(/^(\d{4})-(\d{2})$/);
+        if (!m) return;
+        const months = (+m[1] * 12 + (+m[2] - 1)) - (start.getFullYear() * 12 + start.getMonth()) + 1;
+        if (months < 1) { toast('Pick a month after the next payment', 'bad'); return; }
+        update(Math.ceil(paymentFor(balance, months, model) * 100) / 100, 'target');
+    };
+    body.querySelector('[data-use-plan]').onclick = async () => {
+        await updateAccount(account.id, { planPayment: current });
+        toast(`${account.title}: planned payment set to ${money(current)} a month`, 'ok');
+        rerender();
+    };
+
+    // ── Scenarios ──
+    const pays = [...new Set([minimum, basePay, basePay + 25, basePay + 50, basePay + 100, basePay * 2]
+        .filter(v => Number.isFinite(v) && v > 0).map(v => Math.round(v * 100) / 100))].sort((a, b) => a - b);
+    const minSim = Number.isFinite(minimum) ? sim(minimum) : null;
+    body.querySelector('.scen-table tbody').innerHTML = pays.map(v => {
+        const s = sim(v);
+        const tag = v === minimum ? ' <span class="badge badge-neutral">minimum</span>' : v === basePay ? ' <span class="badge badge-plan">current</span>' : '';
+        const saved = minSim?.status === 'ok' && s.status === 'ok' ? minSim.interest - s.interest : NaN;
+        return `<tr data-pay="${v}" class="scen-row">
+            <td class="nowrap"><strong>${esc(money(v))}</strong>${tag}</td>
+            <td class="nowrap">${s.status === 'ok' ? esc(payoffMonth(s)) : '<span class="delta-bad">never</span>'}</td>
+            <td class="amt">${s.status === 'ok' ? `${s.months} <span class="muted">(${duration(s.months)})</span>` : '–'}</td>
+            <td class="amt">${s.status === 'ok' ? esc(money(s.interest)) : '–'}</td>
+            <td class="amt">${saved > 0.5 ? `<span class="delta-good">${esc(money(saved))}</span>` : minSim && minSim.status !== 'ok' && s.status === 'ok' ? '<span class="delta-good">pays it off</span>' : '–'}</td>
+        </tr>`;
+    }).join('');
+    body.querySelectorAll('.scen-row').forEach(tr => { tr.onclick = () => update(+tr.dataset.pay); });
+
+    update(plannerPay.get(account.id) || basePay);
+    return drawBurn;
 }

@@ -270,3 +270,66 @@ function bindTip(canvas) {
     });
     canvas.addEventListener('mouseleave', hideTip);
 }
+
+/**
+ * Line chart for values over time. series: [{ name, values (NaN = no point), color, dash?: [6, 4], width? }].
+ * markIndex draws a dashed "Today" line at that label. Hover shows every series' value at the nearest label
+ * (tipFmt(value), tipHead(i) → title).
+ */
+export function drawLines(canvas, { labels, series, fmt = kFmt, tipFmt = null, tipHead = null, markIndex = -1, markText = 'Today' }) {
+    const s = setup(canvas);
+    const n = labels.length;
+    canvas._tip = null;
+    if (!s || !n) return;
+    const { ctx, W, H } = s;
+    const pad = { top: 18, right: 16, bottom: 30, left: 64 };
+    const chartW = W - pad.left - pad.right, chartH = H - pad.top - pad.bottom;
+    const all = series.flatMap(x => x.values.filter(Number.isFinite));
+    const maxVal = niceMax(Math.max(1, ...all) * 1.05);
+    yGrid(ctx, pad, chartW, chartH, maxVal);
+    const xOf = i => pad.left + (n === 1 ? chartW / 2 : i * chartW / (n - 1));
+    const yOf = v => pad.top + chartH - (Math.max(0, v) / maxVal) * chartH;
+
+    ctx.font = `11px ${FONT}`;
+    ctx.fillStyle = '#888';
+    ctx.textAlign = 'center';
+    const every = Math.ceil(n / Math.max(1, Math.floor(chartW / 64)));
+    labels.forEach((l, i) => { if (i % every === 0 || i === n - 1) ctx.fillText(l, xOf(i), pad.top + chartH + 18); });
+
+    if (markIndex >= 0 && markIndex < n) {
+        ctx.save();
+        ctx.strokeStyle = '#1a1a2e';
+        ctx.globalAlpha = 0.35;
+        ctx.setLineDash([4, 4]);
+        ctx.beginPath(); ctx.moveTo(xOf(markIndex), pad.top); ctx.lineTo(xOf(markIndex), pad.top + chartH); ctx.stroke();
+        ctx.restore();
+        ctx.fillStyle = '#555';
+        ctx.fillText(markText, xOf(markIndex), pad.top - 6);
+    }
+
+    for (const ser of series) {
+        ctx.save();
+        ctx.strokeStyle = ser.color;
+        ctx.lineWidth = ser.width || 2;
+        if (ser.dash) ctx.setLineDash(ser.dash);
+        ctx.beginPath();
+        let on = false;
+        ser.values.forEach((v, i) => {
+            if (!Number.isFinite(v)) { on = false; return; }
+            on ? ctx.lineTo(xOf(i), yOf(v)) : ctx.moveTo(xOf(i), yOf(v));
+            on = true;
+        });
+        ctx.stroke();
+        ctx.restore();
+    }
+
+    canvas._tip = {
+        hit: x => (n === 1 ? 0 : Math.max(0, Math.min(n - 1, Math.round((x - pad.left) / (chartW / (n - 1)))))),
+        html: i => {
+            const lines = series.filter(x => x.name && Number.isFinite(x.values[i]))
+                .map(x => `<div><span class="tip-dot" style="background:${x.color}"></span>${esc(x.name)}: <strong>${esc((tipFmt || fmt)(x.values[i]))}</strong></div>`);
+            return lines.length ? `<div class="tip-head">${esc(tipHead ? tipHead(i) : labels[i])}</div>${lines.join('')}` : '';
+        },
+    };
+    bindTip(canvas);
+}
