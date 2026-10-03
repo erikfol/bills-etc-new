@@ -4,6 +4,11 @@ import { drawBars } from '../charts.js';
 import { esc, money, sum, toast } from '../util.js';
 import { requireFolder } from '../app.js';
 import { dataTable, closeFilterMenu } from '../datatable.js';
+import {
+    MON, dLong, period, addMonths, today, billText, billClass, axisMoney, axisNum,
+    isoDate, dateOf, numOf, card, vsEarlier, dateCol, moneyCol, setResize, clearResize,
+} from './utilcommon.js';
+import renderWater from './water.js';
 
 // The electric company's customer portal, where statements are downloaded.
 const ELECTRIC_PORTAL = 'https://myaccount.libertyenergyandwater.com/portal/#/login?LUNH';
@@ -11,35 +16,18 @@ const portalLink = `<a class="ext-link" href="${ELECTRIC_PORTAL}" target="_blank
 
 const SUBPAGES = [
     { id: 'electric', label: 'Electric', render: renderElectric },
+    { id: 'water', label: 'Water', render: renderWater },
 ];
 
-let onResize = null;
 let rememberedBill = null; // selected bill id, kept while you move between pages
 let rememberedYear = null; // selected year in Annual averages
 
-const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-const dShort = d => `${MON[d.getMonth()]} ${d.getDate()}`;
-const dLong = d => `${MON[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
-const period = b => b.start ? `${dShort(b.start)}${b.start.getFullYear() !== b.end.getFullYear() ? ', ' + b.start.getFullYear() : ''} – ${dLong(b.end)}` : dLong(b.end);
-/** Same day next month, kept within the month (Jan 31 → Feb 28). */
-const addMonth = d => new Date(d.getFullYear(), d.getMonth() + 1, Math.min(d.getDate(), new Date(d.getFullYear(), d.getMonth() + 2, 0).getDate()));
 const barLabel = b => `${MON[b.end.getMonth()]} ’${String(b.end.getFullYear()).slice(2)}`;
 const kwh = n => Number.isFinite(n) ? `${Math.round(n).toLocaleString('en-US')} kWh` : '–';
-/** Bill amounts: credits read as "$1,003.21 credit" rather than a minus sign. */
-const billText = v => v < 0 ? `${money(-v)} credit` : money(v);
-const billClass = v => v < 0 ? 'income-amt' : '';
-const axisMoney = v => (v < 0 ? '-$' : '$') + Math.abs(v).toLocaleString('en-US', { maximumFractionDigits: 0 });
-const axisKwh = v => Math.round(v).toLocaleString('en-US');
+const axisKwh = axisNum;
 
-/** "▲ 120 kWh more than last year (Aug ’25: 466 kWh)", coloured good/bad. */
-function vsLastYear(cur, prev, prevBill, { higherIsGood, fmt, fmtDiff = fmt }) {
-    if (!prevBill || !Number.isFinite(prev)) return '<span class="muted">no bill a year earlier to compare</span>';
-    const diff = cur - prev;
-    const when = `<span class="muted">than ${esc(barLabel(prevBill))} (${esc(fmt(prev))})</span>`;
-    if (Math.abs(diff) < 0.005) return `<span class="muted">same as ${esc(barLabel(prevBill))}</span>`;
-    const good = (diff > 0) === higherIsGood;
-    return `<span class="${good ? 'delta-good' : 'delta-bad'}">${diff > 0 ? '▲' : '▼'} ${esc(fmtDiff(Math.abs(diff)))} ${diff > 0 ? 'more' : 'less'}</span> ${when}`;
-}
+/** "▲ 120 kWh more than Aug ’25 (466 kWh)", coloured good/bad. */
+const vsLastYear = (cur, prev, prevBill, opts) => vsEarlier(cur, prev, prevBill ? barLabel(prevBill) : null, opts);
 
 export default {
     async render(el) {
@@ -54,8 +42,7 @@ export default {
     },
 
     destroy() {
-        if (onResize) window.removeEventListener('resize', onResize);
-        onResize = null;
+        clearResize();
         closeFilterMenu();
     },
 };
@@ -217,10 +204,6 @@ async function renderElectric(el) {
         $('#lead').innerHTML = `${esc(period(b))}${Number.isFinite(b.days) ? ` · ${b.days} days` : ''}${b.due ? ` · due ${esc(dLong(b.due))}` : ''}`
             + (b.notes ? `<br><span class="note-text">${esc(b.notes)}</span>` : '');
 
-        const card = (label, value, cmp, color = '') => `
-            <div class="card"><div class="label">${label}</div>
-            <div class="value"${color ? ` style="color:${color}"` : ''}>${esc(value)}</div>
-            <div class="sub cmp">${cmp}</div></div>`;
         const perDay = Number.isFinite(b.days) && b.days > 0 ? b.used / b.days : NaN;
         $('#kpis').innerHTML = [
             card(b.charge < 0 ? 'Credit earned this period' : 'Charged this period', money(Math.abs(b.charge)),
@@ -326,8 +309,7 @@ async function renderElectric(el) {
         $('#yr-next').disabled = k === yearList.length - 1;
         $('#yr-sub').textContent = `${Y.count} bill${Y.count === 1 ? '' : 's'} ending in ${y}${Y.count < 12 ? ' (not a full year)' : ''}`;
         const price = Y.used > 0 ? Y.net / Y.used : NaN;
-        const c = (label, value, sub, color = '') => `<div class="card"><div class="label">${label}</div>
-            <div class="value"${color ? ` style="color:${color}"` : ''}>${esc(value)}</div><div class="sub cmp">${sub}</div></div>`;
+        const c = card;
         const tone = v => (v < 0 ? 'var(--green)' : 'var(--red)');
         $('#yr-cards').innerHTML = [
             c('Average kWh used', kwh(Y.used / Y.count), `<span class="muted">per bill · ${esc(kwh(Y.used))} in total</span>`),
@@ -347,7 +329,6 @@ async function renderElectric(el) {
     $('#yr-next').onclick = () => showYear(yearList[yearList.indexOf(rememberedYear) + 1]);
     showYear(yearList.includes(rememberedYear) ? rememberedYear : yearList.at(-1));
 
-    const moneyCol = (id, label, get) => ({ id, label, num: true, value: get, text: billText, tdClass: r => `nowrap ${billClass(get(r))}` });
     const kwhCol = (id, label, get) => ({ id, label, num: true, value: get, text: kwh, tdClass: () => 'nowrap' });
     const totalOf = (list, f) => sum(list.map(f).filter(Number.isFinite));
     dataTable($('#t-years'), {
@@ -369,8 +350,6 @@ async function renderElectric(el) {
     });
 
     // ── All bills ──
-    const dateCol = (id, label, get) => ({ id, label, value: r => get(r)?.getTime() ?? '', sortKey: v => (v === '' ? -Infinity : v),
-        text: v => dLong(new Date(v)), tdClass: () => 'nowrap', sortLabels: ['Oldest → Newest', 'Newest → Oldest'] });
     dataTable($('#t-bills'), {
         columns: [
             dateCol('start', 'Service start', r => r.start),
@@ -391,9 +370,6 @@ async function renderElectric(el) {
 
     // ── Add a bill: prefilled from the latest bill (readings carry over, the new period starts the next day) ──
     const form = $('#add-form'), last = bills.at(-1);
-    const isoDate = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-    const dateOf = v => { const m = String(v).match(/^(\d{4})-(\d{2})-(\d{2})$/); return m ? new Date(+m[1], m[2] - 1, +m[3]) : null; };
-    const numOf = v => (String(v).trim() === '' ? NaN : Number(v));
     const readForm = () => {
         const f = Object.fromEntries(new FormData(form));
         const amount = numOf(f.amount);
@@ -451,9 +427,8 @@ async function renderElectric(el) {
 
     // ── Caught up? A statement comes monthly, so the next one is due a month after the last due date ──
     const lastDue = last.due || last.end;
-    const nextDue = addMonth(lastDue);
-    const today = new Date(); today.setHours(0, 0, 0, 0);
-    $('#catchup').innerHTML = today >= nextDue
+    const nextDue = addMonths(lastDue, 1);
+    $('#catchup').innerHTML = today() >= nextDue
         ? `<div class="banner row">
             <span>📬 <strong>There's a new electric statement to add.</strong> Your last bill was due ${esc(dLong(lastDue))}, so the next one was due around ${esc(dLong(nextDue))}.</span>
             <span class="spacer"></span><button class="primary small" id="catchup-add">Add it now</button></div>`
@@ -477,9 +452,8 @@ async function renderElectric(el) {
         }
     };
 
-    if (onResize) window.removeEventListener('resize', onResize);
-    onResize = () => { draw(); drawYear(); };
-    window.addEventListener('resize', onResize);
+    const redraw = () => { draw(); drawYear(); };
+    setResize(redraw);
     show(i);
-    requestAnimationFrame(onResize); // canvases have their real width once laid out
+    requestAnimationFrame(redraw); // canvases have their real width once laid out
 }

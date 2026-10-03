@@ -126,8 +126,9 @@ export function drawMonthBars(canvas, { labels, income, spending, selected }) {
  * series: [{ values, color, negColor?, valueLabels? }]; fmt(value) → axis label. Sets canvas._hit like drawMonthBars.
  * valueFmt(value) → text printed at the end of each bar of a series with valueLabels: true
  * (sideways when the bars are too narrow for it to fit across).
+ * stacked: draw the series on top of each other in one bar (positive values); the value label is the bar's total.
  */
-export function drawBars(canvas, { labels, series, selected = -1, fmt = kFmt, valueFmt = null }) {
+export function drawBars(canvas, { labels, series, selected = -1, fmt = kFmt, valueFmt = null, stacked = false }) {
     const s = setup(canvas);
     const n = labels.length;
     canvas._hit = () => -1;
@@ -135,17 +136,20 @@ export function drawBars(canvas, { labels, series, selected = -1, fmt = kFmt, va
     const { ctx, W, H } = s;
     const pad = { top: 16, right: 12, bottom: 30, left: 64 };
     const chartW = W - pad.left - pad.right;
-    const all = series.flatMap(x => x.values.filter(Number.isFinite));
+    const totals = labels.map((_, i) => series.reduce((a, x) => a + (Number.isFinite(x.values[i]) ? x.values[i] : 0), 0));
+    const all = stacked ? totals : series.flatMap(x => x.values.filter(Number.isFinite));
 
     const groupW = chartW / labels.length;
     const labelEvery = Math.ceil(52 / groupW);
-    const gap = series.length > 1 ? 2 : 0;
-    const barW = Math.min((groupW * 0.7 - gap * (series.length - 1)) / series.length, 26);
-    const gOff = (groupW - series.length * barW - gap * (series.length - 1)) / 2;
+    const cols = stacked ? 1 : series.length;
+    const gap = cols > 1 ? 2 : 0;
+    const barW = Math.min((groupW * 0.7 - gap * (cols - 1)) / cols, 26);
+    const gOff = (groupW - cols * barW - gap * (cols - 1)) / 2;
 
     // Room for value labels above the tallest bar and below the deepest one.
     const VFONT = `10px ${FONT}`;
-    const labelled = valueFmt ? series.filter(x => x.valueLabels).flatMap(x => x.values.filter(v => Number.isFinite(v) && v)) : [];
+    const labelled = !valueFmt ? [] : stacked ? (series.some(x => x.valueLabels) ? totals.filter(v => v) : [])
+        : series.filter(x => x.valueLabels).flatMap(x => x.values.filter(v => Number.isFinite(v) && v));
     ctx.font = VFONT;
     const textW = Math.max(0, ...labelled.map(v => ctx.measureText(valueFmt(v)).width));
     const sideways = textW > barW + 4;
@@ -177,13 +181,20 @@ export function drawBars(canvas, { labels, series, selected = -1, fmt = kFmt, va
             ctx.fillRect(gx + 1, pad.top, groupW - 2, chartH + below);
         }
         ctx.globalAlpha = selected < 0 || i === selected ? 1 : 0.55;
+        let base = 0;
         series.forEach((ser, k) => {
             const v = ser.values[i];
             if (!Number.isFinite(v) || !v) return;
             ctx.fillStyle = v < 0 && ser.negColor ? ser.negColor : ser.color;
-            const y0 = yOf(0), y1 = yOf(v), x = gx + gOff + k * (barW + gap);
+            const y0 = yOf(base), y1 = yOf(base + v), x = gx + gOff + (stacked ? 0 : k * (barW + gap));
             ctx.fillRect(x, Math.min(y0, y1), barW, Math.abs(y1 - y0));
-            if (!valueFmt || !ser.valueLabels) return;
+            if (stacked) base += v;
+            else if (valueFmt && ser.valueLabels) label(x, v);
+        });
+        if (stacked && labelled.length) label(gx + gOff, base);
+        function label(x, v) {
+            if (!v) return;
+            const y1 = yOf(v);
             ctx.save();
             ctx.font = VFONT;
             ctx.fillStyle = '#555';
@@ -198,7 +209,7 @@ export function drawBars(canvas, { labels, series, selected = -1, fmt = kFmt, va
                 ctx.fillText(valueFmt(v), x + barW / 2, up ? y1 - 4 : y1 + 12);
             }
             ctx.restore();
-        });
+        }
         ctx.globalAlpha = 1;
         if (i === selected || (i % labelEvery === 0 && !(selected >= 0 && Math.abs(i - selected) < labelEvery))) {
             ctx.fillStyle = i === selected ? '#1a1a2e' : '#888';

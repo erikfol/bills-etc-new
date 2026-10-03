@@ -12,7 +12,7 @@ export function parseRecords(text, delim = ',') {
                 if (text[i + 1] === '"') { field += '"'; i++; }
                 else inQuotes = false;
             } else field += c;
-        } else if (c === '"') inQuotes = true;
+        } else if (c === '"' && field === '') inQuotes = true; // a quote mid-value (3/4") is just a character
         else if (c === delim) { row.push(field); field = ''; }
         else if (c === '\n') { row.push(field); records.push(row); row = []; field = ''; }
         else if (c !== '\r') field += c;

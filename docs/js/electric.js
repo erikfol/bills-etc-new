@@ -1,45 +1,15 @@
 // Electric bills: inputs/electric/master_electric.csv (kept by hand, usually tab-separated from Excel).
-import * as fs from './fs.js';
-import { parseRecords } from './csv.js';
+import { readSheet, insertRow, parseBillDate, parseMoney, num, sheetDate, sheetMoney } from './sheet.js';
 
 export const ELECTRIC_PATH = 'inputs/electric/master_electric.csv';
 
-const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
-
-/** '22/Jul/2026' (also 22-Jul-2026, 2026-07-22) → Date, or null. */
-export function parseBillDate(s) {
-    s = String(s ?? '').trim();
-    let m = s.match(/^(\d{1,2})[/\-\s]([A-Za-z]{3})[A-Za-z]*[/\-\s](\d{2,4})$/);
-    if (m) {
-        const mo = MONTHS.indexOf(m[2].toLowerCase()), y = m[3].length === 2 ? 2000 + +m[3] : +m[3];
-        const d = new Date(y, mo, +m[1]);
-        return mo >= 0 && d.getDate() === +m[1] ? d : null;
-    }
-    if ((m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/))) return new Date(+m[1], m[2] - 1, +m[3]);
-    return null;
-}
-
-/** ' $(1,003.21)' → -1003.21 (accounting negatives), ' $25.15 ' → 25.15, 'na' → NaN. */
-export function parseMoney(s) {
-    s = String(s ?? '').trim();
-    const neg = /^\(.*\)$/.test(s.replace(/\$/g, '')) || s.startsWith('-');
-    const n = Number(s.replace(/[$,()\s-]/g, ''));
-    return s === '' || Number.isNaN(n) ? NaN : neg ? -n : n;
-}
-
-const num = s => { const n = Number(String(s ?? '').replace(/,/g, '').trim()); return String(s ?? '').trim() === '' ? NaN : n; };
-
-/** The raw sheet: delimiter, line ending, header and records, plus column indexes by meaning. */
-async function readSheet() {
-    const text = await fs.readText(ELECTRIC_PATH);
-    if (text == null) return null;
-    const firstLine = text.slice(0, text.indexOf('\n') >>> 0);
-    const delim = firstLine.includes('\t') ? '\t' : ',';
-    const records = parseRecords(text, delim);
-    const head = (records[0] || []).map(h => h.trim().toLowerCase());
+/** The sheet plus its column indexes by meaning. */
+async function readElectric() {
+    const sheet = await readSheet(ELECTRIC_PATH);
+    if (!sheet) return null;
+    const { idx, head } = sheet;
     // "kWh's used" appears twice: meter difference first, then after the multiplier (the billed amount).
-    const idx = (...names) => { for (const n of names) { const i = head.lastIndexOf(n); if (i >= 0) return i; } return -1; };
-    const I = {
+    sheet.I = {
         id: idx('id'), start: idx('service date start'), end: idx('service date end'), days: idx('service days'),
         due: idx('bill due date'), curRead: idx('current kwh'), prevRead: idx('previous kwh'),
         rawUsed: head.indexOf("kwh's used"), multiplier: idx('multiplier'), used: idx("kwh's used", 'kwh used'),
@@ -47,7 +17,7 @@ async function readSheet() {
         received: idx("kwh's recieved", "kwh's received", 'kwh received'),
         amount: idx('amount due'), perKwh: idx('price/unit'), notes: idx('notes'),
     };
-    return { text, delim, eol: text.includes('\r\n') ? '\r\n' : '\n', records, I };
+    return sheet;
 }
 
 /**
@@ -57,7 +27,7 @@ async function readSheet() {
  * (see chargeOf), and `perKwh` is charge ÷ used. Returns null if the file doesn't exist.
  */
 export async function loadElectric() {
-    const sheet = await readSheet();
+    const sheet = await readElectric();
     if (!sheet) return null;
     const { records, I } = sheet;
     if (!records.length) return { bills: [], missing: [] };
@@ -91,14 +61,6 @@ export async function loadElectric() {
     return { bills, missing: [] };
 }
 
-const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-/** 22/Jul/2026, the sheet's date format. */
-const sheetDate = d => `${String(d.getDate()).padStart(2, '0')}/${MON[d.getMonth()]}/${d.getFullYear()}`;
-/** Excel accounting format the sheet uses: ' $25.15 ' and ' $(1,003.21)'. */
-const sheetMoney = v => {
-    const t = Math.abs(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    return v < 0 ? ` $(${t})` : ` $${t} `;
-};
 /** Days in a service period, counting both ends (22 Jul – 19 Aug = 29), as the sheet does. */
 export const serviceDays = (start, end) => Math.round((end - start) / 864e5) + 1;
 
@@ -107,13 +69,12 @@ export const serviceDays = (start, end) => Math.round((end - start) / 864e5) + 1
  * bill: {start, end, due?, curRead, prevRead, multiplier, curRec?, prevRec?, amount, notes?} (dates as Date, numbers as numbers).
  */
 export async function addElectricBill(bill) {
-    const sheet = await readSheet();
+    const sheet = await readElectric();
     if (!sheet || !sheet.records.length) throw new Error(`${ELECTRIC_PATH} not found`);
-    const { text, delim, eol, records, I } = sheet;
+    const { records, I } = sheet;
     const cells = records[0].map(() => '');
     const set = (k, v) => { if (I[k] >= 0) cells[I[k]] = String(v); };
-    const rows = records.slice(1);
-    const ids = rows.map(r => parseInt(r[I.id], 10)).filter(Number.isFinite);
+    const ids = records.slice(1).map(r => parseInt(r[I.id], 10)).filter(Number.isFinite);
     const rawUsed = bill.curRead - bill.prevRead, used = rawUsed * bill.multiplier;
     const hasRec = Number.isFinite(bill.curRec) && Number.isFinite(bill.prevRec);
 
@@ -134,17 +95,7 @@ export async function addElectricBill(bill) {
     set('perKwh', used > 0 ? sheetMoney(bill.amount / used) : '');
     // Blank notes get the year, like the rest of the sheet.
     set('notes', String(bill.notes || '').replace(/[\t\r\n]+/g, ' ').trim() || bill.end.getFullYear());
-    const line = cells.map(c => (delim === ',' && /[",]/.test(c) ? `"${c.replace(/"/g, '""')}"` : c)).join(delim);
-
-    // The sheet is kept newest first; put the bill at the top unless it's kept oldest first.
-    const endOf = r => parseBillDate(r[I.end])?.getTime() ?? 0;
-    const newestFirst = rows.length < 2 || endOf(rows[0]) >= endOf(rows.at(-1));
-    const lines = text.split(/\r?\n/);
-    const trailing = lines.at(-1) === '' ? lines.pop() : null;
-    if (newestFirst) lines.splice(1, 0, line);
-    else lines.push(line);
-    if (trailing !== null) lines.push('');
-    await fs.writeText(ELECTRIC_PATH, lines.join(eol));
+    await insertRow(sheet, cells, I.end);
 }
 
 /**
