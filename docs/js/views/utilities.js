@@ -109,8 +109,6 @@ async function renderElectric(el) {
             <canvas id="c-energy" style="display:block;width:100%;height:240px;cursor:pointer"></canvas>
         </section>
 
-        ${solarFrom ? '<section><h2>Before and since solar</h2><div id="solar"></div></section>' : ''}
-
         <section>
             <div class="row" style="margin-bottom:14px">
                 <h2 style="margin:0;border:0;padding:0">Annual averages <span class="sub" id="yr-sub"></span></h2>
@@ -143,6 +141,8 @@ async function renderElectric(el) {
             </div>
             <p class="note" style="margin-top:6px">Each bill sits in the month its service period ended.</p>
         </section>
+
+        ${solarFrom ? '<section><h2>Before and since solar</h2><div id="solar"></div></section>' : ''}
 
         <section>
             <h2>Year by year <span class="sub">by the year each billing period ended</span></h2>
