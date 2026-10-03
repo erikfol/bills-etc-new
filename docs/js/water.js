@@ -1,4 +1,5 @@
 // Water bills: inputs/water/master_water.csv, one row per quarter (kept by hand, usually tab-separated from Excel).
+import * as fs from './fs.js';
 import { readSheet, insertRow, parseBillDate, parseMoney, num, sheetDate, sheetMoney } from './sheet.js';
 
 export const WATER_PATH = 'inputs/water/master_water.csv';
@@ -78,6 +79,24 @@ export async function loadWater() {
 export function calcWater({ gallons, rate, flat, fixed, meter }) {
     const usage = round2(gallons * rate / 1000);
     return { usage, calc: round2(flat + usage + fixed + meter) };
+}
+
+/** Set the Paid? column of one quarter ({q, year}) to Yes or No, leaving every other cell and line as it was. */
+export async function setWaterPaid({ q, year }, paid) {
+    const sheet = await readWater();
+    if (!sheet || sheet.I.paid < 0) throw new Error(`${WATER_PATH} has no Paid? column`);
+    const { text, delim, eol, I } = sheet;
+    const lines = text.split(/\r?\n/);
+    const k = lines.findIndex((line, n) => {
+        const qy = n > 0 && parseQuarter(line.split(delim)[I.quarter]);
+        return qy && qy.q === q && qy.year === year;
+    });
+    if (k < 0) throw new Error(`Q${q} ${year} not found in ${WATER_PATH}`);
+    const cells = lines[k].split(delim);
+    while (cells.length <= I.paid) cells.push('');
+    cells[I.paid] = paid ? 'Yes' : 'No';
+    lines[k] = cells.join(delim);
+    await fs.writeText(WATER_PATH, lines.join(eol));
 }
 
 /**

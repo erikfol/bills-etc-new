@@ -1,5 +1,5 @@
 // Utilities → Water: quarterly bills from inputs/water/master_water.csv.
-import { loadWater, addWaterBill, calcWater, nextQuarter, quarterDates, WATER_PATH } from '../water.js';
+import { loadWater, addWaterBill, setWaterPaid, calcWater, nextQuarter, quarterDates, WATER_PATH } from '../water.js';
 import { drawBars } from '../charts.js';
 import { esc, money, sum, toast } from '../util.js';
 import { dataTable } from '../datatable.js';
@@ -19,6 +19,8 @@ const rateText = r => { if (!Number.isFinite(r)) return '–'; const t = r.toFix
 // The town's online bill payment kiosk for water.
 const WATER_PORTAL = 'https://nhtaxkiosk.com/?KIOSKID=ENFIELD';
 const portalLink = `<a class="ext-link" href="${WATER_PORTAL}" target="_blank" rel="noopener">Enfield water bills ↗</a>`;
+/** Button that marks a quarter paid (or, with paid = false, not paid). */
+const markBtn = (b, paid, text, cls = '') => `<button type="button" class="small ${cls}" data-mark-paid="${paid ? 1 : 0}" data-q="${b.q}" data-year="${b.year}">${text}</button>`;
 const COLORS = { fixed: '#8e9fb8', usage: '#4a90d9', other: '#f0b955', water: '#3fa7d6', prev: '#c5cbd6' };
 
 export default async function renderWater(el) {
@@ -186,7 +188,8 @@ export default async function renderWater(el) {
         const diffNote = Number.isFinite(b.diff) && Math.abs(b.diff) >= 0.005
             ? `<br><span class="delta-bad">Statement was ${esc(money(Math.abs(b.diff)))} ${b.diff < 0 ? 'more' : 'less'} than calculated (${esc(money(b.calc))})</span>` : '';
         $('#kpis').innerHTML = [
-            card(`Total due ${b.isPaid ? '<span class="badge badge-ok paid-tag">Paid</span>' : '<span class="badge badge-over paid-tag">Not Paid</span>'}`, money(b.total),
+            card(`Total due ${b.isPaid ? '<span class="badge badge-ok paid-tag">Paid</span>'
+                : `<span class="badge badge-over paid-tag">Not Paid</span> ${markBtn(b, true, 'Mark as paid', 'primary paid-btn')}`}`, money(b.total),
                 `<span class="muted">statement ${esc(money(b.statement))}${Number.isFinite(b.fee) ? ` + ACH fee ${esc(money(b.fee))}` : ''}</span><br>`
                 + vsEarlier(b.total, prev?.total, prevLabel, { higherIsGood: false, fmt: money }), 'var(--red)'),
             card('Water used', gal(b.gallons),
@@ -312,7 +315,9 @@ export default async function renderWater(el) {
                 tdClass: r => `nowrap${Math.abs(r.diff) >= 0.005 ? ' negative' : ''}` },
             moneyCol('fee', 'ACH fee', r => r.fee),
             { ...moneyCol('total', 'Total due', r => r.total), cell: r => `<strong>${esc(money(r.total))}</strong>` },
-            { id: 'paid', label: 'Paid?', value: r => r.paid, cell: r => (r.isPaid ? '<span class="badge badge-ok">Yes</span>' : `<span class="badge badge-over">${esc(r.paid || 'No')}</span>`) },
+            { id: 'paid', label: 'Paid?', value: r => r.paid, tdClass: () => 'nowrap',
+                cell: r => (r.isPaid ? `<span class="badge badge-ok">Yes</span> ${markBtn(r, false, 'Undo', 'paid-undo')}`
+                    : `<span class="badge badge-over">${esc(r.paid || 'No')}</span> ${markBtn(r, true, 'Mark paid', 'primary')}`) },
         ],
         rows: bills,
         sort: { col: 'quarter', dir: 'desc' },
@@ -331,7 +336,26 @@ export default async function renderWater(el) {
         : `<div class="banner ok">✓ <strong>All water statements are caught up.</strong> The next one (${esc(nqText)}) is due around ${esc(dLong(nextDue))}.</div>`;
     const unpaid = bills.filter(b => !b.isPaid);
     $('#unpaid').innerHTML = unpaid.length
-        ? `<div class="banner bad"><strong>Not marked paid:</strong> ${unpaid.map(b => `${esc(qLong(b))} (${esc(money(b.total))}${b.due ? `, due ${esc(dLong(b.due))}` : ''})`).join(', ')}. Change the Paid? column in the file once it's paid.</div>` : '';
+        ? `<div class="banner bad unpaid-list"><strong>Not paid yet:</strong> ${unpaid.map(b => `<span class="nowrap">${esc(qLong(b))} (${esc(money(b.total))}${b.due ? `, due ${esc(dLong(b.due))}` : ''}) ${markBtn(b, true, 'Mark paid', 'primary')}</span>`).join(' ')}</div>` : '';
+
+    // ── Mark paid / not paid: writes the Paid? column of that quarter ──
+    el.onclick = async e => {
+        const btn = e.target.closest('[data-mark-paid]');
+        if (!btn) return;
+        const paid = btn.dataset.markPaid === '1', qy = { q: +btn.dataset.q, year: +btn.dataset.year };
+        if (!paid && !confirm(`Mark Q${qy.q} ${qy.year} as not paid?`)) return;
+        btn.disabled = true;
+        try {
+            await setWaterPaid(qy, paid);
+            toast(`Q${qy.q} ${qy.year} marked ${paid ? 'paid' : 'not paid'}`, 'ok');
+            const y = scrollY;
+            await renderWater(el);
+            scrollTo(0, y);
+        } catch (err) {
+            toast(`Save failed: ${err.message}. Is the file open in Excel?`, 'bad');
+            btn.disabled = false;
+        }
+    };
 
     // ── Add a bill: the next quarter, prefilled with the latest bill's rates and charges ──
     const form = $('#add-form');
