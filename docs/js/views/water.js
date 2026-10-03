@@ -5,12 +5,12 @@ import { esc, money, sum, toast } from '../util.js';
 import { dataTable } from '../datatable.js';
 import {
     dLong, period, addMonths, today, axisMoney, axisNum, isoDate, dateOf, numOf,
-    card, vsEarlier, dateCol, moneyCol, numCol, setResize,
+    card, vsEarlier, dateCol, moneyCol, numCol, setResize, yearChips,
 } from './utilcommon.js';
 
 let rememberedBill = null; // 'Q1 - 2026' while you move between pages
 let rememberedYear = null;
-let costYears = null; // years shown in Cost per quarter (null = all)
+let chartYears = null; // years shown in Cost per quarter and Water use (null = all)
 
 const qShort = b => `Q${b.q} ’${String(b.year).slice(2)}`;
 const qLong = b => `Q${b.q} ${b.year}`;
@@ -61,7 +61,7 @@ export default async function renderWater(el) {
 
         <section>
             <h2>Cost per quarter <span class="sub">click a bar to open that quarter</span></h2>
-            <div class="row year-chips" id="cost-years"></div>
+            <div class="row year-chips"></div>
             <div class="chart-legend">
                 <span><span class="legend-dot" style="background:${COLORS.fixed}"></span>Fixed charges (flat unit, fixed cost, meter)</span>
                 <span><span class="legend-dot" style="background:${COLORS.usage}"></span>Usage (gallons × rate)</span>
@@ -71,7 +71,8 @@ export default async function renderWater(el) {
         </section>
 
         <section>
-            <h2>Water use <span class="sub">gallons per quarter</span></h2>
+            <h2>Water use <span class="sub">gallons per quarter · click a bar to open that quarter</span></h2>
+            <div class="row year-chips"></div>
             <canvas id="c-gal" style="display:block;width:100%;height:220px;cursor:pointer"></canvas>
         </section>
 
@@ -153,10 +154,10 @@ export default async function renderWater(el) {
 
     // ── Big charts: every quarter ──
     const other = b => b.total - b.fixedAll - (Number.isFinite(b.usage) ? b.usage : 0);
-    // Cost per quarter: fixed, usage and fee side by side, for the years picked above the chart.
-    const costRows = () => bills.filter(b => !costYears || costYears.has(b.year));
+    // Both charts show the years picked in the year buttons above them.
+    const chartRows = () => bills.filter(b => !chartYears || chartYears.has(b.year));
     const draw = () => {
-        const rows = costRows();
+        const rows = chartRows();
         drawBars($('#c-cost'), {
             labels: rows.map(qShort),
             series: [
@@ -167,36 +168,16 @@ export default async function renderWater(el) {
             selected: rows.indexOf(bills[i]), fmt: axisMoney,
         });
         drawBars($('#c-gal'), {
-            labels: bills.map(qShort),
-            series: [{ values: bills.map(b => b.gallons), color: COLORS.water }],
-            selected: i, fmt: axisNum,
+            labels: rows.map(qShort),
+            series: [{ values: rows.map(b => b.gallons), color: COLORS.water }],
+            selected: rows.indexOf(bills[i]), fmt: axisNum,
         });
     };
-    $('#c-gal').onclick = e => { const k = $('#c-gal')._hit?.(e.offsetX) ?? -1; if (k >= 0) show(k); };
-    $('#c-cost').onclick = e => { const k = $('#c-cost')._hit?.(e.offsetX) ?? -1; if (k >= 0) show(bills.indexOf(costRows()[k])); };
-
-    // Year buttons: click years to show or hide them; "All years" shows every year.
-    const allYears = [...new Set(bills.map(b => b.year))].sort((a, b) => a - b);
-    if (costYears) costYears = new Set([...costYears].filter(y => allYears.includes(y)));
-    if (costYears && !costYears.size) costYears = null;
-    const drawYearChips = () => {
-        $('#cost-years').innerHTML = `<button type="button" class="chip${costYears ? '' : ' active'}" data-cost-year="all">All years</button>`
-            + allYears.map(y => `<button type="button" class="chip${costYears?.has(y) ? ' active' : ''}" data-cost-year="${y}">${y}</button>`).join('');
-    };
-    $('#cost-years').onclick = e => {
-        const b = e.target.closest('[data-cost-year]');
-        if (!b) return;
-        const y = b.dataset.costYear;
-        if (y === 'all') costYears = null;
-        else {
-            const set = costYears || new Set();
-            set.has(+y) ? set.delete(+y) : set.add(+y);
-            costYears = set.size && set.size < allYears.length ? set : null;
-        }
-        drawYearChips();
-        draw();
-    };
-    drawYearChips();
+    for (const id of ['#c-cost', '#c-gal']) {
+        $(id).onclick = e => { const k = $(id)._hit?.(e.offsetX) ?? -1; if (k >= 0) show(bills.indexOf(chartRows()[k])); };
+    }
+    chartYears = yearChips([...el.querySelectorAll('.year-chips')], [...new Set(bills.map(b => b.year))].sort((a, b) => a - b),
+        chartYears, sel => { chartYears = sel; draw(); });
 
     // ── One quarter ──
     const show = k => {

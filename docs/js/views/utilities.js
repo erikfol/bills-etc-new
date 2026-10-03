@@ -6,7 +6,7 @@ import { requireFolder } from '../app.js';
 import { dataTable, closeFilterMenu } from '../datatable.js';
 import {
     MON, dLong, period, addMonths, today, billText, billClass, axisMoney, axisNum,
-    isoDate, dateOf, numOf, card, vsEarlier, dateCol, moneyCol, setResize, clearResize,
+    isoDate, dateOf, numOf, card, vsEarlier, dateCol, moneyCol, setResize, clearResize, yearChips,
 } from './utilcommon.js';
 import renderWater from './water.js';
 
@@ -21,6 +21,7 @@ const SUBPAGES = [
 
 let rememberedBill = null; // selected bill id, kept while you move between pages
 let rememberedYear = null; // selected year in Annual averages
+let chartYears = null; // years shown in Charge per bill and Energy (null = all)
 
 const barLabel = b => `${MON[b.end.getMonth()]} ’${String(b.end.getFullYear()).slice(2)}`;
 const kwh = n => Number.isFinite(n) ? `${Math.round(n).toLocaleString('en-US')} kWh` : '–';
@@ -84,11 +85,13 @@ async function renderElectric(el) {
 
         <section>
             <h2>Charge per bill <span class="sub">what each period cost or earned · below zero is credit earned · click a bar to open that bill</span></h2>
+            <div class="row year-chips"></div>
             <canvas id="c-amount" style="display:block;width:100%;height:240px;cursor:pointer"></canvas>
         </section>
 
         <section>
-            <h2>Energy <span class="sub">kWh per bill</span></h2>
+            <h2>Energy <span class="sub">kWh per bill · click a bar to open that bill</span></h2>
+            <div class="row year-chips"></div>
             <div class="chart-legend">
                 <span><span class="legend-dot" style="background:#e67e22"></span>Used from the grid</span>
                 ${solarFrom ? '<span><span class="legend-dot" style="background:#27ae60"></span>Sent to the grid (solar)</span>' : ''}
@@ -174,24 +177,29 @@ async function renderElectric(el) {
     const $ = s => el.querySelector(s);
 
     // ── Charts ──
+    // Both charts show the years picked in the year buttons above them (by the year each bill ended).
+    const chartRows = () => bills.filter(b => !chartYears || chartYears.has(b.end.getFullYear()));
     const draw = () => {
+        const rows = chartRows(), sel = rows.indexOf(bills[i]);
         drawBars($('#c-amount'), {
-            labels: bills.map(barLabel),
-            series: [{ values: bills.map(b => b.charge), color: '#e74c3c', negColor: '#27ae60' }],
-            selected: i, fmt: axisMoney,
+            labels: rows.map(barLabel),
+            series: [{ values: rows.map(b => b.charge), color: '#e74c3c', negColor: '#27ae60' }],
+            selected: sel, fmt: axisMoney,
         });
         drawBars($('#c-energy'), {
-            labels: bills.map(barLabel),
+            labels: rows.map(barLabel),
             series: [
-                { values: bills.map(b => b.used), color: '#e67e22' },
-                ...(solarFrom ? [{ values: bills.map(b => b.received), color: '#27ae60' }] : []),
+                { values: rows.map(b => b.used), color: '#e67e22' },
+                ...(solarFrom ? [{ values: rows.map(b => b.received), color: '#27ae60' }] : []),
             ],
-            selected: i, fmt: axisKwh,
+            selected: sel, fmt: axisKwh,
         });
     };
     for (const id of ['#c-amount', '#c-energy']) {
-        $(id).onclick = e => { const k = $(id)._hit?.(e.offsetX) ?? -1; if (k >= 0) show(k); };
+        $(id).onclick = e => { const k = $(id)._hit?.(e.offsetX) ?? -1; if (k >= 0) show(bills.indexOf(chartRows()[k])); };
     }
+    chartYears = yearChips([...el.querySelectorAll('.year-chips')], [...new Set(bills.map(b => b.end.getFullYear()))].sort((a, b) => a - b),
+        chartYears, sel => { chartYears = sel; draw(); });
 
     // ── One bill ──
     const show = k => {

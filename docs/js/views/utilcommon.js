@@ -54,3 +54,35 @@ export function clearResize() {
     if (onResize) window.removeEventListener('resize', onResize);
     onResize = null;
 }
+
+/**
+ * Year filter buttons ("All years", 2021, 2022, …) rendered into every element in `els`, all kept in step.
+ * `selected` is a Set of years or null for all; onChange(selected) runs after each click.
+ * Returns the cleaned starting selection (years no longer in the data are dropped).
+ */
+export function yearChips(els, years, selected, onChange) {
+    let sel = selected ? new Set([...selected].filter(y => years.includes(y))) : null;
+    if (sel && (!sel.size || sel.size === years.length)) sel = null;
+    const render = () => {
+        const html = `<button type="button" class="chip${sel ? '' : ' active'}" data-year="all">All years</button>`
+            + years.map(y => `<button type="button" class="chip${sel?.has(y) ? ' active' : ''}" data-year="${y}">${y}</button>`).join('');
+        for (const el of els) el.innerHTML = html;
+    };
+    for (const el of els) {
+        el.onclick = e => {
+            const b = e.target.closest('[data-year]');
+            if (!b) return;
+            if (b.dataset.year === 'all') sel = null;
+            else {
+                const set = sel || new Set();
+                const y = +b.dataset.year;
+                set.has(y) ? set.delete(y) : set.add(y);
+                sel = set.size && set.size < years.length ? set : null;
+            }
+            render();
+            onChange(sel);
+        };
+    }
+    render();
+    return sel;
+}
