@@ -1,13 +1,13 @@
 // Loans and credit cards you set up yourself. The list of accounts (title, description, type) is kept in
-// inputs/loans_cc/accounts.json; each account's payments are a CSV next to it (Date, Payment, Before, After,
-// Payment Made, Notes) so they open in Excel too.
+// inputs/loans_cc/accounts.json; each account's payments are a CSV next to it (Date, Min Payment, Payment, Before,
+// After, Payment Made, Notes) so they open in Excel too. Files written before Min Payment existed get it on next save.
 import * as fs from './fs.js';
 import { parseCSV, toCSV } from './csv.js';
 import { parseBillDate, parseMoney, sheetDate } from './sheet.js';
 
 export const LOANS_DIR = 'inputs/loans_cc';
 const INDEX = `${LOANS_DIR}/accounts.json`;
-export const PAYMENT_COLS = ['Date', 'Payment', 'Before', 'After', 'Payment Made', 'Notes'];
+export const PAYMENT_COLS = ['Date', 'Min Payment', 'Payment', 'Before', 'After', 'Payment Made', 'Notes'];
 export const ACCOUNT_TYPES = ['Loan', 'Credit card', 'Other'];
 
 const round2 = n => Math.round((n + Math.sign(n) * 1e-9) * 100) / 100;
@@ -71,7 +71,7 @@ export async function moveAccount(id, dir) {
 }
 
 /**
- * Payments of one account, oldest first: {date, payment, before, after, made (bool), notes, raw (the CSV row)}.
+ * Payments of one account, oldest first: {date, minPayment, payment, before, after, made (bool), notes}.
  * A missing file reads as no payments.
  */
 export async function loadPayments(account) {
@@ -81,6 +81,7 @@ export async function loadPayments(account) {
     const get = (r, name) => r[Object.keys(r).find(k => k.trim().toLowerCase() === name.toLowerCase())] ?? '';
     return rows.map(r => ({
         date: parseBillDate(get(r, 'Date')),
+        minPayment: parseMoney(get(r, 'Min Payment')),
         payment: parseMoney(get(r, 'Payment')),
         before: parseMoney(get(r, 'Before')),
         after: parseMoney(get(r, 'After')),
@@ -89,10 +90,11 @@ export async function loadPayments(account) {
     })).sort((a, b) => (a.date?.getTime() ?? Infinity) - (b.date?.getTime() ?? Infinity));
 }
 
-/** Write an account's whole payments table (rows as {date, payment, before, after, made, notes}), oldest first. */
+/** Write an account's whole payments table (rows as {date, minPayment, payment, before, after, made, notes}), oldest first. */
 export async function savePayments(account, payments) {
     const rows = [...payments].sort((a, b) => (a.date?.getTime() ?? Infinity) - (b.date?.getTime() ?? Infinity)).map(p => ({
         Date: p.date ? sheetDate(p.date, false) : '',
+        'Min Payment': moneyCell(p.minPayment),
         Payment: moneyCell(p.payment),
         Before: moneyCell(p.before),
         After: moneyCell(p.after),

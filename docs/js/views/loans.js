@@ -16,6 +16,8 @@ const shortDate = d => `${MON[d.getMonth()]} ${d.getDate()} ’${String(d.getFul
 const madeBadge = p => (p.made ? '<span class="badge badge-ok">Y</span>' : '<span class="badge badge-over">N</span>');
 const typeIcon = t => (t === 'Credit card' ? '💳' : t === 'Loan' ? '🏦' : '📄');
 const DAY = 864e5;
+/** What a payment that isn't made yet will take: the planned payment, or else the minimum. */
+const amountDue = p => (Number.isFinite(p.payment) ? p.payment : p.minPayment);
 
 export default {
     async render(el) {
@@ -31,7 +33,7 @@ export default {
                 <span class="spacer"></span>
                 <button class="primary" id="acct-open">+ Add account</button>
             </div>
-            <p class="lead">Your loans and credit cards. Add an account, then record each payment: the balance before and after, and whether it's been made.</p>
+            <p class="lead">Your loans and credit cards. Add an account, then record each payment: the minimum due, what you paid, the balance before and after, and whether it's been made.</p>
             <form id="acct-form" class="add-bill" hidden style="margin-bottom:18px">
                 <h3>Add a loan or credit card</h3>
                 <div class="add-grid">
@@ -73,7 +75,7 @@ export default {
         const t0 = today();
         const open = all.flatMap(({ account, payments }) => payments.filter(p => !p.made && p.date).map(p => ({ account, p })));
         const late = open.filter(x => x.p.date < t0), soon = open.filter(x => x.p.date >= t0 && x.p.date - t0 <= 14 * DAY);
-        const item = x => `<span class="nowrap">${esc(x.account.title)}: ${esc(money(x.p.payment))} ${x.p.date < t0 ? 'was due' : 'due'} ${esc(dLong(x.p.date))}</span>`;
+        const item = x => `<span class="nowrap">${esc(x.account.title)}: ${esc(money(amountDue(x.p)))}${Number.isFinite(x.p.payment) ? '' : ' minimum'} ${x.p.date < t0 ? 'was due' : 'due'} ${esc(dLong(x.p.date))}</span>`;
         $('#due').innerHTML = (late.length ? `<div class="banner bad"><strong>Not made yet:</strong> ${late.map(item).join(' · ')}</div>` : '')
             + (soon.length ? `<div class="banner"><strong>Coming up:</strong> ${soon.map(item).join(' · ')}</div>` : '')
             + (!late.length && !soon.length && all.some(x => x.payments.length) ? '<div class="banner ok">✓ <strong>No payments due.</strong> Nothing is past due or due in the next two weeks.</div>' : '');
@@ -131,10 +133,11 @@ function renderAccount(sec, account, payments, { first, last, rerender }) {
                 ${card('Balance now', latest ? money(latest.after) : Number.isFinite(dated[0]?.before) ? money(dated[0].before) : '–',
                     latest ? `<span class="muted">after the ${esc(dLong(latest.date))} payment</span>` : '<span class="muted">no payments made yet</span>', 'var(--red)')}
                 ${card('Paid so far', money(paid), `<span class="muted">${made.length} of ${payments.length} payment${payments.length === 1 ? '' : 's'} made</span>`, 'var(--green)')}
-                ${card('Next payment', next ? money(next.payment) : '–',
-                    next ? `<span class="muted">${next.date ? `${next.date < today() ? 'was due' : 'due'} ${esc(dLong(next.date))}` : 'no date'}</span>` : '<span class="muted">every payment is made</span>')}
+                ${card('Next payment', next && Number.isFinite(amountDue(next)) ? money(amountDue(next)) : '–',
+                    next ? `<span class="muted">${next.date ? `${next.date < today() ? 'was due' : 'due'} ${esc(dLong(next.date))}` : 'no date'}`
+                        + `${Number.isFinite(next.minPayment) ? ` · minimum ${esc(money(next.minPayment))}` : ''}</span>` : '<span class="muted">every payment is made</span>')}
                 ${card('Paid down', latest && Number.isFinite(dated[0]?.before) ? money(dated[0].before - latest.after) : '–',
-                    latest && Number.isFinite(dated[0]?.before) ? `<span class="muted">from ${esc(money(dated[0].before))} on ${esc(dLong(dated[0].date))}</span>` : '<span class="muted">needs a Before on the first payment</span>')}
+                    latest && Number.isFinite(dated[0]?.before) ? `<span class="muted">from ${esc(money(dated[0].before))} on ${esc(dLong(dated[0].date))}</span>` : (latest ? '<span class="muted">needs a Before on the first payment</span>' : '<span class="muted">no payments made yet</span>'))}
             </div>
             ${dated.some(p => Number.isFinite(p.after)) ? `<h3 class="chart-title">Balance after each payment</h3><canvas class="c-bal" style="display:block;width:100%;height:200px;margin-bottom:14px"></canvas>` : ''}
             <div class="t-pay short-table"></div>
@@ -143,13 +146,16 @@ function renderAccount(sec, account, payments, { first, last, rerender }) {
                 <h3>Add a payment</h3>
                 <div class="add-grid">
                     <label class="field">Date<input type="date" name="date" required></label>
-                    <label class="field">Payment ($)<input type="number" name="payment" step="0.01" required></label>
-                    <label class="field">Payment made?<select name="made"><option value="N">N — not yet</option><option value="Y">Y — made</option></select></label>
+                    <label class="field">Min payment ($)<input type="number" name="minPayment" step="0.01" placeholder="optional"></label>
+                    <label class="field">Payment ($)<input type="number" name="payment" step="0.01"></label>
                 </div>
                 <div class="add-grid">
                     <label class="field">Balance before ($)<input type="number" name="before" step="0.01"></label>
                     <label class="field">Balance after ($)<input type="number" name="after" step="0.01" placeholder="before − payment"></label>
-                    <label class="field">Notes<input type="text" name="notes" placeholder="optional"></label>
+                    <label class="field">Payment made?<select name="made"><option value="N">N — not yet</option><option value="Y">Y — made</option></select></label>
+                </div>
+                <div class="add-grid">
+                    <label class="field" style="grid-column:1/-1">Notes<input type="text" name="notes" placeholder="optional"></label>
                 </div>
                 <div class="row">
                     <button type="submit" class="primary">Save payment</button>
@@ -163,6 +169,7 @@ function renderAccount(sec, account, payments, { first, last, rerender }) {
     dataTable($('.t-pay'), {
         columns: [
             dateCol('date', 'Date', p => p.date),
+            moneyCol('min', 'Min payment', p => p.minPayment),
             moneyCol('payment', 'Payment', p => p.payment),
             moneyCol('before', 'Before', p => p.before),
             moneyCol('after', 'After', p => p.after),
@@ -183,6 +190,7 @@ function renderAccount(sec, account, payments, { first, last, rerender }) {
             labels: chartRows.map(p => shortDate(p.date)),
             series: [
                 { name: 'Balance after', values: chartRows.map(p => p.after), color: account.type === 'Credit card' ? '#9b59b6' : '#4a90d9' },
+                { name: 'Min payment', values: chartRows.map(p => p.minPayment), tipOnly: true },
                 { name: 'Payment', values: chartRows.map(p => p.payment), tipOnly: true },
                 { name: 'Balance before', values: chartRows.map(p => p.before), tipOnly: true },
             ],
@@ -197,11 +205,12 @@ function renderAccount(sec, account, payments, { first, last, rerender }) {
     $('[data-add-open]').onclick = () => {
         form.reset();
         form.date.value = isoDate(prev?.date ? addMonths(prev.date, 1) : new Date());
+        if (Number.isFinite(prev?.minPayment)) form.minPayment.value = prev.minPayment;
         if (Number.isFinite(prev?.payment)) form.payment.value = prev.payment;
         if (Number.isFinite(prev?.after)) form.before.value = prev.after;
         form.hidden = false;
         $('[data-add-open]').hidden = true;
-        form.payment.focus();
+        form.minPayment.focus();
     };
     $('[data-add-cancel]').onclick = () => { form.hidden = true; $('[data-add-open]').hidden = false; };
     form.oninput = () => {
@@ -211,11 +220,12 @@ function renderAccount(sec, account, payments, { first, last, rerender }) {
     form.onsubmit = async e => {
         e.preventDefault();
         const date = dateOf(form.date.value), payment = numOf(form.payment.value), before = numOf(form.before.value);
+        const minPayment = numOf(form.minPayment.value);
         const after = form.after.value.trim() === '' ? (Number.isFinite(before) && Number.isFinite(payment) ? before - payment : NaN) : numOf(form.after.value);
-        if (!date || !Number.isFinite(payment)) { toast('Enter the date and the payment', 'bad'); return; }
+        if (!date || !(Number.isFinite(payment) || Number.isFinite(minPayment))) { toast('Enter the date and the payment or the minimum', 'bad'); return; }
         try {
-            await savePayments(account, [...payments, { date, payment, before, after, made: form.made.value === 'Y', notes: form.notes.value }]);
-            toast(`Added a ${money(payment)} payment to ${account.title}`, 'ok');
+            await savePayments(account, [...payments, { date, minPayment, payment, before, after, made: form.made.value === 'Y', notes: form.notes.value }]);
+            toast(`Added a ${money(Number.isFinite(payment) ? payment : minPayment)} payment to ${account.title}`, 'ok');
             rerender();
         } catch (err) {
             toast(`Save failed: ${err.message}. Is the file open in Excel?`, 'bad');
@@ -231,6 +241,7 @@ function renderAccount(sec, account, payments, { first, last, rerender }) {
     const ed = $('.edit-mode');
     const rowHtml = (p = {}) => `<tr>
         <td><input type="date" data-k="date" value="${p.date ? isoDate(p.date) : ''}"></td>
+        <td><input type="number" step="0.01" data-k="minPayment" value="${Number.isFinite(p.minPayment) ? p.minPayment : ''}"></td>
         <td><input type="number" step="0.01" data-k="payment" value="${Number.isFinite(p.payment) ? p.payment : ''}"></td>
         <td><input type="number" step="0.01" data-k="before" value="${Number.isFinite(p.before) ? p.before : ''}"></td>
         <td><input type="number" step="0.01" data-k="after" value="${Number.isFinite(p.after) ? p.after : ''}" placeholder="before − payment"></td>
@@ -253,7 +264,7 @@ function renderAccount(sec, account, payments, { first, last, rerender }) {
                 <label class="field" style="grid-column:1/-1">Description<input type="text" name="description" value="${esc(account.description)}"></label>
             </div>
             <div class="table-wrap loan-grid"><table class="sheet-table">
-                <thead><tr><th>Date</th><th>Payment</th><th>Before</th><th>After</th><th>Payment made</th><th>Notes</th><th></th></tr></thead>
+                <thead><tr><th>Date</th><th>Min payment</th><th>Payment</th><th>Before</th><th>After</th><th>Payment made</th><th>Notes</th><th></th></tr></thead>
                 <tbody>${payments.map(rowHtml).join('')}</tbody>
             </table></div>
             <div class="row" style="margin-top:10px">
@@ -273,7 +284,7 @@ function renderAccount(sec, account, payments, { first, last, rerender }) {
             const rows = [...ed.querySelectorAll('tbody tr')], lastRow = rows.at(-1);
             const v = k => lastRow?.querySelector(`[data-k="${k}"]`)?.value ?? '';
             const d = dateOf(v('date')), after = numOf(v('after'));
-            ed.querySelector('tbody').insertAdjacentHTML('beforeend', rowHtml({ date: d ? addMonths(d, 1) : new Date(), payment: numOf(v('payment')), before: after }));
+            ed.querySelector('tbody').insertAdjacentHTML('beforeend', rowHtml({ date: d ? addMonths(d, 1) : new Date(), minPayment: numOf(v('minPayment')), payment: numOf(v('payment')), before: after }));
         } else if (e.target.closest('[data-del]')) {
             e.target.closest('tr').remove();
         } else if (e.target.closest('[data-cancel]')) {
@@ -290,8 +301,8 @@ function renderAccount(sec, account, payments, { first, last, rerender }) {
                 const v = k => tr.querySelector(`[data-k="${k}"]`).value;
                 const payment = numOf(v('payment')), before = numOf(v('before'));
                 const after = v('after').trim() === '' && Number.isFinite(before) && Number.isFinite(payment) ? before - payment : numOf(v('after'));
-                return { date: dateOf(v('date')), payment, before, after, made: v('made') === 'Y', notes: v('notes') };
-            }).filter(p => p.date || Number.isFinite(p.payment) || p.notes);
+                return { date: dateOf(v('date')), minPayment: numOf(v('minPayment')), payment, before, after, made: v('made') === 'Y', notes: v('notes') };
+            }).filter(p => p.date || Number.isFinite(p.payment) || Number.isFinite(p.minPayment) || p.notes);
             const title = ed.querySelector('[name=title]').value.trim();
             if (!title) { toast('The account needs a title', 'bad'); return; }
             try {
