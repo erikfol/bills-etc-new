@@ -16,6 +16,8 @@ const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct
 const dShort = d => `${MON[d.getMonth()]} ${d.getDate()}`;
 const dLong = d => `${MON[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
 const period = b => b.start ? `${dShort(b.start)}${b.start.getFullYear() !== b.end.getFullYear() ? ', ' + b.start.getFullYear() : ''} – ${dLong(b.end)}` : dLong(b.end);
+/** Same day next month, kept within the month (Jan 31 → Feb 28). */
+const addMonth = d => new Date(d.getFullYear(), d.getMonth() + 1, Math.min(d.getDate(), new Date(d.getFullYear(), d.getMonth() + 2, 0).getDate()));
 const barLabel = b => `${MON[b.end.getMonth()]} ’${String(b.end.getFullYear()).slice(2)}`;
 const kwh = n => Number.isFinite(n) ? `${Math.round(n).toLocaleString('en-US')} kWh` : '–';
 /** Bill amounts: credits read as "$1,003.21 credit" rather than a minus sign. */
@@ -75,6 +77,7 @@ async function renderElectric(el) {
     if (i < 0) i = bills.length - 1; // open on the latest bill
 
     el.innerHTML = `
+        <div id="catchup"></div>
         <div class="row dash-head">
             <h2 class="page-sub">Electric</h2>
             <span class="spacer"></span>
@@ -324,9 +327,21 @@ async function renderElectric(el) {
         form.hidden = false;
         $('#add-open').hidden = true;
         preview();
-        form.end.focus();
+        form.scrollIntoView({ block: 'center' });
+        form.end.focus({ preventScroll: true });
     };
     $('#add-cancel').onclick = () => { form.hidden = true; $('#add-open').hidden = false; };
+
+    // ── Caught up? A statement comes monthly, so the next one is due a month after the last due date ──
+    const lastDue = last.due || last.end;
+    const nextDue = addMonth(lastDue);
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    $('#catchup').innerHTML = today >= nextDue
+        ? `<div class="banner row">
+            <span>📬 <strong>There's a new electric statement to add.</strong> Your last bill was due ${esc(dLong(lastDue))}, so the next one was due around ${esc(dLong(nextDue))}.</span>
+            <span class="spacer"></span><button class="primary small" id="catchup-add">Add it now</button></div>`
+        : `<div class="banner ok">✓ <strong>All electric statements are caught up.</strong> The next one is due around ${esc(dLong(nextDue))}.</div>`;
+    $('#catchup-add')?.addEventListener('click', () => $('#add-open').click());
     form.oninput = preview;
     form.onsubmit = async e => {
         e.preventDefault();
