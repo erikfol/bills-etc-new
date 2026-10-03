@@ -24,6 +24,7 @@ const MON_LONG = d => `${MON[d.getMonth()]} ${d.getFullYear()}`;
 /** 38 → '3 years 2 months' */
 const duration = m => { const y = Math.floor(m / 12), r = m % 12; return [y ? `${y} year${y === 1 ? '' : 's'}` : '', r ? `${r} month${r === 1 ? '' : 's'}` : ''].filter(Boolean).join(' ') || '0 months'; };
 let plannerOpen = new Set(); // accounts whose planner is unfolded
+const expanded = new Set(); // accounts opened (all start collapsed); kept while you move around the app
 const plannerPay = new Map(); // account id → payment being tried in the planner
 const typeIcon = t => (t === 'Credit card' ? '💳' : t === 'Loan' ? '🏦' : '📄');
 const DAY = 864e5;
@@ -182,13 +183,22 @@ function renderAccount(sec, account, rawPayments, rawActivity, { first, last, re
     const strip = list => list.map(({ before, after, signed, balance, ...rest }) => rest); // drop worked-out fields before saving
 
     sec.innerHTML = `
-        <h2>${typeIcon(account.type)} ${esc(account.title)} <span class="badge badge-neutral">${esc(account.type)}</span>
+        <h2 class="loan-head" title="Click to ${expanded.has(account.id) ? 'collapse' : 'expand'}">
+            <span class="loan-chevron" aria-hidden="true">${expanded.has(account.id) ? '▾' : '▸'}</span>
+            ${typeIcon(account.type)} ${esc(account.title)} <span class="badge badge-neutral">${esc(account.type)}</span>
             ${account.accountNumber ? `<span class="acct-num" title="Account number"><span class="acct-num-text">${esc(maskNumber(account.accountNumber))}</span>${maskNumber(account.accountNumber) !== account.accountNumber.replace(/\s+/g, '') ? ' <button type="button" class="small acct-num-toggle">show</button>' : ''}</span>` : ''}
             <span class="spacer"></span>
             ${account.url ? `<a class="ext-link" href="${esc(account.url)}" target="_blank" rel="noopener" title="${esc(account.url)}">Make a payment ↗</a>` : ''}
             <button type="button" class="small" data-move="-1" title="Move up"${first ? ' disabled' : ''}>▲</button>
             <button type="button" class="small" data-move="1" title="Move down"${last ? ' disabled' : ''}>▼</button>
             <button type="button" class="small" data-edit>✎ Edit</button></h2>
+        <div class="loan-summary">
+            <span>Balance <strong>${esc(money(L.balanceNow))}</strong></span>
+            ${next && Number.isFinite(amountDue(next)) ? `<span>Next <strong>${esc(money(amountDue(next)))}</strong>${next.date ? ` ${next.date < today() ? 'was due' : 'due'} ${esc(dLong(next.date))}` : ''}</span>` : ''}
+            ${P.status === 'ok' ? `<span>Payoff <strong>${esc(MON_LONG(P.date))}</strong></span>` : P.status === 'paid' ? '<span class="delta-good">Paid off ✓</span>' : ''}
+            ${Number(account.creditLimit) > 0 ? `<span>Available <strong>${esc(money(account.creditLimit - L.balanceNow))}</strong></span>` : ''}
+        </div>
+        <div class="loan-body"${expanded.has(account.id) ? '' : ' hidden'}>
         ${account.description ? `<p class="lead" style="margin:-4px 0 14px">${esc(account.description)}</p>` : ''}
         <div class="view-mode">
             <div class="cards kpis">
@@ -251,7 +261,23 @@ function renderAccount(sec, account, rawPayments, rawActivity, { first, last, re
                 </div>
             </div>
         </div>
-        <div class="edit-mode" hidden></div>`;
+        <div class="edit-mode" hidden></div>
+        </div>`;
+    sec.classList.toggle('collapsed', !expanded.has(account.id));
+
+    // ── Collapse / expand: click the header (not its buttons or links) ──
+    const setOpen = open => {
+        open ? expanded.add(account.id) : expanded.delete(account.id);
+        $('.loan-body').hidden = !open;
+        sec.classList.toggle('collapsed', !open);
+        $('.loan-chevron').textContent = open ? '▾' : '▸';
+        $('.loan-head').title = `Click to ${open ? 'collapse' : 'expand'}`;
+        if (open) requestAnimationFrame(() => redrawAll());
+    };
+    $('.loan-head').addEventListener('click', e => {
+        if (e.target.closest('button, a')) return;
+        setOpen($('.loan-body').hidden);
+    });
 
     // ── Read-only tables ──
     dataTable($('.t-pay'), {
@@ -387,6 +413,7 @@ function renderAccount(sec, account, rawPayments, rawActivity, { first, last, re
         <td><button type="button" class="small danger" data-del title="Remove this row">✕</button></td>
     </tr>`;
     $('[data-edit]').onclick = () => {
+        setOpen(true);
         editing.add(account.id);
         sec.querySelector('.view-mode').hidden = true;
         $('[data-edit]').hidden = true;
@@ -490,7 +517,8 @@ function renderAccount(sec, account, rawPayments, rawActivity, { first, last, re
         }
     });
 
-    return () => { draw(); drawPlanner(); };
+    function redrawAll() { draw(); drawPlanner(); }
+    return redrawAll;
 }
 
 /**

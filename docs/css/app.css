@@ -394,3 +394,10 @@ details.planner[open] > summary { margin-bottom: 12px; }
 .scen-table td, .scen-table th { padding: 6px 10px; }
 .scen-row { cursor: pointer; }
 .scen-row:hover td { background: #eef4ff; }
+/* Loan/CC: collapsible accounts */
+.loan-head { cursor: pointer; user-select: none; }
+.loan-chevron { color: var(--muted); width: 14px; display: inline-block; }
+.loan-summary { display: flex; flex-wrap: wrap; gap: 6px 22px; font-size: 0.9em; color: #555; margin: -4px 0 4px; }
+.loan:not(.collapsed) .loan-summary { display: none; }
+section.loan.collapsed { padding-bottom: 14px; }
+section.loan.collapsed h2 { margin-bottom: 8px; }
