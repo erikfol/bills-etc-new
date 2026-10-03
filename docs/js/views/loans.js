@@ -82,6 +82,7 @@ export default {
                 </div>
             </form>
             <div id="due"></div>
+            <section id="totals" hidden></section>
             <div id="accounts"></div>`;
         const $ = s => el.querySelector(s);
 
@@ -120,10 +121,13 @@ export default {
         }
 
         // ── One section per account ──
+        renderTotals($('#totals'), all);
+
         const redraws = [];
         all.forEach(({ account, rawPayments, rawActivity }, k) => {
             const sec = document.createElement('section');
             sec.className = 'loan';
+            sec.dataset.account = account.id;
             $('#accounts').appendChild(sec);
             redraws.push(renderAccount(sec, account, rawPayments, rawActivity, { first: k === 0, last: k === all.length - 1, rerender: () => this.render(el) }));
         });
@@ -145,6 +149,80 @@ export default {
         closeFilterMenu();
     },
 };
+
+/**
+ * Totals across every account: balance, available credit, monthly payments, when all of it is paid off, paid so far,
+ * a row per account (click to open it), and which one to pay extra on first.
+ */
+function renderTotals(el, all) {
+    const rows = all.map(({ account, rawPayments, rawActivity }) => {
+        const L = ledger(account, rawPayments, rawActivity);
+        const P = estimatePayoff(account, L);
+        const limit = Number(account.creditLimit) > 0 ? Number(account.creditLimit) : NaN;
+        const paid = sum(L.payments.filter(p => p.made && Number.isFinite(p.payment)).map(p => p.payment));
+        return { account, L, P, balance: L.balanceNow, limit, paid, apr: Number(account.apr) > 0 ? Number(account.apr) : NaN };
+    });
+    if (!rows.length) { el.hidden = true; return; }
+    const owing = rows.filter(r => r.balance > 0.005);
+    const balance = sum(rows.map(r => Math.max(0, r.balance)));
+    const limited = rows.filter(r => Number.isFinite(r.limit));
+    const limit = sum(limited.map(r => r.limit)), available = sum(limited.map(r => r.limit - r.balance));
+    const used = limit > 0 ? sum(limited.map(r => Math.max(0, r.balance))) / limit : NaN;
+    const monthly = sum(owing.map(r => r.P.payment).filter(Number.isFinite));
+    const ok = owing.filter(r => r.P.status === 'ok');
+    const unsure = owing.filter(r => r.P.status !== 'ok');
+    const lastPayoff = ok.length ? ok.reduce((a, r) => (r.P.date > a.P.date ? r : a)) : null;
+    const interestLeft = sum(ok.map(r => r.P.interest).filter(Number.isFinite));
+    const paid = sum(rows.map(r => r.paid));
+    const t0 = today();
+    const dueSoon = sum(rows.flatMap(r => r.L.payments.filter(p => !p.made && p.date && p.date >= t0 && p.date - t0 <= 30 * DAY).map(amountDue)).filter(Number.isFinite));
+
+    const usedClass = used >= 0.7 ? 'delta-bad' : used >= 0.3 ? 'badge-warn' : 'delta-good';
+    const byApr = owing.filter(r => Number.isFinite(r.apr)).sort((a, b) => b.apr - a.apr);
+    const tips = [];
+    if (byApr.length >= 2) tips.push(`<strong>Pay-off order:</strong> after the minimums, put any extra toward <strong>${esc(byApr[0].account.title)}</strong> (${byApr[0].apr}% APR) first, then ${byApr.slice(1).map(r => `${esc(r.account.title)} (${r.apr}%)`).join(', then ')}. Paying the highest rate first saves the most interest.`);
+    const noApr = owing.filter(r => !Number.isFinite(r.apr));
+    if (noApr.length) tips.push(`<span class="muted">No APR set for ${noApr.map(r => esc(r.account.title)).join(', ')}: add it in Edit for better estimates${byApr.length ? ' and to place it in the pay-off order' : ''}.</span>`);
+    if (unsure.length) tips.push(`<span class="muted">${unsure.map(r => esc(r.account.title)).join(', ')} ${unsure.length === 1 ? "doesn't" : "don't"} have a payoff date yet (no payment planned, or the payment doesn't cover the interest), so the debt-free date leaves ${unsure.length === 1 ? 'it' : 'them'} out.</span>`);
+
+    el.hidden = false;
+    el.innerHTML = `
+        <h2>All accounts <span class="sub">${rows.length} account${rows.length === 1 ? '' : 's'} · click a row to open it</span></h2>
+        <div class="cards kpis totals-cards">
+            ${card('Total balance', money(balance), `<span class="muted">across ${owing.length} account${owing.length === 1 ? '' : 's'} with a balance</span>`, 'var(--red)')}
+            ${limit > 0 ? card('Available credit', money(available), `<span class="muted">of ${esc(money(limit))} total limit · </span><span class="${usedClass}">${Math.round(used * 100)}% used</span>`, available < 0 ? 'var(--red)' : 'var(--green)') : ''}
+            ${card('Monthly payments', money(monthly), `<span class="muted">${esc(money(dueSoon))} due in the next 30 days</span>`)}
+            ${card('Debt-free by', lastPayoff ? MON_LONG(lastPayoff.P.date) : owing.length ? '–' : 'Now ✓',
+                lastPayoff ? `<span class="muted">last one: ${esc(lastPayoff.account.title)}${interestLeft > 0.5 ? `<br>about ${esc(money(interestLeft))} interest still to pay` : ''}</span>` : `<span class="muted">${owing.length ? 'add payments to estimate' : 'nothing owed'}</span>`,
+                lastPayoff || !owing.length ? 'var(--green)' : '')}
+            ${card('Paid so far', money(paid), '<span class="muted">payments marked made, all accounts</span>', 'var(--green)')}
+        </div>
+        <div class="table-wrap"><table class="totals-table">
+            <thead><tr><th>Account</th><th class="num">Balance</th><th class="num">APR</th><th class="num">Monthly payment</th><th>Payoff</th><th class="num">Interest left</th><th class="num">Available</th></tr></thead>
+            <tbody>${rows.map(r => `<tr class="totals-row" data-open="${esc(r.account.id)}">
+                <td>${typeIcon(r.account.type)} <strong>${esc(r.account.title)}</strong></td>
+                <td class="amt">${esc(money(r.balance))}</td>
+                <td class="amt">${Number.isFinite(r.apr) ? `${r.apr}%` : '<span class="muted">–</span>'}</td>
+                <td class="amt">${Number.isFinite(r.P.payment) ? esc(money(r.P.payment)) : '<span class="muted">–</span>'}</td>
+                <td class="nowrap">${r.P.status === 'ok' ? esc(MON_LONG(r.P.date)) : r.P.status === 'paid' ? '<span class="delta-good">paid off</span>' : r.P.status === 'never' ? '<span class="delta-bad">not at this rate</span>' : '<span class="muted">–</span>'}</td>
+                <td class="amt">${r.P.status === 'ok' && r.P.interest > 0.5 ? esc(money(r.P.interest)) : '<span class="muted">–</span>'}</td>
+                <td class="amt">${Number.isFinite(r.limit) ? esc(money(r.limit - r.balance)) : '<span class="muted">–</span>'}</td>
+            </tr>`).join('')}</tbody>
+            <tfoot><tr class="total-row"><td><strong>Total</strong></td><td class="amt"><strong>${esc(money(balance))}</strong></td><td></td>
+                <td class="amt"><strong>${esc(money(monthly))}</strong></td><td></td>
+                <td class="amt"><strong>${interestLeft > 0.5 ? esc(money(interestLeft)) : ''}</strong></td>
+                <td class="amt"><strong>${limit > 0 ? esc(money(available)) : ''}</strong></td></tr></tfoot>
+        </table></div>
+        ${tips.length ? `<ul class="insight-list" style="margin-top:12px">${tips.map(t => `<li>${t}</li>`).join('')}</ul>` : ''}`;
+    el.querySelectorAll('[data-open]').forEach(tr => {
+        tr.onclick = () => {
+            const sec = document.querySelector(`section.loan[data-account="${CSS.escape(tr.dataset.open)}"]`);
+            if (!sec) return;
+            if (sec.querySelector('.loan-body').hidden) sec.querySelector('.loan-head').click();
+            sec.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        };
+    });
+}
 
 /** Draw one account (summary, chart, payments and activity tables, add forms, edit mode). Returns its chart redraw. */
 function renderAccount(sec, account, rawPayments, rawActivity, { first, last, rerender }) {

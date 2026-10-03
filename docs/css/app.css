@@ -401,3 +401,9 @@ details.planner[open] > summary { margin-bottom: 12px; }
 .loan:not(.collapsed) .loan-summary { display: none; }
 section.loan.collapsed { padding-bottom: 14px; }
 section.loan.collapsed h2 { margin-bottom: 8px; }
+/* Loan/CC totals */
+.totals-cards { grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
+.totals-table td, .totals-table th { padding: 7px 10px; }
+.totals-row { cursor: pointer; }
+.totals-row:hover td { background: #eef4ff; }
+section.loan { scroll-margin-top: 70px; }
