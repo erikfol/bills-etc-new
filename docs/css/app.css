@@ -344,3 +344,4 @@ h2.page-sub { font-size: 1.2em; }
 .chart-title { font-size: 0.9em; color: #555; margin-bottom: 8px; }
 .banner.row > span:first-child { flex: 1 1 320px; }
 .banner.row > .spacer { flex: 0; }
+.paid-tag { margin-left: 6px; text-transform: none; letter-spacing: 0; vertical-align: 1px; }

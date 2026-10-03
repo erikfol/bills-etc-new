@@ -175,8 +175,7 @@ export default async function renderWater(el) {
         $('#prev').disabled = i === 0;
         $('#next').disabled = i === bills.length - 1;
         $('#lead').innerHTML = `${esc(qLong(b))} · ${esc(period(b))}${Number.isFinite(b.days) ? ` · ${b.days} days` : ''}`
-            + `${b.due ? ` · due ${esc(dLong(b.due))}` : ''} · `
-            + (b.isPaid ? '<span class="badge badge-ok">Paid</span>' : `<span class="badge badge-over">${esc(b.paid || 'Not marked paid')}</span>`);
+            + `${b.due ? ` · due ${esc(dLong(b.due))}` : ''}`;
 
         const perDay = b.days > 0 ? b.gallons / b.days : NaN;
         const breakdown = [
@@ -187,7 +186,7 @@ export default async function renderWater(el) {
         const diffNote = Number.isFinite(b.diff) && Math.abs(b.diff) >= 0.005
             ? `<br><span class="delta-bad">Statement was ${esc(money(Math.abs(b.diff)))} ${b.diff < 0 ? 'more' : 'less'} than calculated (${esc(money(b.calc))})</span>` : '';
         $('#kpis').innerHTML = [
-            card('Total due', money(b.total),
+            card(`Total due ${b.isPaid ? '<span class="badge badge-ok paid-tag">Paid</span>' : '<span class="badge badge-over paid-tag">Not Paid</span>'}`, money(b.total),
                 `<span class="muted">statement ${esc(money(b.statement))}${Number.isFinite(b.fee) ? ` + ACH fee ${esc(money(b.fee))}` : ''}</span><br>`
                 + vsEarlier(b.total, prev?.total, prevLabel, { higherIsGood: false, fmt: money }), 'var(--red)'),
             card('Water used', gal(b.gallons),
