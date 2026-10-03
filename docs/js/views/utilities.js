@@ -15,6 +15,7 @@ const SUBPAGES = [
 
 let onResize = null;
 let rememberedBill = null; // selected bill id, kept while you move between pages
+let rememberedYear = null; // selected year in Annual averages
 
 const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const dShort = d => `${MON[d.getMonth()]} ${d.getDate()}`;
@@ -109,6 +110,19 @@ async function renderElectric(el) {
         </section>
 
         ${solarFrom ? '<section><h2>Before and since solar</h2><div id="solar"></div></section>' : ''}
+
+        <section>
+            <div class="row" style="margin-bottom:14px">
+                <h2 style="margin:0;border:0;padding:0">Annual averages <span class="sub" id="yr-sub"></span></h2>
+                <span class="spacer"></span>
+                <div class="month-nav">
+                    <button id="yr-prev" title="Previous year" aria-label="Previous year">◀</button>
+                    <select id="yr" style="min-width:100px"></select>
+                    <button id="yr-next" title="Next year" aria-label="Next year">▶</button>
+                </div>
+            </div>
+            <div class="cards kpis" id="yr-cards" style="margin-bottom:0"></div>
+        </section>
 
         <section>
             <h2>Year by year <span class="sub">by the year each billing period ended</span></h2>
@@ -240,6 +254,33 @@ async function renderElectric(el) {
             avg: sum(list.map(b => b.amount)) / list.length,
         };
     });
+    // ── Annual averages for one year (per bill; price per kWh is the year's total ÷ its kWh) ──
+    const yearList = years.map(y => y.year).sort((a, b) => a - b);
+    $('#yr').innerHTML = [...yearList].reverse().map(y => `<option value="${y}">${y}</option>`).join('');
+    const showYear = y => {
+        rememberedYear = y;
+        const Y = years.find(x => x.year === y), k = yearList.indexOf(y);
+        $('#yr').value = String(y);
+        $('#yr-prev').disabled = k === 0;
+        $('#yr-next').disabled = k === yearList.length - 1;
+        $('#yr-sub').textContent = `${Y.count} bill${Y.count === 1 ? '' : 's'} ending in ${y}${Y.count < 12 ? ' (not a full year)' : ''}`;
+        const price = Y.used > 0 ? Y.net / Y.used : NaN;
+        const c = (label, value, sub, color = '') => `<div class="card"><div class="label">${label}</div>
+            <div class="value"${color ? ` style="color:${color}"` : ''}>${esc(value)}</div><div class="sub cmp">${sub}</div></div>`;
+        const tone = v => (v < 0 ? 'var(--green)' : 'var(--red)');
+        $('#yr-cards').innerHTML = [
+            c('Average kWh used', kwh(Y.used / Y.count), `<span class="muted">per bill · ${esc(kwh(Y.used))} in total</span>`),
+            c(Y.avg < 0 ? 'Average credit' : 'Average amount due', money(Math.abs(Y.avg)), '<span class="muted">per bill</span>', tone(Y.avg)),
+            c('Average price per kWh', Number.isFinite(price) ? (price < 0 ? `${money(-price)} credit` : money(price)) : '–',
+                '<span class="muted">year total ÷ kWh used</span>'),
+            c(Y.net < 0 ? 'Year total credit' : 'Year total cost', money(Math.abs(Y.net)), `<span class="muted">all ${Y.count} bills</span>`, tone(Y.net)),
+        ].join('');
+    };
+    $('#yr').onchange = e => showYear(+e.target.value);
+    $('#yr-prev').onclick = () => showYear(yearList[yearList.indexOf(rememberedYear) - 1]);
+    $('#yr-next').onclick = () => showYear(yearList[yearList.indexOf(rememberedYear) + 1]);
+    showYear(yearList.includes(rememberedYear) ? rememberedYear : yearList.at(-1));
+
     const moneyCol = (id, label, get) => ({ id, label, num: true, value: get, text: billText, tdClass: r => `nowrap ${billClass(get(r))}` });
     const kwhCol = (id, label, get) => ({ id, label, num: true, value: get, text: kwh, tdClass: () => 'nowrap' });
     const totalOf = (list, f) => sum(list.map(f).filter(Number.isFinite));
