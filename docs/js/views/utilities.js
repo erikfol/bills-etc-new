@@ -128,7 +128,7 @@ async function renderElectric(el) {
                         <span id="yr-credit-key"><span class="legend-dot" style="background:#27ae60"></span><span class="yr-this"></span> credit earned</span>
                         <span id="yr-prev-key"><span class="legend-dot" style="background:#c5cbd6"></span><span class="yr-last"></span></span>
                     </div>
-                    <canvas id="c-yr-amount" style="display:block;width:100%;height:210px"></canvas>
+                    <canvas id="c-yr-amount" style="display:block;width:100%;height:270px"></canvas>
                 </div>
                 <div>
                     <h3 class="chart-title">Energy by month</h3>
@@ -136,7 +136,7 @@ async function renderElectric(el) {
                         <span><span class="legend-dot" style="background:#e67e22"></span>Used from the grid</span>
                         <span><span class="legend-dot" style="background:#27ae60"></span>Sent to the grid</span>
                     </div>
-                    <canvas id="c-yr-energy" style="display:block;width:100%;height:210px"></canvas>
+                    <canvas id="c-yr-energy" style="display:block;width:100%;height:270px"></canvas>
                 </div>
             </div>
             <p class="note" style="margin-top:6px">Each bill sits in the month its service period ended.</p>
@@ -273,6 +273,8 @@ async function renderElectric(el) {
             used: sum(list.map(b => b.used)),
             received: rec.length ? sum(rec.map(b => b.received)) : NaN,
             net: sum(list.map(b => b.charge)),
+            earned: -sum(list.map(b => Math.min(b.charge, 0))),
+            paid: sum(list.map(b => Math.max(b.charge, 0))),
             avg: sum(list.map(b => b.charge)) / list.length,
         };
     });
@@ -297,17 +299,19 @@ async function renderElectric(el) {
             labels: MON,
             series: [
                 ...(hasPrev ? [{ values: byMonth(y - 1, b => b.charge), color: '#c5cbd6', negColor: '#c5cbd6' }] : []),
-                { values: byMonth(y, b => b.charge), color: '#e74c3c', negColor: '#27ae60' },
+                { values: byMonth(y, b => b.charge), color: '#e74c3c', negColor: '#27ae60', valueLabels: true },
             ],
             fmt: axisMoney,
+            valueFmt: v => '$' + Math.round(Math.abs(v)).toLocaleString('en-US'),
         });
         drawBars($('#c-yr-energy'), {
             labels: MON,
             series: [
-                { values: byMonth(y, b => b.used), color: '#e67e22' },
-                { values: byMonth(y, b => b.received), color: '#27ae60' },
+                { values: byMonth(y, b => b.used), color: '#e67e22', valueLabels: true },
+                { values: byMonth(y, b => b.received), color: '#27ae60', valueLabels: true },
             ],
             fmt: axisKwh,
+            valueFmt: axisKwh,
         });
     };
     const showYear = y => {
@@ -330,7 +334,11 @@ async function renderElectric(el) {
             c(Y.avg < 0 ? 'Average credit' : 'Average amount due', money(Math.abs(Y.avg)), '<span class="muted">per bill</span>', tone(Y.avg)),
             c('Average price per kWh', Number.isFinite(price) ? (price < 0 ? `${money(-price)} credit` : money(price)) : '–',
                 '<span class="muted">year total ÷ kWh used</span>'),
-            c(Y.net < 0 ? 'Year total credit' : 'Year total cost', money(Math.abs(Y.net)), `<span class="muted">all ${Y.count} bills</span>`, tone(Y.net)),
+            c(Y.net < 0 ? 'Year total credit' : 'Year total cost', money(Math.abs(Y.net)),
+                Y.earned > 0.005
+                    ? `<span class="delta-good">${esc(money(Y.earned))} credit earned</span><br><span class="delta-bad">${esc(money(Y.paid))} paid</span><br><span class="muted">net ${esc(billText(Y.net))} over ${Y.count} bills</span>`
+                    : `<span class="muted">${esc(money(Y.paid))} paid over ${Y.count} bills</span>`,
+                tone(Y.net)),
         ].join('');
         drawYear();
     };

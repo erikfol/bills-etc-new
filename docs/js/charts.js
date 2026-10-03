@@ -123,17 +123,36 @@ export function drawMonthBars(canvas, { labels, income, spending, selected }) {
 
 /**
  * Bars per period for one or more series; values may be negative (drawn below a zero line).
- * series: [{ values, color, negColor? }]; fmt(value) → axis label. Sets canvas._hit like drawMonthBars.
+ * series: [{ values, color, negColor?, valueLabels? }]; fmt(value) → axis label. Sets canvas._hit like drawMonthBars.
+ * valueFmt(value) → text printed at the end of each bar of a series with valueLabels: true
+ * (sideways when the bars are too narrow for it to fit across).
  */
-export function drawBars(canvas, { labels, series, selected = -1, fmt = kFmt }) {
+export function drawBars(canvas, { labels, series, selected = -1, fmt = kFmt, valueFmt = null }) {
     const s = setup(canvas);
     const n = labels.length;
     canvas._hit = () => -1;
     if (!s || !n) return;
     const { ctx, W, H } = s;
     const pad = { top: 16, right: 12, bottom: 30, left: 64 };
-    const chartW = W - pad.left - pad.right, chartH = H - pad.top - pad.bottom;
+    const chartW = W - pad.left - pad.right;
     const all = series.flatMap(x => x.values.filter(Number.isFinite));
+
+    const groupW = chartW / labels.length;
+    const labelEvery = Math.ceil(52 / groupW);
+    const gap = series.length > 1 ? 2 : 0;
+    const barW = Math.min((groupW * 0.7 - gap * (series.length - 1)) / series.length, 26);
+    const gOff = (groupW - series.length * barW - gap * (series.length - 1)) / 2;
+
+    // Room for value labels above the tallest bar and below the deepest one.
+    const VFONT = `10px ${FONT}`;
+    const labelled = valueFmt ? series.filter(x => x.valueLabels).flatMap(x => x.values.filter(v => Number.isFinite(v) && v)) : [];
+    ctx.font = VFONT;
+    const textW = Math.max(0, ...labelled.map(v => ctx.measureText(valueFmt(v)).width));
+    const sideways = textW > barW + 4;
+    const room = labelled.length ? (sideways ? textW : 10) + 6 : 0;
+    if (labelled.some(v => v > 0)) pad.top += room;
+    const below = labelled.some(v => v < 0) ? room : 0;
+    const chartH = H - pad.top - pad.bottom - below;
     const hi = Math.max(0, ...all), lo = Math.min(0, ...all);
     // Same clean step above and below zero so the grid lines land on round numbers.
     const step = niceStep((hi - lo) * 1.05 / 4 || 1);
@@ -151,31 +170,41 @@ export function drawBars(canvas, { labels, series, selected = -1, fmt = kFmt }) 
         ctx.fillText(fmt(Math.abs(v) < step / 2 ? 0 : v), pad.left - 6, y + 4);
     }
 
-    const groupW = chartW / n;
-    const labelEvery = Math.ceil(52 / groupW);
-    const gap = series.length > 1 ? 2 : 0;
-    const barW = Math.min((groupW * 0.7 - gap * (series.length - 1)) / series.length, 26);
-    const gOff = (groupW - series.length * barW - gap * (series.length - 1)) / 2;
     for (let i = 0; i < n; i++) {
         const gx = pad.left + i * groupW;
         if (i === selected) {
             ctx.fillStyle = '#eef3ff';
-            ctx.fillRect(gx + 1, pad.top, groupW - 2, chartH);
+            ctx.fillRect(gx + 1, pad.top, groupW - 2, chartH + below);
         }
         ctx.globalAlpha = selected < 0 || i === selected ? 1 : 0.55;
         series.forEach((ser, k) => {
             const v = ser.values[i];
             if (!Number.isFinite(v) || !v) return;
             ctx.fillStyle = v < 0 && ser.negColor ? ser.negColor : ser.color;
-            const y0 = yOf(0), y1 = yOf(v);
-            ctx.fillRect(gx + gOff + k * (barW + gap), Math.min(y0, y1), barW, Math.abs(y1 - y0));
+            const y0 = yOf(0), y1 = yOf(v), x = gx + gOff + k * (barW + gap);
+            ctx.fillRect(x, Math.min(y0, y1), barW, Math.abs(y1 - y0));
+            if (!valueFmt || !ser.valueLabels) return;
+            ctx.save();
+            ctx.font = VFONT;
+            ctx.fillStyle = '#555';
+            const up = v > 0;
+            if (sideways) {
+                ctx.translate(x + barW / 2 + 3.5, y1 + (up ? -4 : 4));
+                ctx.rotate(-Math.PI / 2);
+                ctx.textAlign = up ? 'left' : 'right';
+                ctx.fillText(valueFmt(v), 0, 0);
+            } else {
+                ctx.textAlign = 'center';
+                ctx.fillText(valueFmt(v), x + barW / 2, up ? y1 - 4 : y1 + 12);
+            }
+            ctx.restore();
         });
         ctx.globalAlpha = 1;
         if (i === selected || (i % labelEvery === 0 && !(selected >= 0 && Math.abs(i - selected) < labelEvery))) {
             ctx.fillStyle = i === selected ? '#1a1a2e' : '#888';
             ctx.font = `${i === selected ? '600 ' : ''}11px ${FONT}`;
             ctx.textAlign = 'center';
-            ctx.fillText(labels[i], gx + groupW / 2, pad.top + chartH + 18);
+            ctx.fillText(labels[i], gx + groupW / 2, pad.top + chartH + below + 18);
         }
     }
     canvas._hit = x => {
