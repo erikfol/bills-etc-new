@@ -1,5 +1,5 @@
 // Utilities: one sub-page per utility (#utilities/electric, …).
-import { loadElectric, sameBillLastYear, addElectricBill, serviceDays, ELECTRIC_PATH } from '../electric.js';
+import { loadElectric, sameBillLastYear, addElectricBill, serviceDays, chargeOf, ELECTRIC_PATH } from '../electric.js';
 import { drawBars } from '../charts.js';
 import { esc, money, sum, toast } from '../util.js';
 import { requireFolder } from '../app.js';
@@ -96,7 +96,7 @@ async function renderElectric(el) {
         <div class="cards kpis" id="kpis"></div>
 
         <section>
-            <h2>Bill amount <span class="sub">click a bar to open that bill · below zero is a credit</span></h2>
+            <h2>Charge per bill <span class="sub">what each period cost or earned · below zero is credit earned · click a bar to open that bill</span></h2>
             <canvas id="c-amount" style="display:block;width:100%;height:240px;cursor:pointer"></canvas>
         </section>
 
@@ -127,7 +127,7 @@ async function renderElectric(el) {
                     <h3 class="chart-title">Cost by month</h3>
                     <div class="chart-legend">
                         <span><span class="legend-dot" style="background:#e74c3c"></span><span class="yr-this"></span> amount due</span>
-                        <span id="yr-credit-key"><span class="legend-dot" style="background:#27ae60"></span><span class="yr-this"></span> credit</span>
+                        <span id="yr-credit-key"><span class="legend-dot" style="background:#27ae60"></span><span class="yr-this"></span> credit earned</span>
                         <span id="yr-prev-key"><span class="legend-dot" style="background:#c5cbd6"></span><span class="yr-last"></span></span>
                     </div>
                     <canvas id="c-yr-amount" style="display:block;width:100%;height:210px"></canvas>
@@ -171,8 +171,8 @@ async function renderElectric(el) {
                     <span></span>
                 </div>
                 <div class="add-grid">
-                    <label class="field">Amount<input type="number" name="amount" min="0" step="0.01" required placeholder="0.00"></label>
-                    <label class="field">This bill is<select name="kind"><option value="due">Amount due (you pay)</option><option value="credit">A credit</option></select></label>
+                    <label class="field">Amount on the statement<input type="number" name="amount" min="0" step="0.01" required placeholder="0.00"></label>
+                    <label class="field">This bill is<select name="kind"><option value="due">Amount due (you pay)</option><option value="credit">A credit (balance)</option></select></label>
                     <label class="field">Notes<input type="text" name="notes" placeholder="optional"></label>
                 </div>
                 <p class="add-preview" id="add-preview"></p>
@@ -190,7 +190,7 @@ async function renderElectric(el) {
     const draw = () => {
         drawBars($('#c-amount'), {
             labels: bills.map(barLabel),
-            series: [{ values: bills.map(b => b.amount), color: '#e74c3c', negColor: '#27ae60' }],
+            series: [{ values: bills.map(b => b.charge), color: '#e74c3c', negColor: '#27ae60' }],
             selected: i, fmt: axisMoney,
         });
         drawBars($('#c-energy'), {
@@ -223,9 +223,11 @@ async function renderElectric(el) {
             <div class="sub cmp">${cmp}</div></div>`;
         const perDay = Number.isFinite(b.days) && b.days > 0 ? b.used / b.days : NaN;
         $('#kpis').innerHTML = [
-            card(b.amount < 0 ? 'Credit' : 'Amount due', money(Math.abs(b.amount)),
-                vsLastYear(b.amount, prev?.amount, prev, { higherIsGood: false, fmt: billText, fmtDiff: money }),
-                b.amount < 0 ? 'var(--green)' : 'var(--red)'),
+            card(b.charge < 0 ? 'Credit earned this period' : 'Charged this period', money(Math.abs(b.charge)),
+                (b.amount < 0 ? `<span class="muted">Credit balance on the statement: <strong>${esc(money(-b.amount))}</strong></span><br>`
+                    : b.amount !== b.charge ? `<span class="muted">Statement amount due: <strong>${esc(money(b.amount))}</strong></span><br>` : '')
+                + vsLastYear(b.charge, prev?.charge, prev, { higherIsGood: false, fmt: billText, fmtDiff: money }),
+                b.charge < 0 ? 'var(--green)' : 'var(--red)'),
             card('Used from the grid', kwh(b.used),
                 (Number.isFinite(perDay) ? `<span class="muted">${perDay.toFixed(1)} kWh a day</span><br>` : '')
                 + vsLastYear(b.used, prev?.used, prev, { higherIsGood: false, fmt: kwh })),
@@ -234,7 +236,7 @@ async function renderElectric(el) {
                     `<span class="muted">${b.received >= b.used ? `${kwh(b.received - b.used)} more than you used` : `${kwh(b.used - b.received)} less than you used`}</span>`, 'var(--green)')
                 : card('Sent to the grid', '–', solarFrom ? '<span class="muted">before solar</span>' : '<span class="muted">no solar readings</span>'),
             card('Per kWh used', Number.isFinite(b.perKwh) ? (b.perKwh < 0 ? `${money(-b.perKwh)} credit` : money(b.perKwh)) : '–',
-                '<span class="muted">bill amount ÷ kWh used</span>'),
+                '<span class="muted">this period\'s charge ÷ kWh used</span>'),
         ].join('');
         draw();
     };
@@ -254,11 +256,11 @@ async function renderElectric(el) {
             <div class="table-wrap"><table>
                 <thead><tr><th>Average per bill</th><th class="num">${before.length} bills before solar</th><th class="num">${since.length} bill${since.length === 1 ? '' : 's'} since (from ${esc(barLabel(solarFrom))})</th></tr></thead>
                 <tbody>
-                    ${row('Bill', x => x.amount, billText)}
+                    ${row('Charge per bill', x => x.charge, billText)}
                     ${row('Used from the grid', x => x.used, kwh)}
                     <tr><td>Sent to the grid</td><td class="amt">–</td><td class="amt">${esc(kwh(avg(since, x => x.received || 0)))}</td></tr>
                 </tbody>
-                <tfoot><tr class="total-row"><td><strong>Total</strong></td><td class="amt"><strong>${esc(billText(sum(before.map(x => x.amount))))}</strong></td><td class="amt"><strong>${esc(billText(sum(since.map(x => x.amount))))}</strong></td></tr></tfoot>
+                <tfoot><tr class="total-row"><td><strong>Total</strong></td><td class="amt"><strong>${esc(billText(sum(before.map(x => x.charge))))}</strong></td><td class="amt"><strong>${esc(billText(sum(since.map(x => x.charge))))}</strong></td></tr></tfoot>
             </table></div>`;
     }
 
@@ -270,8 +272,8 @@ async function renderElectric(el) {
             year: y, count: list.length,
             used: sum(list.map(b => b.used)),
             received: rec.length ? sum(rec.map(b => b.received)) : NaN,
-            net: sum(list.map(b => b.amount)),
-            avg: sum(list.map(b => b.amount)) / list.length,
+            net: sum(list.map(b => b.charge)),
+            avg: sum(list.map(b => b.charge)) / list.length,
         };
     });
     // ── Annual averages for one year (per bill; price per kWh is the year's total ÷ its kWh) ──
@@ -294,8 +296,8 @@ async function renderElectric(el) {
         drawBars($('#c-yr-amount'), {
             labels: MON,
             series: [
-                ...(hasPrev ? [{ values: byMonth(y - 1, b => b.amount), color: '#c5cbd6', negColor: '#c5cbd6' }] : []),
-                { values: byMonth(y, b => b.amount), color: '#e74c3c', negColor: '#27ae60' },
+                ...(hasPrev ? [{ values: byMonth(y - 1, b => b.charge), color: '#c5cbd6', negColor: '#c5cbd6' }] : []),
+                { values: byMonth(y, b => b.charge), color: '#e74c3c', negColor: '#27ae60' },
             ],
             fmt: axisMoney,
         });
@@ -313,7 +315,7 @@ async function renderElectric(el) {
         el.querySelectorAll('.yr-this').forEach(s => { s.textContent = y; });
         el.querySelectorAll('.yr-last').forEach(s => { s.textContent = `${y - 1} (for comparison)`; });
         $('#yr-prev-key').hidden = !yearList.includes(y - 1);
-        $('#yr-credit-key').hidden = !bills.some(b => b.end.getFullYear() === y && b.amount < 0);
+        $('#yr-credit-key').hidden = !bills.some(b => b.end.getFullYear() === y && b.charge < 0);
         const Y = years.find(x => x.year === y), k = yearList.indexOf(y);
         $('#yr').value = String(y);
         $('#yr-prev').disabled = k === 0;
@@ -369,7 +371,8 @@ async function renderElectric(el) {
             dateCol('due', 'Due', r => r.due),
             kwhCol('used', 'Used', r => r.used),
             kwhCol('rec', 'Sent to grid', r => r.received),
-            moneyCol('amt', 'Amount', r => r.amount),
+            moneyCol('amt', 'Statement', r => r.amount),
+            moneyCol('charge', 'This period', r => r.charge),
             { id: 'per', label: 'Per kWh', value: r => r.perKwh, num: true, text: v => (v < 0 ? `${money(-v)} credit` : money(v)), tdClass: r => `nowrap ${billClass(r.perKwh)}` },
             { id: 'notes', label: 'Notes', value: r => r.notes, tdClass: () => 'note-text bill-note' },
         ],
@@ -414,7 +417,12 @@ async function renderElectric(el) {
         if (b.start && b.end && b.end > b.start) bits.push(`${serviceDays(b.start, b.end)} days`);
         if (Number.isFinite(used) && used >= 0) bits.push(`${kwh(used)} used`);
         if (Number.isFinite(sent) && sent >= 0) bits.push(`${kwh(sent)} sent to the grid`);
-        if (Number.isFinite(b.amount)) bits.push(billText(b.amount) + (used > 0 ? ` (${b.amount < 0 ? `${money(-b.amount / used)} credit` : money(b.amount / used)} per kWh)` : ''));
+        if (Number.isFinite(b.amount)) {
+            const charge = chargeOf(b.amount, last.amount);
+            bits.push(`statement ${billText(b.amount)}`);
+            bits.push(`this period ${charge < 0 ? `${money(-charge)} credit earned` : money(charge)}`
+                + (used > 0 ? ` (${charge < 0 ? `${money(-charge / used)} credit` : money(charge / used)} per kWh)` : ''));
+        }
         $('#add-preview').innerHTML = (bits.length ? esc(bits.join(' · ')) : '')
             + (form.dataset.tried && p.length ? `<br><span class="negative">${p.map(esc).join(' ')}</span>` : '');
     };

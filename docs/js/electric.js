@@ -51,9 +51,10 @@ async function readSheet() {
 }
 
 /**
- * Bills, oldest first: {id, start, end, days, due, used, received, amount, perKwh, notes, curRead, curRec, multiplier}.
- * `used` is the billed kWh (after the multiplier); `received` is kWh sent to the grid (NaN before solar);
- * `amount` is negative when the bill is a credit. Returns null if the file doesn't exist.
+ * Bills, oldest first: {id, start, end, days, due, used, received, amount, charge, perKwh, notes, curRead, curRec, multiplier}.
+ * `used` is the billed kWh (after the multiplier); `received` is kWh sent to the grid (NaN before solar).
+ * `amount` is the statement's amount (negative = credit balance); `charge` is what this period alone added
+ * (see chargeOf), and `perKwh` is charge ÷ used. Returns null if the file doesn't exist.
  */
 export async function loadElectric() {
     const sheet = await readSheet();
@@ -76,7 +77,6 @@ export async function loadElectric() {
             used,
             received: num(cell(r, 'received')),
             amount,
-            perKwh: used > 0 ? amount / used : NaN,
             notes: /^\d{4}$/.test(notes) ? '' : notes, // a bare year is just a marker in the sheet
             curRead: num(cell(r, 'curRead')),
             curRec: num(cell(r, 'curRec')),
@@ -84,6 +84,10 @@ export async function loadElectric() {
         };
     }).filter(b => b.end && Number.isFinite(b.amount));
     bills.sort((a, b) => a.end - b.end);
+    bills.forEach((b, k) => {
+        b.charge = chargeOf(b.amount, bills[k - 1]?.amount);
+        b.perKwh = b.used > 0 ? b.charge / b.used : NaN;
+    });
     return { bills, missing: [] };
 }
 
@@ -142,6 +146,12 @@ export async function addElectricBill(bill) {
     if (trailing !== null) lines.push('');
     await fs.writeText(ELECTRIC_PATH, lines.join(eol));
 }
+
+/**
+ * What one period added, from its statement amount and the previous statement's. Credits carry forward
+ * (since solar the statement shows the running credit balance); an amount due was paid, so the next starts at 0.
+ */
+export const chargeOf = (amount, prevAmount) => amount - (prevAmount < 0 ? prevAmount : 0);
 
 /** The bill covering roughly the same period one year earlier, or null. */
 export function sameBillLastYear(bills, bill) {
