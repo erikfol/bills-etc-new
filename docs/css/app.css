@@ -429,3 +429,6 @@ details.bucket-group > summary { cursor: pointer; margin-bottom: 8px; }
     .bucket-row { grid-template-columns: 1fr 80px; }
     .bucket-row .where-bar, .bucket-row .b-check, .bucket-row .b-date { display: none; }
 }
+.deposit-btn { padding: 2px 8px; font-size: 0.85em; color: var(--green); border-color: #bfe8cf; background: #f2fbf5; font-family: Consolas, 'SF Mono', monospace; }
+.deposit-btn:hover { background: #dff5e7; }
+.due-tag { color: var(--orange); font-weight: 600; font-size: 0.95em; }

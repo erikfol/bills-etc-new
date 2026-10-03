@@ -13,6 +13,11 @@ import { dataTable, closeFilterMenu } from '../datatable.js';
 import { dLong, today, isoDate, dateOf, numOf, card, dateCol, moneyCol, setResize, clearResize, axisMoney, sameDay, sameAmount, dupText } from './utilcommon.js';
 
 const DAY = 864e5;
+/** Paid every other week: 26 paychecks a year. */
+const PAYCHECKS = 26, EVERY = 14;
+const plusDays = (d, n) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
+/** Deposits a bucket is behind: one for every two weeks since its last update. */
+const depositsDue = b => (b.group === 'active' && b.perCheck > 0 && b.updated ? Math.max(0, Math.floor((today() - b.updated) / DAY / EVERY)) : 0);
 const GROUPS = [
     { id: 'active', title: 'Buckets', sub: 'filled from each paycheck' },
     { id: 'setup', title: 'Need to set up', sub: 'no money or deposit yet' },
@@ -76,7 +81,7 @@ export default {
                 <div id="b-editor" hidden></div>
             </section>
             <section>
-                <h2>Each paycheck <span class="sub">${esc(money(perCheck))} set aside per paycheck · about ${esc(money(perCheck * 2))} a month · ${esc(money(perCheck * 24))} a year</span></h2>
+                <h2>Each paycheck <span class="sub">${esc(money(perCheck))} set aside per paycheck · about ${esc(money(perCheck * PAYCHECKS / 12))} a month · ${esc(money(perCheck * PAYCHECKS))} a year (${PAYCHECKS} paychecks)</span></h2>
                 <div id="per-check"></div>
             </section>
             <section>
@@ -117,10 +122,41 @@ export default {
             }
         };
 
+        // ── Paycheck deposits: one per bucket per two weeks; they also go into the account (unless held separately) ──
+        // Buckets more than two paychecks behind have probably been paused or not kept up: they're listed to check,
+        // not caught up automatically (their own + button still adds one deposit at a time).
+        const allDue = buckets.map(b => ({ b, n: depositsDue(b) })).filter(x => x.n > 0);
+        const due = allDue.filter(x => x.n <= 2), behind = allDue.filter(x => x.n > 2);
+        const deposit = (list, msg) => save((R, info) => {
+            let added = 0;
+            for (const { b, n } of list) {
+                const bal = (Number.isFinite(b.balance) ? b.balance : 0) + b.perCheck * n;
+                R[b.rec][1] = sheetDollars(bal);
+                R[b.rec][2] = longDate(b.updated ? plusDays(b.updated, EVERY * n) : today());
+                if (!info.separate.has(b.name)) added += b.perCheck * n;
+            }
+            if (added && info.available && Number.isFinite(info.available.value)) R[info.available.rec][1] = sheetDollars(info.available.value + added);
+        }, msg);
+
         // ── Status ──
         const age = available?.updated ? daysAgo(available.updated) : null;
         $('#status').innerHTML = age == null ? ''
             : `<div class="banner${age > 45 ? '' : ' ok'}">${age > 45 ? '⏰' : '✓'} <strong>Balances last updated ${esc(dLong(available.updated))}</strong> (${age} day${age === 1 ? '' : 's'} ago).${age > 45 ? ' Time to check the account and press Update balances.' : ''}</div>`;
+        if (due.length) {
+            const total = sum(due.map(x => x.b.perCheck * x.n));
+            $('#status').insertAdjacentHTML('beforeend', `<div class="banner row"><span>💵 <strong>${due.length} bucket${due.length === 1 ? ' has' : 's have'} paycheck deposits due</strong> (${esc(money(total))} in all): ${due.map(x => `${esc(x.b.name)} ${x.n}×`).join(', ')}.</span>
+                <span class="spacer"></span><button type="button" class="primary small" id="deposit-all">Add all due deposits</button></div>`);
+            $('#deposit-all').onclick = () => {
+                // (only the buckets one or two paychecks behind)
+                const lines = due.map(x => `• ${x.b.name}: ${x.n} × ${money(x.b.perCheck)} = ${money(x.n * x.b.perCheck)} (date → ${dLong(plusDays(x.b.updated, EVERY * x.n))})`).join('\n');
+                if (!confirm(`Add these paycheck deposits?\n\n${lines}\n\nTotal ${money(total)}. Buckets not held separately also add to Available in account.`)) return;
+                deposit(due, `Added ${due.reduce((t, x) => t + x.n, 0)} deposits (${money(total)})`);
+            };
+        }
+        if (behind.length) {
+            $('#status').insertAdjacentHTML('beforeend', `<div class="banner"><strong>Not updated in a while:</strong> ${behind.map(x => `${esc(x.b.name)} (last ${esc(dLong(x.b.updated))}, ${x.n} paychecks ago)`).join(', ')}.
+                These aren't caught up automatically. If you are still saving for them, use their + button for each paycheck or set the balance with Update balances; if not, set their per-paycheck amount to 0 in Edit buckets.</div>`);
+        }
 
         // ── Cards ──
         const changed = Number.isFinite(totals.before) && Number.isFinite(cushion) ? cushion - totals.before : NaN;
@@ -130,7 +166,7 @@ export default {
             card('Oh sh!t money', amountText(cushion),
                 `<span class="muted">available − set aside</span>${Number.isFinite(changed) ? `<br><span class="${changed >= 0 ? 'delta-good' : 'delta-bad'}">${changed >= 0 ? '▲' : '▼'} ${esc(money(Math.abs(changed)))}</span> <span class="muted">vs ${esc(money(totals.before))} before</span>` : ''}`,
                 cushion >= 0 ? 'var(--green)' : 'var(--red)'),
-            card('Saved each paycheck', money(perCheck), `<span class="muted">about ${esc(money(perCheck * 24))} a year</span>`),
+            card('Saved each paycheck', money(perCheck), `<span class="muted">every other week · about ${esc(money(perCheck * PAYCHECKS))} a year</span>`),
             heldApart.length ? card('Held separately', money(sum(heldApart.map(b => b.balance))), `<span class="muted">${heldApart.map(b => esc(b.name)).join(', ')}: not in the account total</span>`) : '',
         ].join('');
 
@@ -147,7 +183,7 @@ export default {
         if (setup.length) tips.push(`Still to set up: ${setup.map(b => esc(b.name)).join(', ')}. Add a balance and a per-paycheck amount in Edit buckets.`);
         const empty = buckets.filter(b => b.group === 'active' && b.perCheck > 0 && !(b.balance > 0));
         if (empty.length) tips.push(`<span class="muted">Getting deposits but showing no balance: ${empty.map(b => esc(b.name)).join(', ')}.</span>`);
-        if (recent.length) tips.push(`You moved <strong>${esc(money(movedYear))}</strong> out of savings in the last 12 months (${recent.length} transfer${recent.length === 1 ? '' : 's'}), versus about ${esc(money(perCheck * 24))} a year going in.`);
+        if (recent.length) tips.push(`You moved <strong>${esc(money(movedYear))}</strong> out of savings in the last 12 months (${recent.length} transfer${recent.length === 1 ? '' : 's'}), versus about ${esc(money(perCheck * PAYCHECKS))} a year going in.`);
         else if (transfers.length) tips.push(`No money moved out of savings in the last 12 months. The last transfer was ${esc(dLong(transfers.filter(t => t.date).sort((a, b) => b.date - a.date)[0].date))}.`);
         $('#insights').innerHTML = tips.map(t => `<li>${t}</li>`).join('') || '<li class="muted">Nothing to point out.</li>';
 
@@ -159,8 +195,10 @@ export default {
                     <span class="b-name">${esc(b.name)}${separate.has(b.name) ? ' <span class="badge badge-neutral">held separately</span>' : ''}</span>
                     <span class="where-bar"><span style="width:${Number.isFinite(b.balance) && b.balance > 0 ? Math.max(1, b.balance / maxBal * 100).toFixed(1) : 0}%"></span></span>
                     <span class="b-amt">${Number.isFinite(b.balance) ? esc(money(b.balance)) : '<span class="muted">n/a</span>'}</span>
-                    <span class="b-check">${Number.isFinite(b.perCheck) && b.perCheck > 0 ? `+${esc(money(b.perCheck))}/check` : '<span class="muted">–</span>'}</span>
-                    <span class="b-date muted">${b.updated ? esc(dLong(b.updated)) : ''}</span>
+                    <span class="b-check">${b.group === 'active' && b.perCheck > 0
+                        ? `<button type="button" class="small deposit-btn" data-deposit="${b.rec}" title="Add one paycheck deposit: +${esc(money(b.perCheck))} and the date moves 2 weeks to ${b.updated ? esc(dLong(plusDays(b.updated, EVERY))) : 'today'}">+${esc(money(b.perCheck))}</button>`
+                        : Number.isFinite(b.perCheck) && b.perCheck > 0 ? `+${esc(money(b.perCheck))}/check` : '<span class="muted">–</span>'}</span>
+                    <span class="b-date muted">${b.updated ? esc(dLong(b.updated)) : ''}${depositsDue(b) ? `<br><span class="due-tag">${depositsDue(b)} due</span>` : ''}</span>
                 </summary>
                 <div class="b-notes">${b.notes ? esc(b.notes).replace(/\r?\n/g, '<br>') : '<span class="muted">No notes.</span>'}</div>
             </details>`;
@@ -173,6 +211,17 @@ export default {
                 : `<h3 class="chart-title" style="margin-top:12px">${g.title} <span class="muted" style="font-weight:400">${g.sub}</span></h3>${inner}`;
         }).join('');
 
+        $('#buckets').addEventListener('click', e => {
+            const btn = e.target.closest('[data-deposit]');
+            if (!btn) return;
+            e.preventDefault();
+            e.stopPropagation();
+            const b = buckets.find(x => x.rec === +btn.dataset.deposit);
+            btn.disabled = true;
+            const to = b.updated ? plusDays(b.updated, EVERY) : today();
+            deposit([{ b, n: 1 }], `${b.name}: +${money(b.perCheck)} (now ${money((Number.isFinite(b.balance) ? b.balance : 0) + b.perCheck)}, dated ${dLong(to)})${separate.has(b.name) ? '' : '. Also added to Available in account'}`);
+        });
+
         // ── Each paycheck ──
         const checks = buckets.filter(b => b.group === 'active' && b.perCheck > 0).sort((a, b) => b.perCheck - a.perCheck);
         const maxCheck = Math.max(1, ...checks.map(b => b.perCheck));
@@ -182,7 +231,7 @@ export default {
                 <span class="where-bar"><span style="width:${(b.perCheck / maxCheck * 100).toFixed(1)}%;background:#27ae60"></span></span>
                 <span class="b-amt">${esc(money(b.perCheck))}</span>
                 <span class="b-check muted">${Math.round(b.perCheck / perCheck * 100)}%</span>
-                <span class="b-date muted">${esc(money(b.perCheck * 24))}/yr</span>
+                <span class="b-date muted">${esc(money(b.perCheck * PAYCHECKS))}/yr</span>
             </div>`).join('')}</div>`;
 
         // ── Transfers ──
