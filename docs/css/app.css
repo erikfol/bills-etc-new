@@ -375,3 +375,4 @@ h2.page-sub { font-size: 1.2em; }
 .loan-grid input[type=number] { width: 110px; }
 .loan-grid input[data-k=notes] { width: 100%; min-width: 180px; }
 td input[data-k=minPayment] { width: 110px; }
+.loan-tables > div + div { margin-top: 22px; }
