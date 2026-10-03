@@ -12,6 +12,7 @@ import {
 } from './utilcommon.js';
 import renderWater from './water.js';
 import renderHeating from './heating.js';
+import renderTaxes from './taxes.js';
 import { editableSheet, hasUnsavedEdits, resetUnsaved } from './sheeteditor.js';
 
 // The electric company's customer portal, where statements are downloaded.
@@ -22,6 +23,7 @@ const SUBPAGES = [
     { id: 'electric', label: 'Electric', render: renderElectric },
     { id: 'water', label: 'Water', render: renderWater },
     { id: 'heating', label: 'Home Heating', render: renderHeating },
+    { id: 'taxes', label: 'Property Taxes', render: renderTaxes },
 ];
 
 let rememberedBill = null; // selected bill id, kept while you move between pages

@@ -6,7 +6,7 @@ import { parseRecords } from './csv.js';
 const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
 const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-/** '22/Jul/2026' (also 22-Jul-2026, 2026-07-22) → Date, or null. */
+/** '22/Jul/2026' (also 22-Jul-2026, 2026-07-22, Nov 19 2025) → Date, or null. */
 export function parseBillDate(s) {
     s = String(s ?? '').trim();
     let m = s.match(/^(\d{1,2})[/\-\s]([A-Za-z]{3})[A-Za-z]*[/\-\s](\d{2,4})$/);
@@ -16,6 +16,11 @@ export function parseBillDate(s) {
         return mo >= 0 && d.getDate() === +m[1] ? d : null;
     }
     if ((m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/))) return new Date(+m[1], m[2] - 1, +m[3]);
+    // 'Nov 19 2025', 'Jul 01, 2025'
+    if ((m = s.match(/^([A-Za-z]{3})[A-Za-z]*\.?\s+(\d{1,2}),?\s+(\d{4})$/))) {
+        const mo = MONTHS.indexOf(m[1].toLowerCase()), d = new Date(+m[3], mo, +m[2]);
+        return mo >= 0 && d.getDate() === +m[2] ? d : null;
+    }
     return null;
 }
 
