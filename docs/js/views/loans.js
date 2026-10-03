@@ -189,7 +189,9 @@ function renderAccount(sec, account, rawPayments, rawActivity, { first, last, re
                 ${card('Paid so far', money(paid), `<span class="muted">${made.length} of ${payments.length} payment${payments.length === 1 ? '' : 's'} made</span>`, 'var(--green)')}
                 ${creditCard}
                 ${payoffCard}
-                ${card('Interest &amp; fees', money(interestFees), `<span class="muted">${activity.length} activity entr${activity.length === 1 ? 'y' : 'ies'}</span>`)}
+                ${card('Interest &amp; fees', money(interestFees),
+                    `<span class="muted">${Number(account.apr) > 0 ? `<strong>${esc(String(account.apr))}% APR</strong>` : 'APR not set: add it in Edit'}<br>`
+                    + `${activity.length} activity entr${activity.length === 1 ? 'y' : 'ies'}</span>`)}
             </div>
             ${L.points.length > 1 ? '<h3 class="chart-title">Balance over time</h3><canvas class="c-bal" style="display:block;width:100%;height:200px;margin-bottom:14px"></canvas>' : ''}
             <div class="loan-tables">
