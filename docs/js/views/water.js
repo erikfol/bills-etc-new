@@ -16,6 +16,9 @@ const qLong = b => `Q${b.q} ${b.year}`;
 const gal = n => Number.isFinite(n) ? `${Math.round(n).toLocaleString('en-US')} gal` : '–';
 /** $4.40, or $4.125 when the rate has a third decimal. */
 const rateText = r => { if (!Number.isFinite(r)) return '–'; const t = r.toFixed(3); return '$' + (t.endsWith('0') ? r.toFixed(2) : t); };
+// The town's online bill payment kiosk for water.
+const WATER_PORTAL = 'https://nhtaxkiosk.com/?KIOSKID=ENFIELD';
+const portalLink = `<a class="ext-link" href="${WATER_PORTAL}" target="_blank" rel="noopener">Enfield water bills ↗</a>`;
 const COLORS = { fixed: '#8e9fb8', usage: '#4a90d9', other: '#f0b955', water: '#3fa7d6', prev: '#c5cbd6' };
 
 export default async function renderWater(el) {
@@ -105,11 +108,11 @@ export default async function renderWater(el) {
         </section>
 
         <section>
-            <h2>All bills <span class="sub" id="bill-count"></span></h2>
+            <h2>All bills <span class="sub" id="bill-count"></span><span class="spacer"></span>${portalLink}</h2>
             <div id="t-bills"></div>
             <div class="row" style="margin-top:14px"><button class="primary" id="add-open">+ Add a bill</button></div>
             <form id="add-form" class="add-bill" hidden>
-                <h3>Add a bill</h3>
+                <h3 class="row">Add a bill <span class="spacer"></span><span style="font-weight:400">Get the statement from ${portalLink}</span></h3>
                 <div class="add-grid">
                     <label class="field">Quarter<select name="quarter"></select></label>
                     <label class="field">Bill period start<input type="date" name="start" required></label>
