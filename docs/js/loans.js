@@ -60,7 +60,7 @@ export function cleanUrl(url) {
 }
 
 /** Add an account and create its empty payments and activity files. Returns the new account. */
-export async function addAccount({ title, description, type, url, openingBalance, openingDate, apr }) {
+export async function addAccount({ title, description, type, url, openingBalance, openingDate, apr, accountNumber, creditLimit }) {
     const accounts = await loadAccounts();
     const id = slug(title, new Set(accounts.map(a => a.id)));
     const account = {
@@ -68,6 +68,8 @@ export async function addAccount({ title, description, type, url, openingBalance
         openingBalance: Number.isFinite(openingBalance) ? round2(openingBalance) : 0,
         openingDate: openingDate ? sheetDate(openingDate, false) : '',
         apr: Number.isFinite(apr) && apr > 0 ? apr : null,
+        accountNumber: String(accountNumber || '').trim(),
+        creditLimit: Number.isFinite(creditLimit) && creditLimit > 0 ? round2(creditLimit) : null,
         file: `${LOANS_DIR}/${id}.csv`, activityFile: `${LOANS_DIR}/${id}-activity.csv`,
     };
     if ((await fs.readText(account.file)) == null) await fs.writeText(account.file, toCSV(PAYMENT_COLS, []));
@@ -86,7 +88,8 @@ export async function updateAccount(id, changes) {
     if (changes.url != null) a.url = cleanUrl(changes.url);
     if ('openingBalance' in changes) a.openingBalance = Number.isFinite(changes.openingBalance) ? round2(changes.openingBalance) : 0;
     if ('openingDate' in changes) a.openingDate = changes.openingDate ? sheetDate(changes.openingDate, false) : '';
-    for (const k of ['apr', 'planPayment']) if (k in changes) a[k] = Number.isFinite(changes[k]) && changes[k] > 0 ? changes[k] : null;
+    for (const k of ['apr', 'planPayment', 'creditLimit']) if (k in changes) a[k] = Number.isFinite(changes[k]) && changes[k] > 0 ? changes[k] : null;
+    if (changes.accountNumber != null) a.accountNumber = String(changes.accountNumber).trim();
     await saveAccounts(accounts);
 }
 

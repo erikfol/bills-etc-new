@@ -16,6 +16,8 @@ const shortDate = d => `${MON[d.getMonth()]} ${d.getDate()} ’${String(d.getFul
 const madeBadge = p => (p.made ? '<span class="badge badge-ok">Y</span>' : '<span class="badge badge-over">N</span>');
 const typeIcon = t => (t === 'Credit card' ? '💳' : t === 'Loan' ? '🏦' : '📄');
 const DAY = 864e5;
+/** '1234 5678 9012 4421' → '•••• 4421' */
+const maskNumber = n => { const digits = String(n).replace(/\s+/g, ''); return digits.length > 4 ? `•••• ${digits.slice(-4)}` : digits; };
 /** What a payment that isn't made yet will take: the planned payment, or else the minimum. */
 const amountDue = p => (Number.isFinite(p.payment) ? p.payment : p.minPayment);
 
@@ -56,6 +58,11 @@ export default {
                     <label class="field">As of<input type="date" name="openingDate"></label>
                     <label class="field">APR (%)<input type="number" step="0.01" min="0" name="apr" placeholder="optional, for the payoff date"></label>
                 </div>
+                <div class="add-grid">
+                    <label class="field">Account number<input type="text" name="accountNumber" autocomplete="off" placeholder="optional: the last 4 digits are enough"></label>
+                    <label class="field">Credit limit ($)<input type="number" step="0.01" min="0" name="creditLimit" placeholder="optional: works out available credit"></label>
+                    <span></span>
+                </div>
                 <div class="row">
                     <button type="submit" class="primary">Add account</button>
                     <button type="button" id="acct-cancel">Cancel</button>
@@ -77,7 +84,8 @@ export default {
             if (acctForm.url.value.trim() && !cleanUrl(acctForm.url.value)) { toast('The payment website should start with https://', 'bad'); return; }
             try {
                 await addAccount({ title, description: acctForm.description.value, type: acctForm.type.value, url: acctForm.url.value,
-                    openingBalance: numOf(acctForm.openingBalance.value), openingDate: dateOf(acctForm.openingDate.value) || new Date(), apr: numOf(acctForm.apr.value) });
+                    openingBalance: numOf(acctForm.openingBalance.value), openingDate: dateOf(acctForm.openingDate.value) || new Date(), apr: numOf(acctForm.apr.value),
+                    accountNumber: acctForm.accountNumber.value, creditLimit: numOf(acctForm.creditLimit.value) });
                 toast(`Added ${title}`, 'ok');
                 this.render(el);
             } catch (err) {
@@ -145,6 +153,11 @@ function renderAccount(sec, account, rawPayments, rawActivity, { first, last, re
         : card('Payoff estimate', mon(P.date),
             `<span class="muted">${P.months} payment${P.months === 1 ? '' : 's'} of ${esc(money(P.payment))} (${esc(P.basis)})<br>${esc(P.rateText)}`
             + `${P.interest > 0.5 ? ` · about ${esc(money(P.interest))} interest` : ''}</span>`);
+    const limit = Number(account.creditLimit);
+    const used = limit > 0 ? Math.max(0, L.balanceNow) / limit : NaN;
+    const creditCard = !(limit > 0) ? '' : card('Available credit', money(limit - L.balanceNow),
+        `<span class="muted">of ${esc(money(limit))} limit · </span><span class="${used >= 0.7 ? 'delta-bad' : used >= 0.3 ? 'badge-warn' : 'delta-good'}">${Math.round(used * 100)}% used</span>`,
+        limit - L.balanceNow < 0 ? 'var(--red)' : 'var(--green)');
     const save = async (p, a) => {
         // Accounts set up before opening balances: keep the balance they started from before Before/After are stripped.
         if (!Number.isFinite(account.openingBalance)) {
@@ -159,6 +172,7 @@ function renderAccount(sec, account, rawPayments, rawActivity, { first, last, re
 
     sec.innerHTML = `
         <h2>${typeIcon(account.type)} ${esc(account.title)} <span class="badge badge-neutral">${esc(account.type)}</span>
+            ${account.accountNumber ? `<span class="acct-num" title="Account number"><span class="acct-num-text">${esc(maskNumber(account.accountNumber))}</span>${maskNumber(account.accountNumber) !== account.accountNumber.replace(/\s+/g, '') ? ' <button type="button" class="small acct-num-toggle">show</button>' : ''}</span>` : ''}
             <span class="spacer"></span>
             ${account.url ? `<a class="ext-link" href="${esc(account.url)}" target="_blank" rel="noopener" title="${esc(account.url)}">Make a payment ↗</a>` : ''}
             <button type="button" class="small" data-move="-1" title="Move up"${first ? ' disabled' : ''}>▲</button>
@@ -173,6 +187,7 @@ function renderAccount(sec, account, rawPayments, rawActivity, { first, last, re
                     next ? `<span class="muted">${next.date ? `${next.date < today() ? 'was due' : 'due'} ${esc(dLong(next.date))}` : 'no date'}`
                         + `${Number.isFinite(next.minPayment) ? ` · minimum ${esc(money(next.minPayment))}` : ''}</span>` : '<span class="muted">every payment is made</span>')}
                 ${card('Paid so far', money(paid), `<span class="muted">${made.length} of ${payments.length} payment${payments.length === 1 ? '' : 's'} made</span>`, 'var(--green)')}
+                ${creditCard}
                 ${payoffCard}
                 ${card('Interest &amp; fees', money(interestFees), `<span class="muted">${activity.length} activity entr${activity.length === 1 ? 'y' : 'ies'}</span>`)}
             </div>
@@ -317,6 +332,14 @@ function renderAccount(sec, account, rawPayments, rawActivity, { first, last, re
         }
     };
 
+    // ── Account number: masked until "show" ──
+    const tog = $('.acct-num-toggle');
+    if (tog) tog.onclick = () => {
+        const t = $('.acct-num-text'), shown = tog.textContent === 'hide';
+        t.textContent = shown ? maskNumber(account.accountNumber) : account.accountNumber;
+        tog.textContent = shown ? 'show' : 'hide';
+    };
+
     // ── Reorder ──
     sec.querySelectorAll('[data-move]').forEach(b => {
         b.onclick = async () => { await moveAccount(account.id, +b.dataset.move); rerender(); };
@@ -363,6 +386,11 @@ function renderAccount(sec, account, rawPayments, rawActivity, { first, last, re
                 <label class="field">APR (%)<input type="number" step="0.01" min="0" name="apr" value="${Number(account.apr) > 0 ? account.apr : ''}" placeholder="optional"></label>
                 <label class="field">Planned monthly payment ($)<input type="number" step="0.01" min="0" name="planPayment" value="${Number(account.planPayment) > 0 ? account.planPayment : ''}" placeholder="optional"></label>
                 <span class="muted" style="align-self:end;font-size:0.85em;padding-bottom:8px">Used for the payoff estimate. Without a planned payment it uses your next payment.</span>
+            </div>
+            <div class="add-grid">
+                <label class="field">Account number<input type="text" name="accountNumber" autocomplete="off" value="${esc(account.accountNumber || '')}" placeholder="optional: the last 4 digits are enough"></label>
+                <label class="field">Credit limit ($)<input type="number" step="0.01" min="0" name="creditLimit" value="${Number(account.creditLimit) > 0 ? account.creditLimit : ''}" placeholder="optional"></label>
+                <span class="muted" style="align-self:end;font-size:0.85em;padding-bottom:8px">Available credit = credit limit − balance now.</span>
             </div>
             <h3 class="chart-title">Payments <span class="muted" style="font-weight:400">Before and After are worked out from the balance</span></h3>
             <div class="table-wrap loan-grid"><table class="sheet-table pay-grid">
@@ -426,6 +454,7 @@ function renderAccount(sec, account, rawPayments, rawActivity, { first, last, re
                     title, type: ed.querySelector('[name=type]').value, description: ed.querySelector('[name=description]').value, url,
                     openingBalance: Number.isFinite(openingBalance) ? openingBalance : 0, openingDate,
                     apr: numOf(ed.querySelector('[name=apr]').value), planPayment: numOf(ed.querySelector('[name=planPayment]').value),
+                    accountNumber: ed.querySelector('[name=accountNumber]').value, creditLimit: numOf(ed.querySelector('[name=creditLimit]').value),
                 });
                 const updated = { ...account, openingBalance: Number.isFinite(openingBalance) ? openingBalance : 0, openingDate: openingDate ? isoDate(openingDate) : '' };
                 await saveLedger(updated, pays, acts);
