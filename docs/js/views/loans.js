@@ -214,6 +214,7 @@ function renderAccount(sec, account, rawPayments, rawActivity, { first, last, re
                 <div>
                     <h3 class="chart-title">Payments</h3>
                     <div class="t-pay short-table"></div>
+                    ${payments.some(p => p.projected) ? `<p class="note" style="margin-top:6px">Planned payments show the balance as if each one before it is made${Number(account.apr) > 0 ? `, with a month's interest at ${esc(String(account.apr))}% APR` : ''}.</p>` : ''}
                     <div class="row" style="margin-top:10px"><button type="button" class="primary small" data-pay-open>+ Add payment</button></div>
                     <form class="add-bill pay-form" hidden>
                         <h3>Add a payment</h3>
@@ -352,7 +353,7 @@ function renderAccount(sec, account, rawPayments, rawActivity, { first, last, re
     };
 
     // ── Insights and the payoff planner ──
-    const drawPlanner = renderPlanner(sec, account, L, P, rerender);
+    const drawPlanner = renderPlanner(sec, account, L, P, rerender, { rawPayments, rawActivity, save, strip });
 
     // ── Account number: masked until "show" ──
     const tog = $('.acct-num-toggle');
@@ -497,7 +498,7 @@ function renderAccount(sec, account, rawPayments, rawActivity, { first, last, re
  * (actual balance so far, your plan, minimum only), compare scenarios, and save a payment as the planned one.
  * Returns the burn-down redraw.
  */
-function renderPlanner(sec, account, L, P, rerender) {
+function renderPlanner(sec, account, L, P, rerender, { rawPayments, rawActivity, save, strip }) {
     const $ = s => sec.querySelector(s);
     const model = interestModel(account, L);
     const balance = L.balanceNow, minimum = minimumOf(L), start = nextPaymentDate(L);
@@ -550,7 +551,7 @@ function renderPlanner(sec, account, L, P, rerender) {
             <input type="range" name="payRange" min="${Math.max(1, floor)}" max="${maxPay}" step="1" aria-label="Monthly payment">
             <label class="field">…or paid off by<input type="month" name="target"></label>
             <span class="spacer"></span>
-            <button type="button" class="small primary" data-use-plan>Use as my planned payment</button>
+            <button type="button" class="small primary" data-use-plan title="Sets this as the planned monthly payment and fills in the planned payments until payoff">Use as my planned payment</button>
         </div>
         <p class="planner-result"></p>
         <div class="chart-legend">
@@ -613,7 +614,6 @@ function renderPlanner(sec, account, L, P, rerender) {
                 + (base.status === 'ok' && Math.abs(current - basePay) >= 0.01
                     ? ` <span class="${s.months < base.months ? 'delta-good' : 'delta-bad'}">(${s.months === base.months ? 'same finish' : `${duration(Math.abs(base.months - s.months))} ${s.months < base.months ? 'sooner' : 'later'}`}${Math.abs(base.interest - s.interest) > 0.5 ? `, ${esc(money(Math.abs(base.interest - s.interest)))} ${s.interest < base.interest ? 'less' : 'more'} interest` : ''} than ${esc(money(basePay))})</span>` : '')
             : `<span class="delta-bad">${esc(money(current))} a month doesn't cover the interest (about ${esc(money(s.monthlyInterest))}), so the balance never goes down.</span>`;
-        body.querySelector('[data-use-plan]').disabled = Math.abs(current - (Number(account.planPayment) || 0)) < 0.01;
         drawBurn();
     };
     payIn.oninput = () => { const v = numOf(payIn.value); if (v > 0) update(v, 'pay'); };
@@ -625,10 +625,50 @@ function renderPlanner(sec, account, L, P, rerender) {
         if (months < 1) { toast('Pick a month after the next payment', 'bad'); return; }
         update(Math.ceil(paymentFor(balance, months, model) * 100) / 100, 'target');
     };
+    // "Use as my planned payment": the planned monthly payment, and planned rows in Payments month by month until
+    // payoff. Future planned rows are updated, missing months added, the last one is just what's left, and planned rows
+    // after payoff are removed. Made and overdue payments are never touched.
+    const buildPlan = pay => {
+        const s = sim(pay);
+        if (s.status !== 'ok') return null;
+        const t0 = today();
+        const future = rawPayments.filter(p => !p.made && p.date && p.date > t0).sort((a, b) => a.date - b.date);
+        const others = rawPayments.filter(p => !future.includes(p));
+        let first = future[0]?.date || nextPaymentDate(L);
+        while (first <= t0) first = plusMonths(first, 1);
+        const lastFuture = future.at(-1)?.date || null;
+        const rows = [];
+        let bal = balance;
+        for (let k = 0; k < s.months; k++) {
+            const date = k < future.length ? future[k].date : lastFuture ? plusMonths(lastFuture, k - future.length + 1) : plusMonths(first, k);
+            const r2 = n => Math.round(n * 100) / 100; // same rounding as the Payments table
+            const owed = r2(bal + (model.rate ? r2(bal * model.rate) : model.flat));
+            const amount = k === s.months - 1 ? Math.round(owed * 100) / 100 : pay;
+            rows.push({ date, minPayment: future[k]?.minPayment ?? minimum, payment: Math.min(pay, amount), made: false, notes: future[k]?.notes || '' });
+            bal = owed - Math.min(pay, amount);
+        }
+        return {
+            rows: [...strip(others), ...rows], months: s.months, first: rows[0].date, last: rows.at(-1),
+            updated: Math.min(s.months, future.length), added: Math.max(0, s.months - future.length), removed: Math.max(0, future.length - s.months),
+        };
+    };
     body.querySelector('[data-use-plan]').onclick = async () => {
-        await updateAccount(account.id, { planPayment: current });
-        toast(`${account.title}: planned payment set to ${money(current)} a month`, 'ok');
-        rerender();
+        const plan = buildPlan(current);
+        if (!plan) { toast(`${money(current)} a month doesn't cover the interest, so there's no payoff to plan`, 'bad'); return; }
+        const changes = [plan.updated && `update ${plan.updated} planned payment${plan.updated === 1 ? '' : 's'}`,
+            plan.added && `add ${plan.added}`, plan.removed && `remove ${plan.removed} planned after the payoff`].filter(Boolean).join(', ');
+        if (!confirm(`Plan ${money(current)} a month for ${account.title}?\n\n`
+            + `${plan.months} payment${plan.months === 1 ? '' : 's'} from ${dLong(plan.first)} to ${dLong(plan.last.date)} (the last one ${money(plan.last.payment)}).\n`
+            + `This will ${changes} in the Payments table. Made and overdue payments aren't changed.`)) return;
+        try {
+            await updateAccount(account.id, { planPayment: current });
+            account.planPayment = current;
+            plannerPay.delete(account.id);
+            toast(`${account.title}: ${plan.months} planned payments of ${money(current)} added`, 'ok');
+            await save(plan.rows, strip(rawActivity));
+        } catch (err) {
+            toast(`Save failed: ${err.message}. Is the file open in Excel?`, 'bad');
+        }
     };
 
     // ── Scenarios ──

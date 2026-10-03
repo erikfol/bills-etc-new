@@ -158,6 +158,10 @@ export function ledger(account, payments, activity) {
         ...payments.map(p => ({ kind: 'payment', date: p.date, item: p })),
     ].sort((x, y) => byDate(x, y) || (x.kind === y.kind ? 0 : x.kind === 'activity' ? -1 : 1));
     let bal = opening;
+    // Payments not made yet are projected one after another, as if each earlier one had been made, with a month's
+    // interest at the APR before each (the same way the payoff planner works). `planned` is their running effect.
+    const rate = Number(account.apr) > 0 ? account.apr / 100 / 12 : 0;
+    let planned = 0;
     // The opening point sits at the opening date, or at the first entry if something is dated before it.
     const firstDate = events.find(e => e.date)?.date;
     const openAt = openingDate && firstDate ? (firstDate < openingDate ? firstDate : openingDate) : openingDate || firstDate;
@@ -171,7 +175,15 @@ export function ledger(account, payments, activity) {
             if (a.date) points.push({ date: a.date, balance: bal, what: `${a.type}: ${a.description || ''}`.trim() });
         } else {
             const p = e.item, pay = Number.isFinite(p.payment) ? p.payment : 0;
-            const before = bal, after = round2(bal - (Number.isFinite(p.payment) ? pay : (p.made ? 0 : (Number.isFinite(p.minPayment) ? p.minPayment : 0))));
+            if (!p.made) {
+                const start = Math.max(0, bal + planned), interest = round2(start * rate);
+                const amount = Number.isFinite(p.payment) ? pay : Number.isFinite(p.minPayment) ? p.minPayment : 0;
+                const before = round2(start + interest), after = round2(before - amount);
+                planned = round2(planned + interest - amount);
+                outPayments.push({ ...p, before, after, projected: true, interest });
+                continue;
+            }
+            const before = bal, after = round2(bal - pay);
             outPayments.push({ ...p, before, after });
             if (p.made) {
                 bal = round2(bal - pay);
