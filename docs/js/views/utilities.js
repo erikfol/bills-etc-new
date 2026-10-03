@@ -5,6 +5,10 @@ import { esc, money, sum, toast } from '../util.js';
 import { requireFolder } from '../app.js';
 import { dataTable, closeFilterMenu } from '../datatable.js';
 
+// The electric company's customer portal, where statements are downloaded.
+const ELECTRIC_PORTAL = 'https://myaccount.libertyenergyandwater.com/portal/#/login?LUNH';
+const portalLink = `<a class="ext-link" href="${ELECTRIC_PORTAL}" target="_blank" rel="noopener">Liberty account ↗</a>`;
+
 const SUBPAGES = [
     { id: 'electric', label: 'Electric', render: renderElectric },
 ];
@@ -112,11 +116,11 @@ async function renderElectric(el) {
         </section>
 
         <section>
-            <h2>All bills <span class="sub" id="bill-count"></span></h2>
+            <h2>All bills <span class="sub" id="bill-count"></span><span class="spacer"></span>${portalLink}</h2>
             <div id="t-bills"></div>
             <div class="row" style="margin-top:14px"><button class="primary" id="add-open">+ Add a bill</button></div>
             <form id="add-form" class="add-bill" hidden>
-                <h3>Add a bill</h3>
+                <h3 class="row">Add a bill <span class="spacer"></span><span style="font-weight:400">Get the statement from your ${portalLink}</span></h3>
                 <div class="add-grid">
                     <label class="field">Service start<input type="date" name="start" required></label>
                     <label class="field">Service end<input type="date" name="end" required></label>
