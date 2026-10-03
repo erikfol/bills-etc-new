@@ -322,3 +322,14 @@ th.filtered .fbtn::before { content: '⧩ '; font-size: 0.9em; }
 .suggest-names { flex: 1; }
 .suggest-names small { color: var(--faint); }
 tr.selected-row td { background: #eef4ff; }
+
+/* ── Utilities ───────────────────────────────────────────────────────── */
+.subnav { display: flex; flex-wrap: wrap; gap: 4px; margin: 6px 0 18px; border-bottom: 2px solid var(--line-strong); }
+.subnav a {
+    padding: 8px 16px; color: #666; text-decoration: none; font-weight: 500;
+    border-bottom: 3px solid transparent; margin-bottom: -2px;
+}
+.subnav a:hover { color: var(--blue-text); }
+.subnav a.active { color: var(--navy-2); border-bottom-color: var(--blue); }
+h2.page-sub { font-size: 1.2em; }
+.bill-note { min-width: 240px; }

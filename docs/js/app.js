@@ -8,8 +8,9 @@ import month from './views/month.js';
 import dashboard from './views/dashboard.js';
 import edit from './views/edit.js';
 import config from './views/config.js';
+import utilities from './views/utilities.js';
 
-const VIEWS = { home, workflow, month, dashboard, edit, config };
+const VIEWS = { home, workflow, month, dashboard, utilities, edit, config };
 const viewEl = document.getElementById('view');
 let current = null;
 let currentName = null;
@@ -56,7 +57,7 @@ export function requireFolder(el) {
 }
 
 async function route(force = false) {
-    const name = location.hash.slice(1) || 'home';
+    const name = (location.hash.slice(1) || 'home').split('/')[0]; // '#utilities/electric' → utilities view
     if (!force && current?.canLeave && name !== currentName && !current.canLeave()) {
         history.replaceState(null, '', '#' + currentName);
         return;

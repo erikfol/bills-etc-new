@@ -120,3 +120,66 @@ export function drawMonthBars(canvas, { labels, income, spending, selected }) {
         return i >= 0 && i < n ? i : -1;
     };
 }
+
+/**
+ * Bars per period for one or more series; values may be negative (drawn below a zero line).
+ * series: [{ values, color, negColor? }]; fmt(value) → axis label. Sets canvas._hit like drawMonthBars.
+ */
+export function drawBars(canvas, { labels, series, selected = -1, fmt = kFmt }) {
+    const s = setup(canvas);
+    const n = labels.length;
+    canvas._hit = () => -1;
+    if (!s || !n) return;
+    const { ctx, W, H } = s;
+    const pad = { top: 16, right: 12, bottom: 30, left: 64 };
+    const chartW = W - pad.left - pad.right, chartH = H - pad.top - pad.bottom;
+    const all = series.flatMap(x => x.values.filter(Number.isFinite));
+    const hi = Math.max(0, ...all), lo = Math.min(0, ...all);
+    // Same clean step above and below zero so the grid lines land on round numbers.
+    const step = niceStep((hi - lo) * 1.05 / 4 || 1);
+    const top = Math.ceil(hi * 1.05 / step) * step || step, bottom = Math.floor(lo * 1.05 / step) * step;
+    const yOf = v => pad.top + chartH * (top - v) / (top - bottom);
+
+    ctx.font = `11px ${FONT}`;
+    ctx.textAlign = 'right';
+    for (let v = bottom; v <= top + step / 2; v += step) {
+        const y = yOf(v);
+        ctx.strokeStyle = Math.abs(v) < step / 2 ? '#bbb' : '#f0f0f0';
+        ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(pad.left, y); ctx.lineTo(pad.left + chartW, y); ctx.stroke();
+        ctx.fillStyle = '#aaa';
+        ctx.fillText(fmt(Math.abs(v) < step / 2 ? 0 : v), pad.left - 6, y + 4);
+    }
+
+    const groupW = chartW / n;
+    const labelEvery = Math.ceil(52 / groupW);
+    const gap = series.length > 1 ? 2 : 0;
+    const barW = Math.min((groupW * 0.7 - gap * (series.length - 1)) / series.length, 26);
+    const gOff = (groupW - series.length * barW - gap * (series.length - 1)) / 2;
+    for (let i = 0; i < n; i++) {
+        const gx = pad.left + i * groupW;
+        if (i === selected) {
+            ctx.fillStyle = '#eef3ff';
+            ctx.fillRect(gx + 1, pad.top, groupW - 2, chartH);
+        }
+        ctx.globalAlpha = selected < 0 || i === selected ? 1 : 0.55;
+        series.forEach((ser, k) => {
+            const v = ser.values[i];
+            if (!Number.isFinite(v) || !v) return;
+            ctx.fillStyle = v < 0 && ser.negColor ? ser.negColor : ser.color;
+            const y0 = yOf(0), y1 = yOf(v);
+            ctx.fillRect(gx + gOff + k * (barW + gap), Math.min(y0, y1), barW, Math.abs(y1 - y0));
+        });
+        ctx.globalAlpha = 1;
+        if (i === selected || (i % labelEvery === 0 && !(selected >= 0 && Math.abs(i - selected) < labelEvery))) {
+            ctx.fillStyle = i === selected ? '#1a1a2e' : '#888';
+            ctx.font = `${i === selected ? '600 ' : ''}11px ${FONT}`;
+            ctx.textAlign = 'center';
+            ctx.fillText(labels[i], gx + groupW / 2, pad.top + chartH + 18);
+        }
+    }
+    canvas._hit = x => {
+        const i = Math.floor((x - pad.left) / groupW);
+        return i >= 0 && i < n ? i : -1;
+    };
+}
