@@ -138,7 +138,7 @@ async function renderElectric(el) {
 
         <section>
             <h2>All bills <span class="sub" id="bill-count"></span><span class="spacer"></span>${portalLink}</h2>
-            <div id="t-bills"></div>
+            <div id="t-bills" class="short-table"></div>
             <div class="row" style="margin-top:14px"><button class="primary" id="add-open">+ Add a bill</button></div>
             <form id="add-form" class="add-bill" hidden>
                 <h3 class="row">Add a bill <span class="spacer"></span><span style="font-weight:400">Get the statement from your ${portalLink}</span></h3>

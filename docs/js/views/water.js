@@ -111,7 +111,7 @@ export default async function renderWater(el) {
 
         <section>
             <h2>All bills <span class="sub" id="bill-count"></span><span class="spacer"></span>${portalLink}</h2>
-            <div id="t-bills"></div>
+            <div id="t-bills" class="short-table"></div>
             <div class="row" style="margin-top:14px"><button class="primary" id="add-open">+ Add a bill</button></div>
             <form id="add-form" class="add-bill" hidden>
                 <h3 class="row">Add a bill <span class="spacer"></span><span style="font-weight:400">Get the statement from ${portalLink}</span></h3>
@@ -133,7 +133,10 @@ export default async function renderWater(el) {
                 <div class="add-grid">
                     <label class="field">True amount due on the statement ($)<input type="number" name="statement" min="0" step="0.01" required placeholder="0.00"></label>
                     <label class="field">Service fee (ACH) ($)<input type="number" name="fee" min="0" step="0.01" required></label>
-                    <label class="check" style="align-self:end;padding-bottom:8px"><input type="checkbox" name="paid" checked> Paid</label>
+                    <div class="row" style="align-self:end;gap:12px">
+                        <label class="check" style="padding-bottom:8px"><input type="checkbox" name="paid" checked> Paid</label>
+                        <label class="field" style="flex:1">Date paid<input type="date" name="paidDate"></label>
+                    </div>
                 </div>
                 <p class="add-preview" id="add-preview"></p>
                 <div class="row">
@@ -188,7 +191,7 @@ export default async function renderWater(el) {
         const diffNote = Number.isFinite(b.diff) && Math.abs(b.diff) >= 0.005
             ? `<br><span class="delta-bad">Statement was ${esc(money(Math.abs(b.diff)))} ${b.diff < 0 ? 'more' : 'less'} than calculated (${esc(money(b.calc))})</span>` : '';
         $('#kpis').innerHTML = [
-            card(`Total due ${b.isPaid ? '<span class="badge badge-ok paid-tag">Paid</span>'
+            card(`Total due ${b.isPaid ? `<span class="badge badge-ok paid-tag">Paid${b.paidDate ? ` ${esc(dLong(b.paidDate))}` : ''}</span>`
                 : `<span class="badge badge-over paid-tag">Not Paid</span> ${markBtn(b, true, 'Mark as paid', 'primary paid-btn')}`}`, money(b.total),
                 `<span class="muted">statement ${esc(money(b.statement))}${Number.isFinite(b.fee) ? ` + ACH fee ${esc(money(b.fee))}` : ''}</span><br>`
                 + vsEarlier(b.total, prev?.total, prevLabel, { higherIsGood: false, fmt: money }), 'var(--red)'),
@@ -318,6 +321,7 @@ export default async function renderWater(el) {
             { id: 'paid', label: 'Paid?', value: r => r.paid, tdClass: () => 'nowrap',
                 cell: r => (r.isPaid ? `<span class="badge badge-ok">Yes</span> ${markBtn(r, false, 'Undo', 'paid-undo')}`
                     : `<span class="badge badge-over">${esc(r.paid || 'No')}</span> ${markBtn(r, true, 'Mark paid', 'primary')}`) },
+            dateCol('paidDate', 'Date paid', r => r.paidDate),
         ],
         rows: bills,
         sort: { col: 'quarter', dir: 'desc' },
@@ -340,14 +344,31 @@ export default async function renderWater(el) {
 
     // ── Mark paid / not paid: writes the Paid? column of that quarter ──
     el.onclick = async e => {
-        const btn = e.target.closest('[data-mark-paid]');
+        const cancel = e.target.closest('[data-cancel-paid]');
+        if (cancel) { const box = cancel.closest('.paid-edit'); box.replaceWith(box._btn); return; }
+        const btn = e.target.closest('[data-mark-paid], [data-save-paid]');
         if (!btn) return;
-        const paid = btn.dataset.markPaid === '1', qy = { q: +btn.dataset.q, year: +btn.dataset.year };
-        if (!paid && !confirm(`Mark Q${qy.q} ${qy.year} as not paid?`)) return;
+        const qy = { q: +btn.dataset.q, year: +btn.dataset.year };
+        if (btn.dataset.markPaid === '1') {
+            // Ask for the date it was paid, right where the button was.
+            const box = document.createElement('span');
+            box.className = 'paid-edit';
+            box.innerHTML = `<input type="date" value="${isoDate(new Date())}" aria-label="Date paid" title="Date paid">
+                <button type="button" class="small primary" data-save-paid data-q="${qy.q}" data-year="${qy.year}">Save</button>
+                <button type="button" class="small" data-cancel-paid title="Cancel">✕</button>`;
+            box._btn = btn;
+            btn.replaceWith(box);
+            box.querySelector('input').focus();
+            return;
+        }
+        const paid = 'savePaid' in btn.dataset;
+        const date = paid ? dateOf(btn.closest('.paid-edit').querySelector('input').value) : null;
+        if (paid && !date) { toast('Pick the date it was paid', 'bad'); return; }
+        if (!paid && !confirm(`Mark Q${qy.q} ${qy.year} as not paid? This also clears its date paid.`)) return;
         btn.disabled = true;
         try {
-            await setWaterPaid(qy, paid);
-            toast(`Q${qy.q} ${qy.year} marked ${paid ? 'paid' : 'not paid'}`, 'ok');
+            await setWaterPaid(qy, paid, date);
+            toast(`Q${qy.q} ${qy.year} marked ${paid ? `paid on ${dLong(date)}` : 'not paid'}`, 'ok');
             const y = scrollY;
             await renderWater(el);
             scrollTo(0, y);
@@ -374,7 +395,7 @@ export default async function renderWater(el) {
         return {
             q: qy.q, year: qy.year, start: dateOf(f.start), end: dateOf(f.end), due: dateOf(f.due),
             gallons: numOf(f.gallons), rate: numOf(f.rate), flat: numOf(f.flat), fixed: numOf(f.fixed), meter: numOf(f.meter),
-            statement: numOf(f.statement), fee: numOf(f.fee), paid: f.paid === 'on',
+            statement: numOf(f.statement), fee: numOf(f.fee), paid: f.paid === 'on', paidDate: dateOf(f.paidDate),
         };
     };
     const problems = b => {
@@ -386,6 +407,7 @@ export default async function renderWater(el) {
         if (!Number.isFinite(b.rate)) p.push('Enter the rate per 1,000 gallons.');
         if (![b.flat, b.fixed, b.meter, b.fee].every(Number.isFinite)) p.push('Fill in the flat unit, fixed cost, meter charge and ACH fee (0 if none).');
         if (!Number.isFinite(b.statement)) p.push('Enter the true amount due from the statement.');
+        if (b.paid && !b.paidDate) p.push('Enter the date it was paid, or untick Paid.');
         return p;
     };
     const preview = () => {
@@ -412,6 +434,7 @@ export default async function renderWater(el) {
         if (Number.isFinite(last.fixed)) form.fixed.value = last.fixed;
         if (Number.isFinite(last.meter)) form.meter.value = last.meter;
         if (Number.isFinite(last.fee)) form.fee.value = last.fee;
+        form.paidDate.value = isoDate(new Date());
         form.hidden = false;
         $('#add-open').hidden = true;
         preview();
@@ -421,7 +444,7 @@ export default async function renderWater(el) {
     $('#add-cancel').onclick = () => { form.hidden = true; $('#add-open').hidden = false; };
     $('#catchup-add')?.addEventListener('click', () => $('#add-open').click());
     form.quarter.onchange = () => { setPeriod(); preview(); };
-    form.oninput = preview;
+    form.oninput = () => { form.paidDate.disabled = !form.paid.checked; preview(); };
     form.onsubmit = async e => {
         e.preventDefault();
         form.dataset.tried = '1';

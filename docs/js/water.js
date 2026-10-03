@@ -28,14 +28,15 @@ async function readWater() {
         gallons: idx('gallons used'), rate: idx('gallons charged at'), usage: idx('gallons cost'),
         fixed: idxStart('water fixed cost'), meter: idxStart('meter charge'),
         calc: idx('calc amount due'), statement: idx('true amount due'), diff: idx('diff'),
-        fee: idxStart('service fee'), total: idx('total due'), paid: idxStart('paid'),
+        fee: idxStart('service fee'), total: idx('total due'), paid: idxStart('paid'), paidDate: idx('date paid'),
     };
     return sheet;
 }
 
 /**
  * Quarterly bills, oldest first: {quarter, q, year, start, end, days, due, gallons, rate (per 1,000 gal), usage, flat,
- * fixed, meter, fixedAll (flat + fixed + meter), calc, statement, diff, fee, total, paid, perThousand (total ÷ gallons × 1000)}.
+ * fixed, meter, fixedAll (flat + fixed + meter), calc, statement, diff, fee, total, paid, isPaid, paidDate,
+ * perThousand (total ÷ gallons × 1000)}.
  * Returns null if the file doesn't exist.
  */
 export async function loadWater() {
@@ -68,6 +69,7 @@ export async function loadWater() {
             calc: money(r, 'calc'), statement: money(r, 'statement'), diff: money(r, 'diff'),
             fee: money(r, 'fee'), total, paid,
             isPaid: /^y/i.test(paid),
+            paidDate: parseBillDate(cell(r, 'paidDate')),
             perThousand: gallons > 0 ? total / gallons * 1000 : NaN,
         };
     }).filter(b => b.end && b.year && Number.isFinite(b.total));
@@ -81,10 +83,32 @@ export function calcWater({ gallons, rate, flat, fixed, meter }) {
     return { usage, calc: round2(flat + usage + fixed + meter) };
 }
 
-/** Set the Paid? column of one quarter ({q, year}) to Yes or No, leaving every other cell and line as it was. */
-export async function setWaterPaid({ q, year }, paid) {
+/** Add a "Date Paid" column at the end of the sheet (in memory) if it doesn't have one yet. */
+function addPaidDateColumn(sheet) {
+    if (sheet.I.paidDate >= 0) return;
+    const { delim, eol } = sheet;
+    const lines = sheet.text.split(/\r?\n/);
+    const width = lines[0].split(delim).length + 1;
+    sheet.text = lines.map((line, n) => {
+        if (n === 0) return line + delim + 'Date Paid';
+        if (line === '') return line;
+        const cells = line.split(delim);
+        while (cells.length < width) cells.push('');
+        return cells.join(delim);
+    }).join(eol);
+    sheet.records = sheet.records.map(r => { const c = [...r]; while (c.length < width) c.push(''); return c; });
+    sheet.records[0][width - 1] = 'Date Paid';
+    sheet.I.paidDate = width - 1;
+}
+
+/**
+ * Mark one quarter ({q, year}) paid on `date` (a Date), or not paid (date cleared), in the Paid? and Date Paid
+ * columns; every other cell and line stays as it was. Adds the Date Paid column the first time it's needed.
+ */
+export async function setWaterPaid({ q, year }, paid, date = null) {
     const sheet = await readWater();
     if (!sheet || sheet.I.paid < 0) throw new Error(`${WATER_PATH} has no Paid? column`);
+    if (paid && date) addPaidDateColumn(sheet);
     const { text, delim, eol, I } = sheet;
     const lines = text.split(/\r?\n/);
     const k = lines.findIndex((line, n) => {
@@ -93,19 +117,21 @@ export async function setWaterPaid({ q, year }, paid) {
     });
     if (k < 0) throw new Error(`Q${q} ${year} not found in ${WATER_PATH}`);
     const cells = lines[k].split(delim);
-    while (cells.length <= I.paid) cells.push('');
+    while (cells.length <= Math.max(I.paid, I.paidDate)) cells.push('');
     cells[I.paid] = paid ? 'Yes' : 'No';
+    if (I.paidDate >= 0) cells[I.paidDate] = paid && date ? sheetDate(date, false) : '';
     lines[k] = cells.join(delim);
     await fs.writeText(WATER_PATH, lines.join(eol));
 }
 
 /**
  * Add one quarter to the sheet, in the same format and order as the rows already there.
- * bill: {q, year, start, end, due?, gallons, rate, flat, fixed, meter, statement, fee, paid (bool)}.
+ * bill: {q, year, start, end, due?, gallons, rate, flat, fixed, meter, statement, fee, paid (bool), paidDate? (Date)}.
  */
 export async function addWaterBill(bill) {
     const sheet = await readWater();
     if (!sheet || !sheet.records.length) throw new Error(`${WATER_PATH} not found`);
+    if (bill.paid && bill.paidDate) addPaidDateColumn(sheet);
     const { records, I } = sheet;
     const cells = records[0].map(() => '');
     const set = (k, v) => { if (I[k] >= 0) cells[I[k]] = String(v); };
@@ -130,5 +156,6 @@ export async function addWaterBill(bill) {
     set('fee', sheetMoney(bill.fee));
     set('total', sheetMoney(round2(bill.statement + bill.fee)));
     set('paid', bill.paid ? 'Yes' : 'No');
+    set('paidDate', bill.paid && bill.paidDate ? sheetDate(bill.paidDate, false) : '');
     await insertRow(sheet, cells, I.end);
 }

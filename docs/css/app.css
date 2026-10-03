@@ -348,3 +348,8 @@ h2.page-sub { font-size: 1.2em; }
 .paid-btn { margin-left: 6px; text-transform: none; letter-spacing: 0; padding: 2px 10px; }
 .paid-undo { padding: 1px 8px; font-size: 0.75em; color: #888; background: #fff; }
 .unpaid-list .nowrap { display: inline-flex; align-items: center; gap: 6px; margin: 2px 10px 2px 0; }
+/* All bills tables: about half their full height, scrolling inside with the header kept in view. */
+.short-table .table-wrap { max-height: 450px; overflow: auto; border: 1px solid var(--line); border-radius: 6px; }
+.short-table thead th { position: sticky; top: 0; z-index: 1; }
+.paid-edit { display: inline-flex; align-items: center; gap: 4px; }
+.paid-edit input { padding: 2px 6px; font-size: 0.85em; }
