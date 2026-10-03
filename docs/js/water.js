@@ -34,6 +34,9 @@ async function readWater() {
     return sheet;
 }
 
+/** The date and amount that make a bill a duplicate: bill period end and true amount due. */
+export const waterDupKey = (cells, sheet) => { const I = waterColumns(sheet); return { date: parseBillDate(cells[I.end]), amount: parseMoney(cells[I.statement]), what: 'a bill ending' }; };
+
 /** Columns worked out from others, which the table editor fills in again when it saves a row. */
 export const WATER_CALCULATED = 'Gallons cost, Calc Amount Due, Diff and Total Due';
 /**

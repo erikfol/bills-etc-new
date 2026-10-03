@@ -31,6 +31,11 @@ async function readDeliveries() {
     return sheet;
 }
 
+/** The date and amount that make a delivery a duplicate: date delivered and actual price. */
+export const deliveryDupKey = (cells, sheet) => { const I = deliveryColumns(sheet); return { date: parseBillDate(cells[I.date]), amount: parseMoney(cells[I.actual]), what: 'a delivery on' }; };
+/** The date and price that make a price check a duplicate. */
+export const priceCheckDupKey = (cells, sheet) => ({ date: parseBillDate(cells[sheet.idxStart('date')]), amount: parseMoney(cells[sheet.idxStart('cost')]), what: 'a price check on' });
+
 /** Columns worked out from others, which the table editor fills in again when it saves a row. */
 export const DELIVERY_CALCULATED = 'Days since last delivery, Calc Price, Extra Fees and Gal/Day Used';
 /**

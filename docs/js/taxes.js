@@ -50,6 +50,9 @@ export async function loadTaxes() {
     return { bills, missing: [] };
 }
 
+/** The date and amount that make a bill a duplicate: billing date and amount due. */
+export const taxDupKey = (cells, sheet) => { const I = taxColumns(sheet); return { date: parseBillDate(cells[I.billed]), amount: parseMoney(cells[I.amount]), what: 'a bill dated' }; };
+
 /** Columns worked out from others, which the table editor fills in again when it saves a row. */
 export const TAX_CALCULATED = 'Total Tax Rate and Total (assessed value)';
 /** Work out a row's total rate and assessed total again, in place — only when the cells they come from changed. */

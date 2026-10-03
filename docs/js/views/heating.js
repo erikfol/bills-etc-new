@@ -2,7 +2,7 @@
 // from inputs/heat_home/heatable_cost_trend.csv.
 import {
     loadDeliveries, loadPriceChecks, addDelivery, addPriceCheck, setPaidBack, daysBetween, seasonOf, seasonLabel,
-    recalcDeliveryRow, DELIVERY_CALCULATED, HEAT_PATH, PRICE_PATH,
+    recalcDeliveryRow, deliveryDupKey, priceCheckDupKey, DELIVERY_CALCULATED, HEAT_PATH, PRICE_PATH,
 } from '../heating.js';
 import { drawBars } from '../charts.js';
 import { esc, money, sum, toast } from '../util.js';
@@ -10,7 +10,7 @@ import { dataTable } from '../datatable.js';
 import { editableSheet } from './sheeteditor.js';
 import {
     MON, dLong, today, axisMoney, axisNum, isoDate, dateOf, numOf,
-    card, vsEarlier, dateCol, moneyCol, numCol, setResize, yearChips,
+    card, vsEarlier, dateCol, moneyCol, numCol, setResize, yearChips, sameDay, sameAmount, dupText,
 } from './utilcommon.js';
 
 let rememberedDelivery = null; // delivery date (ms) while you move between pages
@@ -360,13 +360,14 @@ export default async function renderHeating(el) {
         sort: { col: 'date', dir: 'desc' },
         empty: 'No Heatable price checks yet',
     });
-    editableSheet($('#t-checks'), { path: PRICE_PATH, onSaved: () => renderHeating(el) });
+    editableSheet($('#t-checks'), { path: PRICE_PATH, onSaved: () => renderHeating(el), dupKey: priceCheckDupKey });
     const checkForm = $('#check-form');
     checkForm.date.value = isoDate(new Date());
     checkForm.onsubmit = async e => {
         e.preventDefault();
         const date = dateOf(checkForm.date.value), price = numOf(checkForm.price.value);
         if (!date || !Number.isFinite(price)) { toast('Enter the date and the price per gallon', 'bad'); return; }
+        if (checks.some(c => sameDay(c.date, date) && sameAmount(c.price, price))) { toast(dupText(date, price, 'a price check on'), 'bad'); return; }
         try {
             await addPriceCheck({ date, price });
             toast(`Added a Heatable price check: ${money(price)}/gal on ${dLong(date)}`, 'ok');
@@ -400,7 +401,7 @@ export default async function renderHeating(el) {
         sort: { col: 'date', dir: 'desc' },
         onChange: list => { $('#count').textContent = `${list.length} deliver${list.length === 1 ? 'y' : 'ies'} · from ${HEAT_PATH}`; },
     });
-    editableSheet($('#t-deliveries'), { path: HEAT_PATH, onSaved: () => renderHeating(el), recalc: recalcDeliveryRow, calculated: DELIVERY_CALCULATED });
+    editableSheet($('#t-deliveries'), { path: HEAT_PATH, onSaved: () => renderHeating(el), recalc: recalcDeliveryRow, calculated: DELIVERY_CALCULATED, dupKey: deliveryDupKey });
 
     // ── Banners: where things stand, and deliveries not yet paid back ──
     const since = daysBetween(last.date, today());
@@ -460,6 +461,7 @@ export default async function renderHeating(el) {
     const problems = d => {
         const p = [];
         if (!d.date) p.push('Enter the delivery date.');
+        else if (deliveries.some(x => sameDay(x.date, d.date) && sameAmount(x.actual, d.actual))) p.push(dupText(d.date, d.actual, 'a delivery on'));
         else if (deliveries.some(x => x.date.getTime() === d.date.getTime())) p.push(`There is already a delivery on ${dLong(d.date)}.`);
         if (!d.provider) p.push('Enter the provider.');
         if (!Number.isFinite(d.price) || d.price <= 0) p.push('Enter the price per gallon.');

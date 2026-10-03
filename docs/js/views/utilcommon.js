@@ -86,3 +86,10 @@ export function yearChips(els, years, selected, onChange, labelOf = y => y, allT
     render();
     return sel;
 }
+
+// ── Duplicate entries: the same date and the same amount as one already there ──
+export const sameDay = (a, b) => !!(a && b) && a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+export const sameAmount = (a, b) => Number.isFinite(a) && Number.isFinite(b) && Math.abs(a - b) < 0.005;
+/** 'This is a duplicate entry: a bill ending Aug 19, 2026 for $1,003.21 is already there.' */
+export const dupText = (date, amount, what = 'an entry on') =>
+    `This is a duplicate entry: ${what} ${dLong(date)} for ${billText(amount)} is already there.`;

@@ -1,6 +1,6 @@
 // Utilities → Water: quarterly bills from inputs/water/master_water.csv.
 import {
-    loadWater, addWaterBill, setWaterPaid, calcWater, nextQuarter, quarterDates, recalcWaterRow, WATER_CALCULATED, WATER_PATH,
+    loadWater, addWaterBill, setWaterPaid, calcWater, nextQuarter, quarterDates, recalcWaterRow, waterDupKey, WATER_CALCULATED, WATER_PATH,
 } from '../water.js';
 import { drawBars } from '../charts.js';
 import { esc, money, sum, toast } from '../util.js';
@@ -8,7 +8,7 @@ import { dataTable } from '../datatable.js';
 import { editableSheet } from './sheeteditor.js';
 import {
     dLong, period, addMonths, today, axisMoney, axisNum, isoDate, dateOf, numOf,
-    card, vsEarlier, dateCol, moneyCol, numCol, setResize, yearChips,
+    card, vsEarlier, dateCol, moneyCol, numCol, setResize, yearChips, sameDay, sameAmount, dupText,
 } from './utilcommon.js';
 
 let rememberedBill = null; // 'Q1 - 2026' while you move between pages
@@ -357,7 +357,7 @@ export default async function renderWater(el) {
         sort: { col: 'quarter', dir: 'desc' },
         onChange: list => { $('#bill-count').textContent = `${list.length} quarter${list.length === 1 ? '' : 's'} · from ${WATER_PATH}`; },
     });
-    editableSheet($('#t-bills'), { path: WATER_PATH, onSaved: () => renderWater(el), recalc: recalcWaterRow, calculated: WATER_CALCULATED });
+    editableSheet($('#t-bills'), { path: WATER_PATH, onSaved: () => renderWater(el), recalc: recalcWaterRow, calculated: WATER_CALCULATED, dupKey: waterDupKey });
 
     // ── Banners: a quarter to add, and anything not marked paid ──
     const last = bills.at(-1), lastDue = last.due || last.end;
@@ -431,7 +431,8 @@ export default async function renderWater(el) {
     };
     const problems = b => {
         const p = [];
-        if (have.has(`${b.year}-${b.q}`)) p.push(`Q${b.q} ${b.year} is already in the file.`);
+        if (b.end && bills.some(x => sameDay(x.end, b.end) && sameAmount(x.statement, b.statement))) p.push(dupText(b.end, b.statement, 'a bill ending'));
+        else if (have.has(`${b.year}-${b.q}`)) p.push(`Q${b.q} ${b.year} is already in the file.`);
         if (!b.start || !b.end) p.push('Enter the bill period start and end.');
         else if (b.end <= b.start) p.push('The period end must be after the start.');
         if (!Number.isFinite(b.gallons)) p.push('Enter the gallons used.');

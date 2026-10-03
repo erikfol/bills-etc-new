@@ -21,6 +21,9 @@ async function readElectric() {
     return sheet;
 }
 
+/** The date and amount that make a bill a duplicate: service end and amount due. */
+export const electricDupKey = (cells, sheet) => { const I = electricColumns(sheet); return { date: parseBillDate(cells[I.end]), amount: parseMoney(cells[I.amount]), what: 'a bill ending' }; };
+
 /** Columns worked out from others, which the table editor fills in again when it saves a row. */
 export const ELECTRIC_CALCULATED = "Service Days, both kWh's used, kWh's recieved and price/unit";
 /**

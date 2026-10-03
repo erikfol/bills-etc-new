@@ -3,6 +3,7 @@
 import { readSheet, sheetMoney } from '../sheet.js';
 import * as fs from '../fs.js';
 import { esc, toast } from '../util.js';
+import { sameDay, sameAmount, dupText } from './utilcommon.js';
 
 /** How a raw cell shows in the grid: trimmed, '$   22.75' → '$22.75'. */
 const show = raw => String(raw ?? '').trim().replace(/\$\s+/g, '$').replace(/\s{2,}/g, ' ');
@@ -30,9 +31,10 @@ function formatLike(oldRaw, typed) {
  * Put an Edit button above `tableEl` (the page's normal table). Edit shows every row of the file at `path` as
  * text boxes, in the file's own order; Save writes the changed cells and calls onSaved() (re-render the page).
  * recalc(cells, sheet, changedColumns) works out a changed row's calculated cells again before it's written;
- * `calculated` names them for the hint.
+ * `calculated` names them for the hint. dupKey(cells, sheet) → {date, amount, what} lets Save refuse a row that has the
+ * same date and amount as another row (a duplicate entry).
  */
-export function editableSheet(tableEl, { path, onSaved, recalc = null, calculated = '' }) {
+export function editableSheet(tableEl, { path, onSaved, recalc = null, calculated = '', dupKey = null }) {
     const tools = document.createElement('div');
     tools.className = 'row table-tools';
     tools.innerHTML = `<button type="button" class="small" data-edit>✎ Edit</button>
@@ -118,8 +120,17 @@ export function editableSheet(tableEl, { path, onSaved, recalc = null, calculate
             rowsChanged.set(rec, cells);
             colsChanged.set(rec, (colsChanged.get(rec) || new Set()).add(c));
         }
+        for (const [rec, cells] of rowsChanged) recalc?.(cells, fresh, colsChanged.get(rec));
+        if (dupKey) {
+            const rows = fresh.records.map((r, k) => rowsChanged.get(k) || r).slice(1).map(c => dupKey(c, fresh));
+            for (const rec of rowsChanged.keys()) {
+                const me = rows[rec - 1];
+                if (!me?.date || !Number.isFinite(me.amount)) continue;
+                const other = rows.findIndex((o, k) => k !== rec - 1 && o && sameDay(o.date, me.date) && sameAmount(o.amount, me.amount));
+                if (other >= 0) { toast(`${dupText(me.date, me.amount, me.what)} (rows ${rec} and ${other + 1})`, 'bad'); return; }
+            }
+        }
         for (const [rec, cells] of rowsChanged) {
-            recalc?.(cells, fresh, colsChanged.get(rec));
             lines[lineOf[rec]] = cells.map(v => (delim === ',' && /[",\r\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v)).join(delim);
         }
         try {

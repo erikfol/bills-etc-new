@@ -1,12 +1,12 @@
 // Utilities → Property Taxes: half-year bills from inputs/taxes_property_enfield/master_taxes_property.csv.
-import { loadTaxes, addTaxBill, recalcTaxRow, TAX_CALCULATED, TAX_PATH } from '../taxes.js';
+import { loadTaxes, addTaxBill, recalcTaxRow, taxDupKey, TAX_CALCULATED, TAX_PATH } from '../taxes.js';
 import { drawBars } from '../charts.js';
 import { esc, money, sum, toast } from '../util.js';
 import { dataTable } from '../datatable.js';
 import { editableSheet } from './sheeteditor.js';
 import {
     dLong, addMonths, today, axisMoney, isoDate, dateOf, numOf,
-    card, vsEarlier, dateCol, moneyCol, numCol, setResize, yearChips,
+    card, vsEarlier, dateCol, moneyCol, numCol, setResize, yearChips, sameDay, sameAmount, dupText,
 } from './utilcommon.js';
 
 let rememberedBill = null; // 'year-half' while you move between pages
@@ -288,7 +288,7 @@ export default async function renderTaxes(el) {
         sort: { col: 'bill', dir: 'desc' },
         onChange: list => { $('#count').textContent = `${list.length} bill${list.length === 1 ? '' : 's'} · from ${TAX_PATH}`; },
     });
-    editableSheet($('#t-bills'), { path: TAX_PATH, onSaved: () => renderTaxes(el), recalc: recalcTaxRow, calculated: TAX_CALCULATED });
+    editableSheet($('#t-bills'), { path: TAX_PATH, onSaved: () => renderTaxes(el), recalc: recalcTaxRow, calculated: TAX_CALCULATED, dupKey: taxDupKey });
 
     // ── Caught up? Bills come every six months ──
     const next = last.half === 1 ? { year: last.year, half: 2 } : { year: last.year + 1, half: 1 };
@@ -326,7 +326,8 @@ export default async function renderTaxes(el) {
     };
     const problems = b => {
         const p = [];
-        if (find(b.year, b.half)) p.push(`The ${b.year} ${halfText(b.half)} bill is already in the file.`);
+        if (b.billed && bills.some(x => sameDay(x.billed, b.billed) && sameAmount(x.amount, b.amount))) p.push(dupText(b.billed, b.amount, 'a bill dated'));
+        else if (find(b.year, b.half)) p.push(`The ${b.year} ${halfText(b.half)} bill is already in the file.`);
         if (!b.billed) p.push('Enter the billing date.');
         if (![b.county, b.school, b.town, b.state].every(Number.isFinite)) p.push('Enter all four tax rates.');
         if (![b.land, b.buildings].every(Number.isFinite)) p.push('Enter the land and buildings values.');

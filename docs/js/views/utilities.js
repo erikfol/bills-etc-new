@@ -1,6 +1,6 @@
 // Utilities: one sub-page per utility (#utilities/electric, …).
 import {
-    loadElectric, sameBillLastYear, addElectricBill, serviceDays, chargeOf, recalcElectricRow, ELECTRIC_CALCULATED, ELECTRIC_PATH,
+    loadElectric, sameBillLastYear, addElectricBill, serviceDays, chargeOf, recalcElectricRow, electricDupKey, ELECTRIC_CALCULATED, ELECTRIC_PATH,
 } from '../electric.js';
 import { drawBars } from '../charts.js';
 import { esc, money, sum, toast } from '../util.js';
@@ -8,7 +8,7 @@ import { requireFolder } from '../app.js';
 import { dataTable, closeFilterMenu } from '../datatable.js';
 import {
     MON, dLong, period, addMonths, today, billText, billClass, axisMoney, axisNum,
-    isoDate, dateOf, numOf, card, vsEarlier, dateCol, moneyCol, setResize, clearResize, yearChips,
+    isoDate, dateOf, numOf, card, vsEarlier, dateCol, moneyCol, setResize, clearResize, yearChips, sameDay, sameAmount, dupText,
 } from './utilcommon.js';
 import renderWater from './water.js';
 import renderHeating from './heating.js';
@@ -391,7 +391,7 @@ async function renderElectric(el) {
         sort: { col: 'end', dir: 'desc' },
         onChange: list => { $('#bill-count').textContent = `${list.length} bill${list.length === 1 ? '' : 's'} · from ${ELECTRIC_PATH}`; },
     });
-    editableSheet($('#t-bills'), { path: ELECTRIC_PATH, onSaved: () => renderElectric(el), recalc: recalcElectricRow, calculated: ELECTRIC_CALCULATED });
+    editableSheet($('#t-bills'), { path: ELECTRIC_PATH, onSaved: () => renderElectric(el), recalc: recalcElectricRow, calculated: ELECTRIC_CALCULATED, dupKey: electricDupKey });
 
     // ── Add a bill: prefilled from the latest bill (readings carry over, the new period starts the next day) ──
     const form = $('#add-form'), last = bills.at(-1);
@@ -410,6 +410,7 @@ async function renderElectric(el) {
         const p = [];
         if (!b.start || !b.end) p.push('Enter the service start and end dates.');
         else if (b.end <= b.start) p.push('The service end must be after the start.');
+        else if (bills.some(x => sameDay(x.end, b.end) && sameAmount(x.amount, b.amount))) p.push(dupText(b.end, b.amount, 'a bill ending'));
         else if (bills.some(x => x.end.getTime() === b.end.getTime())) p.push(`There is already a bill ending ${dLong(b.end)}.`);
         if (!Number.isFinite(b.prevRead) || !Number.isFinite(b.curRead)) p.push('Enter both meter readings.');
         else if (b.curRead < b.prevRead) p.push('The current meter reading is lower than the previous one.');

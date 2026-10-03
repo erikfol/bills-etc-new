@@ -10,10 +10,20 @@ import { requireFolder } from '../app.js';
 import { dataTable, closeFilterMenu } from '../datatable.js';
 import {
     MON, dLong, addMonths, today, axisMoney, isoDate, dateOf, numOf, card, dateCol, moneyCol, setResize, clearResize,
+    sameDay, sameAmount, dupText,
 } from './utilcommon.js';
 
 let editing = new Set(); // account ids being edited with unsaved changes possible
 const shortDate = d => `${MON[d.getMonth()]} ${d.getDate()} ’${String(d.getFullYear()).slice(2)}`;
+/** 'yyyy-m-d|12.34' for an entry with a date and amount, else null. */
+const dupKeyOf = (r, amountOf) => (r.date && Number.isFinite(amountOf(r)) ? `${r.date.getFullYear()}-${r.date.getMonth()}-${r.date.getDate()}|${amountOf(r).toFixed(2)}` : null);
+/** How many entries share each date + amount. */
+const dupCounts = (list, amountOf) => {
+    const m = new Map();
+    for (const r of list) { const k = dupKeyOf(r, amountOf); if (k) m.set(k, (m.get(k) || 0) + 1); }
+    return m;
+};
+
 /** Made, Planned (date still to come) or Overdue (date has passed, not made). */
 const statusOf = p => (p.made ? 'Made' : p.date && p.date > today() ? 'Planned' : 'Overdue');
 const statusBadge = p => {
@@ -426,6 +436,8 @@ function renderAccount(sec, account, rawPayments, rawActivity, { first, last, re
         e.preventDefault();
         const date = dateOf(pf.date.value), payment = numOf(pf.payment.value), minPayment = numOf(pf.minPayment.value);
         if (!date || !(Number.isFinite(payment) || Number.isFinite(minPayment))) { toast('Enter the date and the payment or the minimum', 'bad'); return; }
+        const amt = Number.isFinite(payment) ? payment : minPayment;
+        if (rawPayments.some(p => sameDay(p.date, date) && sameAmount(Number.isFinite(p.payment) ? p.payment : p.minPayment, amt))) { toast(dupText(date, amt, 'a payment on'), 'bad'); return; }
         try {
             await save([...strip(rawPayments), { date, minPayment, payment, made: pf.made.value === 'Y', notes: pf.notes.value }], strip(rawActivity));
             toast(`Added a ${money(Number.isFinite(payment) ? payment : minPayment)} payment to ${account.title}`, 'ok');
@@ -448,6 +460,7 @@ function renderAccount(sec, account, rawPayments, rawActivity, { first, last, re
         e.preventDefault();
         const date = dateOf(af.date.value), amount = numOf(af.amount.value);
         if (!date || !Number.isFinite(amount)) { toast('Enter the date and the amount', 'bad'); return; }
+        if (rawActivity.some(a => sameDay(a.date, date) && sameAmount(a.amount, Math.abs(amount)))) { toast(dupText(date, Math.abs(amount), 'activity on'), 'bad'); return; }
         try {
             await save(strip(rawPayments), [...strip(rawActivity), { date, type: af.type.value, amount: Math.abs(amount), description: af.description.value, notes: af.notes.value }]);
             toast(`Added ${af.type.value.toLowerCase()} of ${money(Math.abs(amount))} to ${account.title}`, 'ok');
@@ -573,6 +586,16 @@ function renderAccount(sec, account, rawPayments, rawActivity, { first, last, re
             })).filter(a => a.date || Number.isFinite(a.amount) || a.description || a.notes);
             const title = ed.querySelector('[name=title]').value.trim();
             if (!title) { toast('The account needs a title', 'bad'); return; }
+            // A date and amount that now appears more often than it did before editing: a duplicate entry.
+            // (Duplicates already in the file don't block saving other changes; the insights point them out.)
+            const firstDup = (list, before, amountOf, what) => {
+                const was = dupCounts(before, amountOf), now = dupCounts(list, amountOf);
+                for (const [k, n] of now) if (n > 1 && n > (was.get(k) || 0)) { const x = list.find(r => dupKeyOf(r, amountOf) === k); return dupText(x.date, amountOf(x), what); }
+                return null;
+            };
+            const payAmt = p => (Number.isFinite(p.payment) ? p.payment : p.minPayment);
+            const dup = firstDup(pays, rawPayments, payAmt, 'a payment on') || firstDup(acts, rawActivity, a => a.amount, 'activity on');
+            if (dup) { toast(dup, 'bad'); return; }
             const url = ed.querySelector('[name=url]').value;
             if (url.trim() && !cleanUrl(url)) { toast('The payment website should start with https://', 'bad'); return; }
             const openingBalance = numOf(ed.querySelector('[name=openingBalance]').value);
@@ -641,6 +664,12 @@ function renderPlanner(sec, account, L, P, rerender, { rawPayments, rawActivity,
         }
         if (!(Number(account.apr) > 0)) tips.push(`<span class="muted">Add the APR in Edit to make these estimates more accurate (now: ${esc(model.text)}).</span>`);
     }
+    const dupsIn = (list, amountOf, what) => [...dupCounts(list, amountOf)].filter(([, n]) => n > 1).map(([k, n]) => {
+        const x = list.find(r => dupKeyOf(r, amountOf) === k);
+        return `${what} ${esc(money(amountOf(x)))} on ${esc(dLong(x.date))}${x.description ? ` (${esc(x.description)})` : ''} appears ${n} times`;
+    });
+    const dupNotes = [...dupsIn(L.payments, p => (Number.isFinite(p.payment) ? p.payment : p.minPayment), 'A payment of'), ...dupsIn(L.activity, a => a.amount, 'Activity of')];
+    if (dupNotes.length) tips.push(`<span class="delta-bad">Possible duplicate entr${dupNotes.length === 1 ? 'y' : 'ies'}:</span> ${dupNotes.join('; ')}. If one is a mistake, remove it in Edit.`);
     if (overdue.length) tips.push(`<span class="delta-bad">${overdue.length} payment${overdue.length === 1 ? ' is' : 's are'} past ${overdue.length === 1 ? 'its' : 'their'} date and not marked made</span> (${overdue.map(p => esc(dLong(p.date))).join(', ')}).`);
     $('.insights').innerHTML = tips.length ? `<h3 class="chart-title">Insights</h3><ul class="insight-list">${tips.map(t => `<li>${t}</li>`).join('')}</ul>` : '';
 
