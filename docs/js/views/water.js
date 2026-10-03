@@ -22,7 +22,7 @@ const WATER_PORTAL = 'https://nhtaxkiosk.com/?KIOSKID=ENFIELD';
 const portalLink = `<a class="ext-link" href="${WATER_PORTAL}" target="_blank" rel="noopener">Enfield water bills ↗</a>`;
 /** Button that marks a quarter paid (or, with paid = false, not paid). */
 const markBtn = (b, paid, text, cls = '') => `<button type="button" class="small ${cls}" data-mark-paid="${paid ? 1 : 0}" data-q="${b.q}" data-year="${b.year}">${text}</button>`;
-const COLORS = { fixed: '#8e9fb8', usage: '#4a90d9', other: '#f0b955', water: '#3fa7d6', prev: '#c5cbd6' };
+const COLORS = { fixed: '#8e9fb8', flat: '#8e9fb8', meter: '#a77bca', usage: '#4a90d9', other: '#f0b955', water: '#3fa7d6', prev: '#c5cbd6' };
 
 export default async function renderWater(el) {
     el.innerHTML = '<p class="muted">Loading water bills…</p>';
@@ -63,7 +63,8 @@ export default async function renderWater(el) {
             <h2>Cost per quarter <span class="sub">click a bar to open that quarter</span></h2>
             <div class="row year-chips"></div>
             <div class="chart-legend">
-                <span><span class="legend-dot" style="background:${COLORS.fixed}"></span>Fixed charges (flat unit, fixed cost, meter)</span>
+                <span><span class="legend-dot" style="background:${COLORS.flat}"></span>Flat units cost</span>
+                <span><span class="legend-dot" style="background:${COLORS.meter}"></span>Meter charge</span>
                 <span><span class="legend-dot" style="background:${COLORS.usage}"></span>Usage (gallons × rate)</span>
                 <span><span class="legend-dot" style="background:${COLORS.other}"></span>ACH fee and adjustments</span>
             </div>
@@ -161,7 +162,8 @@ export default async function renderWater(el) {
         drawBars($('#c-cost'), {
             labels: rows.map(qShort),
             series: [
-                { values: rows.map(b => b.fixedAll), color: COLORS.fixed },
+                { values: rows.map(b => b.flat), color: COLORS.flat },
+                { values: rows.map(b => b.meter), color: COLORS.meter },
                 { values: rows.map(b => b.usage), color: COLORS.usage },
                 { values: rows.map(b => Math.max(0, other(b))), color: COLORS.other },
             ],
