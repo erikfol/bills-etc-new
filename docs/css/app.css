@@ -407,3 +407,25 @@ section.loan.collapsed h2 { margin-bottom: 8px; }
 .totals-row { cursor: pointer; }
 .totals-row:hover td { background: #eef4ff; }
 section.loan { scroll-margin-top: 70px; }
+/* Savings */
+.sav-cards { grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
+.bucket-list { display: flex; flex-direction: column; gap: 2px; }
+.bucket-row { display: grid; grid-template-columns: minmax(150px, 230px) 1fr 90px 110px 130px; align-items: center; gap: 12px; padding: 6px 8px; border-radius: 6px; list-style: none; cursor: pointer; font-size: 0.92em; }
+.bucket-row::-webkit-details-marker { display: none; }
+.bucket-row.static { cursor: default; }
+.bucket-row:hover { background: var(--hover); }
+details.bucket[open] > .bucket-row { background: #eef4ff; }
+.b-name { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.b-amt { text-align: right; font-family: Consolas, 'SF Mono', monospace; font-weight: 600; }
+.b-check { text-align: right; font-size: 0.88em; color: var(--green); }
+.b-date { font-size: 0.82em; text-align: right; }
+.b-notes { margin: 2px 8px 10px; padding: 10px 14px; background: #f8faff; border-left: 3px solid var(--line-strong); border-radius: 4px; font-size: 0.88em; line-height: 1.6; color: #444; }
+details.bucket.separate .where-bar span { background: #9db7d9; }
+details.bucket-group { margin-top: 14px; }
+details.bucket-group > summary { cursor: pointer; margin-bottom: 8px; }
+.upd-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 10px; margin-bottom: 10px; }
+.b-grid textarea, .loan-grid textarea { font: inherit; font-size: 0.85em; width: 260px; min-height: 34px; }
+@media (max-width: 640px) {
+    .bucket-row { grid-template-columns: 1fr 80px; }
+    .bucket-row .where-bar, .bucket-row .b-check, .bucket-row .b-date { display: none; }
+}

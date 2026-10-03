@@ -10,8 +10,9 @@ import edit from './views/edit.js';
 import config from './views/config.js';
 import utilities from './views/utilities.js';
 import loans from './views/loans.js';
+import savings from './views/savings.js';
 
-const VIEWS = { home, workflow, month, dashboard, utilities, loans, edit, config };
+const VIEWS = { home, workflow, month, dashboard, utilities, loans, savings, edit, config };
 const viewEl = document.getElementById('view');
 let current = null;
 let currentName = null;
