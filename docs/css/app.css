@@ -432,3 +432,12 @@ details.bucket-group > summary { cursor: pointer; margin-bottom: 8px; }
 .deposit-btn { padding: 2px 8px; font-size: 0.85em; color: var(--green); border-color: #bfe8cf; background: #f2fbf5; font-family: Consolas, 'SF Mono', monospace; }
 .deposit-btn:hover { background: #dff5e7; }
 .due-tag { color: var(--orange); font-weight: 600; font-size: 0.95em; }
+/* Small tabs inside a utility (Electric: Bills / Mini-Splits) */
+.pillnav { display: flex; gap: 6px; margin: -6px 0 14px; }
+.pillnav a { padding: 5px 14px; border-radius: 16px; background: var(--head); color: #555; text-decoration: none; font-size: 0.88em; border: 1px solid var(--line-strong); }
+.pillnav a.active { background: var(--navy-2); border-color: var(--navy-2); color: #fff; }
+/* Mini-splits */
+.spec-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 10px 18px; font-size: 0.92em; }
+.spec-label { display: block; font-size: 0.75em; text-transform: uppercase; letter-spacing: 0.4px; color: var(--muted); margin-bottom: 2px; }
+section.unit h2 .badge { text-transform: none; letter-spacing: 0; font-size: 0.72em; }
+.log-grid input[data-k=work], .log-grid input[data-k=notes] { width: 100%; min-width: 180px; }

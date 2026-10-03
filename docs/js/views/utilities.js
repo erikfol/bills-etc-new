@@ -13,6 +13,7 @@ import {
 import renderWater from './water.js';
 import renderHeating from './heating.js';
 import renderTaxes from './taxes.js';
+import renderEquipment from './equipment.js';
 import { editableSheet, hasUnsavedEdits, resetUnsaved } from './sheeteditor.js';
 
 // The electric company's customer portal, where statements are downloaded.
@@ -20,7 +21,7 @@ const ELECTRIC_PORTAL = 'https://myaccount.libertyenergyandwater.com/portal/#/lo
 const portalLink = `<a class="ext-link" href="${ELECTRIC_PORTAL}" target="_blank" rel="noopener">Liberty account ↗</a>`;
 
 const SUBPAGES = [
-    { id: 'electric', label: 'Electric', render: renderElectric },
+    { id: 'electric', label: 'Electric', render: renderElectricArea },
     { id: 'water', label: 'Water', render: renderWater },
     { id: 'heating', label: 'Home Heating', render: renderHeating },
     { id: 'taxes', label: 'Property Taxes', render: renderTaxes },
@@ -63,6 +64,17 @@ export default {
         closeFilterMenu();
     },
 };
+
+/** Electric has two pages of its own: the bills (#utilities/electric) and the mini-splits (#utilities/electric/minisplits). */
+async function renderElectricArea(el) {
+    const part = location.hash.split('/')[2] === 'minisplits' ? 'minisplits' : 'bills';
+    el.innerHTML = `<nav class="pillnav">
+        <a href="#utilities/electric"${part === 'bills' ? ' class="active"' : ''}>⚡ Bills</a>
+        <a href="#utilities/electric/minisplits"${part === 'minisplits' ? ' class="active"' : ''}>❄️ Mini-Splits</a>
+    </nav><div id="electric-body"></div>`;
+    const body = el.querySelector('#electric-body');
+    await (part === 'minisplits' ? renderEquipment(body) : renderElectric(body));
+}
 
 async function renderElectric(el) {
     el.innerHTML = '<p class="muted">Loading electric bills…</p>';
