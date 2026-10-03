@@ -11,6 +11,7 @@ import {
 let rememberedBill = null; // 'Q1 - 2026' while you move between pages
 let rememberedYear = null;
 let chartYears = null; // years shown in Cost per quarter and Water use (null = all)
+let costParts = null; // cost parts shown in Cost per quarter (null = all)
 
 const qShort = b => `Q${b.q} ’${String(b.year).slice(2)}`;
 const qLong = b => `Q${b.q} ${b.year}`;
@@ -22,7 +23,14 @@ const WATER_PORTAL = 'https://nhtaxkiosk.com/?KIOSKID=ENFIELD';
 const portalLink = `<a class="ext-link" href="${WATER_PORTAL}" target="_blank" rel="noopener">Enfield water bills ↗</a>`;
 /** Button that marks a quarter paid (or, with paid = false, not paid). */
 const markBtn = (b, paid, text, cls = '') => `<button type="button" class="small ${cls}" data-mark-paid="${paid ? 1 : 0}" data-q="${b.q}" data-year="${b.year}">${text}</button>`;
-const COLORS = { fixed: '#8e9fb8', flat: '#8e9fb8', meter: '#a77bca', waterFixed: '#5c7a99', usage: '#4a90d9', other: '#f0b955', water: '#3fa7d6', prev: '#c5cbd6' };
+// The four parts of a bill's calculated amount, in the order the chart shows them.
+const COST_PARTS = [
+    { id: 'flat', label: 'Flat units', color: '#8e9fb8', value: b => b.flat },
+    { id: 'usage', label: 'Gallons used cost', color: '#4a90d9', value: b => b.usage },
+    { id: 'fixed', label: 'Water fixed cost', color: '#5c7a99', value: b => b.fixed },
+    { id: 'meter', label: 'Meter charge', color: '#a77bca', value: b => b.meter },
+];
+const COLORS = { usage: '#4a90d9', water: '#3fa7d6', prev: '#c5cbd6' };
 
 export default async function renderWater(el) {
     el.innerHTML = '<p class="muted">Loading water bills…</p>';
@@ -60,15 +68,9 @@ export default async function renderWater(el) {
         <div class="cards kpis" id="kpis"></div>
 
         <section>
-            <h2>Cost per quarter <span class="sub">click a bar to open that quarter</span></h2>
+            <h2>Cost per quarter <span class="sub">click a cost to show just that one · click a bar to open that quarter</span></h2>
             <div class="row year-chips"></div>
-            <div class="chart-legend">
-                <span><span class="legend-dot" style="background:${COLORS.flat}"></span>Flat units cost</span>
-                <span><span class="legend-dot" style="background:${COLORS.waterFixed}"></span>Water fixed cost</span>
-                <span><span class="legend-dot" style="background:${COLORS.meter}"></span>Meter charge</span>
-                <span><span class="legend-dot" style="background:${COLORS.usage}"></span>Usage (gallons × rate)</span>
-                <span><span class="legend-dot" style="background:${COLORS.other}"></span>ACH fee and adjustments</span>
-            </div>
+            <div class="chart-legend" id="cost-parts"></div>
             <canvas id="c-cost" style="display:block;width:100%;height:240px;cursor:pointer"></canvas>
         </section>
 
@@ -155,20 +157,14 @@ export default async function renderWater(el) {
     const $ = s => el.querySelector(s);
 
     // ── Big charts: every quarter ──
-    const other = b => b.total - b.fixedAll - (Number.isFinite(b.usage) ? b.usage : 0);
     // Both charts show the years picked in the year buttons above them.
     const chartRows = () => bills.filter(b => !chartYears || chartYears.has(b.year));
     const draw = () => {
         const rows = chartRows();
         drawBars($('#c-cost'), {
             labels: rows.map(qShort),
-            series: [
-                { values: rows.map(b => b.flat), color: COLORS.flat },
-                { values: rows.map(b => b.fixed), color: COLORS.waterFixed },
-                { values: rows.map(b => b.meter), color: COLORS.meter },
-                { values: rows.map(b => b.usage), color: COLORS.usage },
-                { values: rows.map(b => Math.max(0, other(b))), color: COLORS.other },
-            ],
+            series: COST_PARTS.filter(c => !costParts || costParts.has(c.id))
+                .map(c => ({ values: rows.map(c.value), color: c.color })),
             selected: rows.indexOf(bills[i]), fmt: axisMoney,
         });
         drawBars($('#c-gal'), {
@@ -180,6 +176,25 @@ export default async function renderWater(el) {
     for (const id of ['#c-cost', '#c-gal']) {
         $(id).onclick = e => { const k = $(id)._hit?.(e.offsetX) ?? -1; if (k >= 0) show(bills.indexOf(chartRows()[k])); };
     }
+    // Cost buttons: click one to show just that cost; click others to add them; "All costs" shows all four.
+    const drawCostParts = () => {
+        $('#cost-parts').innerHTML = `<button type="button" class="chip${costParts ? '' : ' active'}" data-part="all">All costs</button>`
+            + COST_PARTS.map(c => `<button type="button" class="cat-toggle${!costParts || costParts.has(c.id) ? ' active' : ''}" data-part="${c.id}" style="--cat-color:${c.color}"><span class="legend-dot"></span>${esc(c.label)}</button>`).join('');
+    };
+    $('#cost-parts').onclick = e => {
+        const btn = e.target.closest('[data-part]');
+        if (!btn) return;
+        const id = btn.dataset.part;
+        if (id === 'all') costParts = null;
+        else if (!costParts) costParts = new Set([id]);
+        else {
+            costParts.has(id) ? costParts.delete(id) : costParts.add(id);
+            if (!costParts.size || costParts.size === COST_PARTS.length) costParts = null;
+        }
+        drawCostParts();
+        draw();
+    };
+    drawCostParts();
     chartYears = yearChips([...el.querySelectorAll('.year-chips')], [...new Set(bills.map(b => b.year))].sort((a, b) => a - b),
         chartYears, sel => { chartYears = sel; draw(); });
 
