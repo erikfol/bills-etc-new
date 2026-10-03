@@ -13,7 +13,7 @@ export const ACCOUNT_TYPES = ['Loan', 'Credit card', 'Other'];
 const round2 = n => Math.round((n + Math.sign(n) * 1e-9) * 100) / 100;
 const moneyCell = n => (Number.isFinite(n) ? round2(n).toFixed(2) : '');
 
-/** Accounts in the order you set them up: [{id, title, description, type, file}]. [] if none yet. */
+/** Accounts in the order you set them up: [{id, title, description, type, url, file}]. [] if none yet. */
 export async function loadAccounts() {
     const text = await fs.readText(INDEX);
     if (text == null) return [];
@@ -36,23 +36,32 @@ function slug(title, taken) {
     return id;
 }
 
+/** 'chase.com/pay' → 'https://chase.com/pay'; '' stays ''. Only http(s) links are kept. */
+export function cleanUrl(url) {
+    let u = String(url || '').trim();
+    if (!u) return '';
+    if (!/^[a-z][a-z0-9+.-]*:/i.test(u)) u = 'https://' + u;
+    return /^https?:\/\//i.test(u) ? u : '';
+}
+
 /** Add an account and create its empty payments file. Returns the new account. */
-export async function addAccount({ title, description, type }) {
+export async function addAccount({ title, description, type, url }) {
     const accounts = await loadAccounts();
     const id = slug(title, new Set(accounts.map(a => a.id)));
-    const account = { id, title: title.trim(), description: (description || '').trim(), type: type || 'Other', file: `${LOANS_DIR}/${id}.csv` };
+    const account = { id, title: title.trim(), description: (description || '').trim(), type: type || 'Other', url: cleanUrl(url), file: `${LOANS_DIR}/${id}.csv` };
     if ((await fs.readText(account.file)) == null) await fs.writeText(account.file, toCSV(PAYMENT_COLS, []));
     accounts.push(account);
     await saveAccounts(accounts);
     return account;
 }
 
-/** Change an account's title / description / type (its file stays the same). */
+/** Change an account's title / description / type / url (its file stays the same). */
 export async function updateAccount(id, changes) {
     const accounts = await loadAccounts();
     const a = accounts.find(x => x.id === id);
     if (!a) throw new Error('That account is no longer in accounts.json');
     for (const k of ['title', 'description', 'type']) if (changes[k] != null) a[k] = String(changes[k]).trim();
+    if (changes.url != null) a.url = cleanUrl(changes.url);
     await saveAccounts(accounts);
 }
 

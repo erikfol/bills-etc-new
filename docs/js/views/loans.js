@@ -1,7 +1,7 @@
 // Loan/CC: loans and credit cards you set up yourself, each with its own payments table.
 import {
     loadAccounts, addAccount, updateAccount, removeAccount, moveAccount, loadPayments, savePayments,
-    ACCOUNT_TYPES, LOANS_DIR,
+    ACCOUNT_TYPES, LOANS_DIR, cleanUrl,
 } from '../loans.js';
 import { drawBars } from '../charts.js';
 import { esc, money, sum, toast } from '../util.js';
@@ -44,6 +44,9 @@ export default {
                 <div class="add-grid">
                     <label class="field" style="grid-column:1/-1">Description<input type="text" name="description" placeholder="optional: lender, rate, account ending, payoff goal…"></label>
                 </div>
+                <div class="add-grid">
+                    <label class="field" style="grid-column:1/-1">Payment website<input type="text" inputmode="url" name="url" placeholder="optional: the page where you make payments, e.g. https://…"></label>
+                </div>
                 <div class="row">
                     <button type="submit" class="primary">Add account</button>
                     <button type="button" id="acct-cancel">Cancel</button>
@@ -62,8 +65,9 @@ export default {
             e.preventDefault();
             const title = acctForm.title.value.trim();
             if (!title) return;
+            if (acctForm.url.value.trim() && !cleanUrl(acctForm.url.value)) { toast('The payment website should start with https://', 'bad'); return; }
             try {
-                await addAccount({ title, description: acctForm.description.value, type: acctForm.type.value });
+                await addAccount({ title, description: acctForm.description.value, type: acctForm.type.value, url: acctForm.url.value });
                 toast(`Added ${title}`, 'ok');
                 this.render(el);
             } catch (err) {
@@ -124,6 +128,7 @@ function renderAccount(sec, account, payments, { first, last, rerender }) {
     sec.innerHTML = `
         <h2>${typeIcon(account.type)} ${esc(account.title)} <span class="badge badge-neutral">${esc(account.type)}</span>
             <span class="spacer"></span>
+            ${account.url ? `<a class="ext-link" href="${esc(account.url)}" target="_blank" rel="noopener" title="${esc(account.url)}">Make a payment ↗</a>` : ''}
             <button type="button" class="small" data-move="-1" title="Move up"${first ? ' disabled' : ''}>▲</button>
             <button type="button" class="small" data-move="1" title="Move down"${last ? ' disabled' : ''}>▼</button>
             <button type="button" class="small" data-edit>✎ Edit</button></h2>
@@ -263,6 +268,9 @@ function renderAccount(sec, account, payments, { first, last, rerender }) {
             <div class="add-grid">
                 <label class="field" style="grid-column:1/-1">Description<input type="text" name="description" value="${esc(account.description)}"></label>
             </div>
+            <div class="add-grid">
+                <label class="field" style="grid-column:1/-1">Payment website<input type="text" inputmode="url" name="url" value="${esc(account.url || '')}" placeholder="optional: https://…"></label>
+            </div>
             <div class="table-wrap loan-grid"><table class="sheet-table">
                 <thead><tr><th>Date</th><th>Min payment</th><th>Payment</th><th>Before</th><th>After</th><th>Payment made</th><th>Notes</th><th></th></tr></thead>
                 <tbody>${payments.map(rowHtml).join('')}</tbody>
@@ -305,9 +313,11 @@ function renderAccount(sec, account, payments, { first, last, rerender }) {
             }).filter(p => p.date || Number.isFinite(p.payment) || Number.isFinite(p.minPayment) || p.notes);
             const title = ed.querySelector('[name=title]').value.trim();
             if (!title) { toast('The account needs a title', 'bad'); return; }
+            const url = ed.querySelector('[name=url]').value;
+            if (url.trim() && !cleanUrl(url)) { toast('The payment website should start with https://', 'bad'); return; }
             try {
                 await savePayments(account, rows);
-                await updateAccount(account.id, { title, type: ed.querySelector('[name=type]').value, description: ed.querySelector('[name=description]').value });
+                await updateAccount(account.id, { title, type: ed.querySelector('[name=type]').value, description: ed.querySelector('[name=description]').value, url });
                 editing.delete(account.id);
                 toast(`Saved ${title}`, 'ok');
                 rerender();
