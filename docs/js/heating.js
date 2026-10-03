@@ -1,7 +1,7 @@
 // Home heating oil: deliveries in inputs/heat_home/master_heat_home.csv and Heatable price checks in
 // inputs/heat_home/heatable_cost_trend.csv (both kept by hand, usually tab-separated from Excel).
 import * as fs from './fs.js';
-import { readSheet, insertRow, parseBillDate, parseMoney, num, sheetDate, sheetMoney } from './sheet.js';
+import { readSheet, insertRow, addColumn, parseBillDate, parseMoney, num, sheetDate, sheetMoney } from './sheet.js';
 
 export const HEAT_PATH = 'inputs/heat_home/master_heat_home.csv';
 export const PRICE_PATH = 'inputs/heat_home/heatable_cost_trend.csv';
@@ -9,6 +9,11 @@ export const PRICE_PATH = 'inputs/heat_home/heatable_cost_trend.csv';
 const round2 = n => Math.round(n * 100) / 100;
 const DAY = 864e5;
 export const daysBetween = (a, b) => Math.round((b - a) / DAY);
+
+/** Heating season (Jul 1 – Jun 30) a date falls in, named by the year it starts: Feb 6, 2026 → 2025. */
+export const seasonOf = d => (d.getMonth() >= 6 ? d.getFullYear() : d.getFullYear() - 1);
+/** 2025 → '2025–26' */
+export const seasonLabel = y => `${y}–${String(y + 1).slice(2)}`;
 
 /** The deliveries sheet plus its column indexes by meaning. */
 async function readDeliveries() {
@@ -20,13 +25,15 @@ async function readDeliveries() {
         provider: idx('provider'), price: idx('price/gal'), gallons: idx('gallons'),
         calc: idx('calc price'), actual: idx('actual price'), extra: idx('extra fees'),
         perDay: idx('gal/day used'), notes: idx('notes'), paidBack: idxStart('paid cc back'),
+        paidBackDate: idx('date paid back'),
     };
     return sheet;
 }
 
 /**
  * Deliveries, oldest first: {date, last, days, provider, price (per gal), gallons, calc, actual, extra, perDay
- * (gallons ÷ days since the previous delivery — a fill-up replaces what was burned), notes, paidBack, isPaidBack, year}.
+ * (gallons ÷ days since the previous delivery — a fill-up replaces what was burned), notes, paidBack, isPaidBack,
+ * paidBackDate, year, season (see seasonOf)}.
  * Returns null if the file doesn't exist.
  */
 export async function loadDeliveries() {
@@ -48,7 +55,8 @@ export async function loadDeliveries() {
             calc: parseMoney(cell(r, 'calc')), actual: parseMoney(cell(r, 'actual')), extra: parseMoney(cell(r, 'extra')),
             notes: cell(r, 'notes').trim(),
             paidBack, isPaidBack: /^y/i.test(paidBack),
-            year: date?.getFullYear(),
+            paidBackDate: parseBillDate(cell(r, 'paidBackDate')),
+            year: date?.getFullYear(), season: date ? seasonOf(date) : null,
         };
     }).filter(d => d.date && Number.isFinite(d.actual));
     deliveries.sort((a, b) => a.date - b.date);
@@ -85,12 +93,14 @@ export async function addPriceCheck({ date, price }) {
 
 /**
  * Add one delivery to the sheet, in the same format and order as the rows already there.
- * d: {date, provider, price, gallons, actual, notes?, paidBack ('Yes' / 'Not Yet' / 'Need To Check')}.
+ * d: {date, provider, price, gallons, actual, notes?, paidBack ('Yes' / 'Not Yet' / 'Need To Check'), paidBackDate? (Date)}.
  * Last delivery, days since, calc price, extra fees and gal/day are worked out from the latest delivery before it.
  */
 export async function addDelivery(d, previous) {
     const sheet = await readDeliveries();
     if (!sheet || !sheet.records.length) throw new Error(`${HEAT_PATH} not found`);
+    const paidOn = /^y/i.test(d.paidBack) && d.paidBackDate;
+    if (paidOn && sheet.I.paidBackDate < 0) sheet.I.paidBackDate = addColumn(sheet, 'Date Paid Back');
     const { records, I } = sheet;
     const cells = records[0].map(() => '');
     const set = (k, v) => { if (I[k] >= 0) cells[I[k]] = String(v); };
@@ -109,20 +119,27 @@ export async function addDelivery(d, previous) {
     set('perDay', days > 0 ? (d.gallons / days).toFixed(2) : 'na');
     set('notes', String(d.notes || '').replace(/[\t\r\n]+/g, ' ').trim());
     set('paidBack', d.paidBack);
+    set('paidBackDate', paidOn ? sheetDate(d.paidBackDate, false) : '');
     await insertRow(sheet, cells, I.date);
 }
 
-/** Set the "Paid CC Back?" column of the delivery on `date` (a Date), leaving everything else as it was. */
-export async function setPaidBack(date, value) {
+/**
+ * Set the "Paid CC Back?" column of the delivery on `date` (a Date) to `value`, and its Date Paid Back to `paidOn`
+ * (cleared unless the value is Yes). Adds the Date Paid Back column the first time it's needed; nothing else changes.
+ */
+export async function setPaidBack(date, value, paidOn = null) {
     const sheet = await readDeliveries();
     if (!sheet || sheet.I.paidBack < 0) throw new Error(`${HEAT_PATH} has no Paid CC Back? column`);
+    const yes = /^y/i.test(value);
+    if (yes && paidOn && sheet.I.paidBackDate < 0) sheet.I.paidBackDate = addColumn(sheet, 'Date Paid Back');
     const { text, delim, eol, I } = sheet;
     const lines = text.split(/\r?\n/);
     const k = lines.findIndex((line, n) => n > 0 && parseBillDate(line.split(delim)[I.date])?.getTime() === date.getTime());
     if (k < 0) throw new Error(`No delivery on that date in ${HEAT_PATH}`);
     const cells = lines[k].split(delim);
-    while (cells.length <= I.paidBack) cells.push('');
+    while (cells.length <= Math.max(I.paidBack, I.paidBackDate)) cells.push('');
     cells[I.paidBack] = value;
+    if (I.paidBackDate >= 0) cells[I.paidBackDate] = yes && paidOn ? sheetDate(paidOn, false) : '';
     lines[k] = cells.join(delim);
     await fs.writeText(HEAT_PATH, lines.join(eol));
 }

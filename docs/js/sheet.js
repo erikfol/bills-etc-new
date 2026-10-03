@@ -73,3 +73,23 @@ export async function insertRow(sheet, cells, endCol) {
     if (trailing !== null) lines.push('');
     await fs.writeText(path, lines.join(eol));
 }
+
+/**
+ * Add a column named `name` at the end of the sheet (in memory: text, records) and return its index.
+ * Every existing row gets an empty cell for it, so the file stays rectangular.
+ */
+export function addColumn(sheet, name) {
+    const { delim, eol } = sheet;
+    const lines = sheet.text.split(/\r?\n/);
+    const width = lines[0].split(delim).length + 1;
+    sheet.text = lines.map((line, n) => {
+        if (n === 0) return line + delim + name;
+        if (line === '') return line;
+        const cells = line.split(delim);
+        while (cells.length < width) cells.push('');
+        return cells.join(delim);
+    }).join(eol);
+    sheet.records = sheet.records.map(r => { const c = [...r]; while (c.length < width) c.push(''); return c; });
+    sheet.records[0][width - 1] = name;
+    return width - 1;
+}

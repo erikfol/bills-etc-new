@@ -1,6 +1,6 @@
 // Water bills: inputs/water/master_water.csv, one row per quarter (kept by hand, usually tab-separated from Excel).
 import * as fs from './fs.js';
-import { readSheet, insertRow, parseBillDate, parseMoney, num, sheetDate, sheetMoney } from './sheet.js';
+import { readSheet, insertRow, addColumn, parseBillDate, parseMoney, num, sheetDate, sheetMoney } from './sheet.js';
 
 export const WATER_PATH = 'inputs/water/master_water.csv';
 
@@ -85,20 +85,7 @@ export function calcWater({ gallons, rate, flat, fixed, meter }) {
 
 /** Add a "Date Paid" column at the end of the sheet (in memory) if it doesn't have one yet. */
 function addPaidDateColumn(sheet) {
-    if (sheet.I.paidDate >= 0) return;
-    const { delim, eol } = sheet;
-    const lines = sheet.text.split(/\r?\n/);
-    const width = lines[0].split(delim).length + 1;
-    sheet.text = lines.map((line, n) => {
-        if (n === 0) return line + delim + 'Date Paid';
-        if (line === '') return line;
-        const cells = line.split(delim);
-        while (cells.length < width) cells.push('');
-        return cells.join(delim);
-    }).join(eol);
-    sheet.records = sheet.records.map(r => { const c = [...r]; while (c.length < width) c.push(''); return c; });
-    sheet.records[0][width - 1] = 'Date Paid';
-    sheet.I.paidDate = width - 1;
+    if (sheet.I.paidDate < 0) sheet.I.paidDate = addColumn(sheet, 'Date Paid');
 }
 
 /**

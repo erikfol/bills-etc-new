@@ -1,7 +1,8 @@
 // Utilities → Home Heating: oil deliveries from inputs/heat_home/master_heat_home.csv and Heatable price checks
 // from inputs/heat_home/heatable_cost_trend.csv.
 import {
-    loadDeliveries, loadPriceChecks, addDelivery, addPriceCheck, setPaidBack, daysBetween, HEAT_PATH, PRICE_PATH,
+    loadDeliveries, loadPriceChecks, addDelivery, addPriceCheck, setPaidBack, daysBetween, seasonOf, seasonLabel,
+    HEAT_PATH, PRICE_PATH,
 } from '../heating.js';
 import { drawBars } from '../charts.js';
 import { esc, money, sum, toast } from '../util.js';
@@ -12,19 +13,24 @@ import {
 } from './utilcommon.js';
 
 let rememberedDelivery = null; // delivery date (ms) while you move between pages
-let rememberedYear = null;
-let chartYears = null; // years shown in the three big charts (null = all)
+let rememberedSeason = null; // heating season (start year) in Season averages
+let chartSeasons = null; // seasons shown in the three big charts (null = all)
 
 const PAID_BACK = ['Yes', 'Not Yet', 'Need To Check'];
 const COLORS = { cost: '#e74c3c', price: '#e67e22', check: '#b9c2d0', usage: '#3fa7d6', prev: '#c5cbd6' };
+/** Months of a heating season, Jul → Jun. */
+const SEASON_MON = [...MON.slice(6), ...MON.slice(0, 6)];
+const seasonSpan = y => `Jul 1, ${y} – Jun 30, ${y + 1}`;
 const shortDate = d => `${MON[d.getMonth()]} ${d.getDate()} ’${String(d.getFullYear()).slice(2)}`;
 const gal = n => Number.isFinite(n) ? `${(Math.round(n * 10) / 10).toLocaleString('en-US')} gal` : '–';
 const perGal = n => Number.isFinite(n) ? `${money(n)}/gal` : '–';
 const perDay = n => Number.isFinite(n) ? `${n.toFixed(2)} gal/day` : '–';
-const paidBadge = d => d.isPaidBack ? '<span class="badge badge-ok">Paid back</span>'
+const paidBadge = d => d.isPaidBack ? `<span class="badge badge-ok">Paid back${d.paidBackDate ? ` ${esc(dLong(d.paidBackDate))}` : ''}</span>`
     : `<span class="badge badge-over">${esc(d.paidBack || 'Not paid back')}</span>`;
+/** "Mark paid back" opens a date picker where the button was; Undo sets it back to Not Yet. */
 const markBtn = (d, text = 'Mark paid back', cls = '') =>
     `<button type="button" class="small primary ${cls}" data-paid-back="${d.date.getTime()}">${text}</button>`;
+const undoBtn = d => `<button type="button" class="small paid-undo" data-undo-paid-back="${d.date.getTime()}">Undo</button>`;
 
 export default async function renderHeating(el) {
     el.innerHTML = '<p class="muted">Loading heating oil deliveries…</p>';
@@ -65,7 +71,7 @@ export default async function renderHeating(el) {
         <div class="cards kpis" id="kpis"></div>
 
         <section>
-            <h2>Cost per delivery <span class="sub">hover for details · click a bar to open that delivery</span></h2>
+            <h2>Cost per delivery <span class="sub">hover for details · click a bar to open that delivery · seasons run Jul–Jun</span></h2>
             <div class="row year-chips"></div>
             <canvas id="c-cost" style="display:block;width:100%;height:230px;cursor:pointer"></canvas>
         </section>
@@ -88,12 +94,12 @@ export default async function renderHeating(el) {
 
         <section>
             <div class="row" style="margin-bottom:14px">
-                <h2 style="margin:0;border:0;padding:0">Annual averages <span class="sub" id="yr-sub"></span></h2>
+                <h2 style="margin:0;border:0;padding:0">Season averages <span class="sub" id="yr-sub"></span></h2>
                 <span class="spacer"></span>
                 <div class="month-nav">
-                    <button id="yr-prev" title="Previous year" aria-label="Previous year">◀</button>
-                    <select id="yr" style="min-width:100px"></select>
-                    <button id="yr-next" title="Next year" aria-label="Next year">▶</button>
+                    <button id="yr-prev" title="Previous season" aria-label="Previous season">◀</button>
+                    <select id="yr" style="min-width:110px"></select>
+                    <button id="yr-next" title="Next season" aria-label="Next season">▶</button>
                 </div>
             </div>
             <div class="cards kpis" id="yr-cards" style="margin-bottom:0"></div>
@@ -115,11 +121,11 @@ export default async function renderHeating(el) {
                     <canvas id="c-yr-gal" style="display:block;width:100%;height:250px"></canvas>
                 </div>
             </div>
-            <p class="note" style="margin-top:6px">Each delivery counts in the month it was delivered.</p>
+            <p class="note" style="margin-top:6px">A heating season runs July 1 to June 30. Each delivery counts in the month it was delivered.</p>
         </section>
 
         <section>
-            <h2>Year by year <span class="sub">by the year of each delivery</span></h2>
+            <h2>Season by season <span class="sub">July 1 – June 30</span></h2>
             <div id="t-years"></div>
         </section>
 
@@ -150,7 +156,8 @@ export default async function renderHeating(el) {
                     <label class="field">Paid CC back?<select name="paidBack">${PAID_BACK.map(v => `<option${v === 'Need To Check' ? ' selected' : ''}>${v}</option>`).join('')}</select></label>
                 </div>
                 <div class="add-grid">
-                    <label class="field" style="grid-column:1/-1">Notes<input type="text" name="notes" placeholder="optional"></label>
+                    <label class="field">Date paid back<input type="date" name="paidBackDate" disabled></label>
+                    <label class="field" style="grid-column:span 2">Notes<input type="text" name="notes" placeholder="optional"></label>
                 </div>
                 <datalist id="providers">${providers.map(p => `<option value="${esc(p)}">`).join('')}</datalist>
                 <p class="add-preview" id="add-preview"></p>
@@ -164,8 +171,8 @@ export default async function renderHeating(el) {
 
     const $ = s => el.querySelector(s);
 
-    // ── Big charts (each delivery; price chart also has the price checks), filtered by the year buttons ──
-    const rows = () => deliveries.filter(d => !chartYears || chartYears.has(d.year));
+    // ── Big charts (each delivery; price chart also has the price checks), filtered by the season buttons ──
+    const rows = () => deliveries.filter(d => !chartSeasons || chartSeasons.has(d.season));
     const draw = () => {
         const list = rows(), sel = list.indexOf(deliveries[i]);
         drawBars($('#c-cost'), {
@@ -180,7 +187,7 @@ export default async function renderHeating(el) {
         // Deliveries and price checks on one timeline.
         const points = [
             ...list.map(d => ({ date: d.date, delivery: d.price, provider: d.provider })),
-            ...checks.filter(c => !chartYears || chartYears.has(c.date.getFullYear())).map(c => ({ date: c.date, check: c.price })),
+            ...checks.filter(c => !chartSeasons || chartSeasons.has(seasonOf(c.date))).map(c => ({ date: c.date, check: c.price })),
         ].sort((a, b) => a.date - b.date);
         drawBars($('#c-price'), {
             labels: points.map(p => shortDate(p.date)),
@@ -205,8 +212,9 @@ export default async function renderHeating(el) {
     for (const id of ['#c-cost', '#c-usage']) {
         $(id).onclick = e => { const k = $(id)._hit?.(e.offsetX) ?? -1; if (k >= 0) show(deliveries.indexOf(rows()[k])); };
     }
-    chartYears = yearChips([...el.querySelectorAll('.year-chips')], [...new Set(deliveries.map(d => d.year))].sort((a, b) => a - b),
-        chartYears, sel => { chartYears = sel; draw(); });
+    const seasonList = [...new Set(deliveries.map(d => d.season))].sort((a, b) => a - b);
+    chartSeasons = yearChips([...el.querySelectorAll('.year-chips')], seasonList,
+        chartSeasons, sel => { chartSeasons = sel; draw(); }, seasonLabel, 'All seasons');
 
     // ── One delivery ──
     const show = k => {
@@ -240,10 +248,10 @@ export default async function renderHeating(el) {
     $('#prev').onclick = () => show(i - 1);
     $('#next').onclick = () => show(i + 1);
 
-    // ── Year by year ──
-    const yearList = [...new Set(deliveries.map(d => d.year))].sort((a, b) => a - b);
+    // ── Season by season (Jul 1 – Jun 30) ──
+    const yearList = seasonList;
     const years = yearList.map(y => {
-        const list = deliveries.filter(d => d.year === y);
+        const list = deliveries.filter(d => d.season === y);
         const gallons = sum(list.map(d => d.gallons)), cost = sum(list.map(d => d.actual));
         const days = sum(list.map(d => d.days).filter(Number.isFinite));
         const measured = sum(list.filter(d => Number.isFinite(d.days)).map(d => d.gallons));
@@ -252,7 +260,8 @@ export default async function renderHeating(el) {
     const totalOf = (list, f) => sum(list.map(f).filter(Number.isFinite));
     dataTable($('#t-years'), {
         columns: [
-            { id: 'year', label: 'Year', value: r => r.year, num: true, cell: r => `<strong>${r.year}</strong>` },
+            { id: 'year', label: 'Season', value: r => r.year, text: seasonLabel, cell: r => `<strong>${esc(seasonLabel(r.year))}</strong>`,
+                sortLabels: ['Oldest → Newest', 'Newest → Oldest'] },
             { id: 'count', label: 'Deliveries', value: r => r.count, num: true },
             numCol('gal', 'Gallons', r => r.gallons, gal),
             moneyCol('cost', 'Total cost', r => r.cost),
@@ -272,61 +281,61 @@ export default async function renderHeating(el) {
         },
     });
 
-    // ── Annual averages for one year, month by month next to the year before ──
-    $('#yr').innerHTML = [...yearList].reverse().map(y => `<option value="${y}">${y}</option>`).join('');
+    // ── Season averages for one season, month by month (Jul → Jun) next to the season before ──
+    $('#yr').innerHTML = [...yearList].reverse().map(y => `<option value="${y}">${seasonLabel(y)}</option>`).join('');
     const byMonth = (y, f) => {
         const out = Array(12).fill(NaN);
         for (const d of deliveries) {
-            if (d.year !== y) continue;
-            const m = d.date.getMonth();
+            if (d.season !== y) continue;
+            const m = (d.date.getMonth() + 6) % 12;
             out[m] = (Number.isFinite(out[m]) ? out[m] : 0) + f(d);
         }
         return out;
     };
     const drawYear = () => {
-        const y = rememberedYear;
+        const y = rememberedSeason;
         if (y == null) return;
         const hasPrev = yearList.includes(y - 1);
         drawBars($('#c-yr-cost'), {
-            labels: MON,
+            labels: SEASON_MON,
             series: [
-                ...(hasPrev ? [{ name: String(y - 1), values: byMonth(y - 1, d => d.actual), color: COLORS.prev }] : []),
-                { name: String(y), values: byMonth(y, d => d.actual), color: COLORS.cost, valueLabels: true },
+                ...(hasPrev ? [{ name: seasonLabel(y - 1), values: byMonth(y - 1, d => d.actual), color: COLORS.prev }] : []),
+                { name: seasonLabel(y), values: byMonth(y, d => d.actual), color: COLORS.cost, valueLabels: true },
             ],
             fmt: axisMoney, valueFmt: v => '$' + Math.round(v).toLocaleString('en-US'), tipFmt: money,
         });
         drawBars($('#c-yr-gal'), {
-            labels: MON,
+            labels: SEASON_MON,
             series: [
-                ...(hasPrev ? [{ name: String(y - 1), values: byMonth(y - 1, d => d.gallons), color: COLORS.prev }] : []),
-                { name: String(y), values: byMonth(y, d => d.gallons), color: COLORS.usage, valueLabels: true },
+                ...(hasPrev ? [{ name: seasonLabel(y - 1), values: byMonth(y - 1, d => d.gallons), color: COLORS.prev }] : []),
+                { name: seasonLabel(y), values: byMonth(y, d => d.gallons), color: COLORS.usage, valueLabels: true },
             ],
             fmt: axisNum, valueFmt: v => (Math.round(v * 10) / 10).toLocaleString('en-US'), tipFmt: gal,
         });
     };
     const showYear = y => {
-        rememberedYear = y;
+        rememberedSeason = y;
         const Y = years.find(x => x.year === y), k = yearList.indexOf(y);
-        el.querySelectorAll('.yr-this').forEach(s => { s.textContent = y; });
-        el.querySelectorAll('.yr-last').forEach(s => { s.textContent = `${y - 1} (for comparison)`; });
+        el.querySelectorAll('.yr-this').forEach(s => { s.textContent = seasonLabel(y); });
+        el.querySelectorAll('.yr-last').forEach(s => { s.textContent = `${seasonLabel(y - 1)} (for comparison)`; });
         el.querySelectorAll('.yr-prev-key').forEach(s => { s.hidden = !yearList.includes(y - 1); });
         $('#yr').value = String(y);
         $('#yr-prev').disabled = k === 0;
         $('#yr-next').disabled = k === yearList.length - 1;
-        $('#yr-sub').textContent = `${Y.count} deliver${Y.count === 1 ? 'y' : 'ies'} in ${y}`;
+        $('#yr-sub').textContent = `${Y.count} deliver${Y.count === 1 ? 'y' : 'ies'} · ${seasonSpan(y)}${seasonOf(today()) === y ? ' (season in progress)' : ''}`;
         $('#yr-cards').innerHTML = [
             card('Gallons delivered', gal(Y.gallons), `<span class="muted">${esc(gal(Y.gallons / Y.count))} per delivery on average</span>`),
             card('Average delivery', money(Y.avg), `<span class="muted">over ${Y.count} deliver${Y.count === 1 ? 'y' : 'ies'}</span>`, 'var(--red)'),
-            card('Average price per gallon', Number.isFinite(Y.price) ? money(Y.price) : '–', '<span class="muted">year total ÷ gallons</span>'),
-            card('Year total cost', money(Y.cost),
+            card('Average price per gallon', Number.isFinite(Y.price) ? money(Y.price) : '–', '<span class="muted">season total ÷ gallons</span>'),
+            card('Season total cost', money(Y.cost),
                 `<span class="muted">oil used ${esc(perDay(Y.perDay))} on average</span>`, 'var(--red)'),
         ].join('');
         drawYear();
     };
     $('#yr').onchange = e => showYear(+e.target.value);
-    $('#yr-prev').onclick = () => showYear(yearList[yearList.indexOf(rememberedYear) - 1]);
-    $('#yr-next').onclick = () => showYear(yearList[yearList.indexOf(rememberedYear) + 1]);
-    showYear(yearList.includes(rememberedYear) ? rememberedYear : yearList.at(-1));
+    $('#yr-prev').onclick = () => showYear(yearList[yearList.indexOf(rememberedSeason) - 1]);
+    $('#yr-next').onclick = () => showYear(yearList[yearList.indexOf(rememberedSeason) + 1]);
+    showYear(yearList.includes(rememberedSeason) ? rememberedSeason : yearList.at(-1));
 
     // ── Price checks ──
     dataTable($('#t-checks'), {
@@ -371,7 +380,8 @@ export default async function renderHeating(el) {
                 tdClass: r => `nowrap${Math.abs(r.extra) >= 0.005 ? ' negative' : ''}` },
             numCol('perday', 'Gal/day', r => r.perDay, v => v.toFixed(2)),
             { id: 'paid', label: 'Paid CC back?', value: r => r.paidBack, tdClass: () => 'nowrap',
-                cell: r => r.isPaidBack ? '<span class="badge badge-ok">Yes</span>' : `${paidBadge(r)} ${markBtn(r, 'Mark paid')}` },
+                cell: r => r.isPaidBack ? `<span class="badge badge-ok">Yes</span> ${undoBtn(r)}` : `${paidBadge(r)} ${markBtn(r, 'Mark paid')}` },
+            dateCol('paidBackDate', 'Date paid back', r => r.paidBackDate),
             { id: 'notes', label: 'Notes', value: r => r.notes, tdClass: () => 'note-text bill-note' },
         ],
         rows: deliveries,
@@ -387,15 +397,33 @@ export default async function renderHeating(el) {
     $('#unpaid').innerHTML = unpaid.length
         ? `<div class="banner bad unpaid-list"><strong>Not paid back yet:</strong> ${unpaid.map(d => `<span class="nowrap">${esc(dLong(d.date))} (${esc(money(d.actual))}, ${esc(d.paidBack || 'blank')}) ${markBtn(d)}</span>`).join(' ')}</div>` : '';
 
-    // Mark paid back: writes "Yes" in the Paid CC Back? column of that delivery.
+    // Mark paid back: asks for the date, then writes Yes and that date; Undo sets it back to Not Yet.
     el.onclick = async e => {
-        const btn = e.target.closest('[data-paid-back]');
+        const cancel = e.target.closest('[data-cancel-paid]');
+        if (cancel) { const box = cancel.closest('.paid-edit'); box.replaceWith(box._btn); return; }
+        const open = e.target.closest('[data-paid-back]');
+        if (open) {
+            const box = document.createElement('span');
+            box.className = 'paid-edit';
+            box.innerHTML = `<input type="date" value="${isoDate(new Date())}" aria-label="Date paid back" title="Date paid back">
+                <button type="button" class="small primary" data-save-paid="${open.dataset.paidBack}">Save</button>
+                <button type="button" class="small" data-cancel-paid title="Cancel">✕</button>`;
+            box._btn = open;
+            open.replaceWith(box);
+            box.querySelector('input').focus();
+            return;
+        }
+        const btn = e.target.closest('[data-save-paid], [data-undo-paid-back]');
         if (!btn) return;
-        const date = new Date(+btn.dataset.paidBack);
+        const undo = 'undoPaidBack' in btn.dataset;
+        const date = new Date(+(undo ? btn.dataset.undoPaidBack : btn.dataset.savePaid));
+        const paidOn = undo ? null : dateOf(btn.closest('.paid-edit').querySelector('input').value);
+        if (!undo && !paidOn) { toast('Pick the date it was paid back', 'bad'); return; }
+        if (undo && !confirm(`Mark the ${dLong(date)} delivery as not paid back? This also clears its date paid back.`)) return;
         btn.disabled = true;
         try {
-            await setPaidBack(date, 'Yes');
-            toast(`${dLong(date)} delivery marked paid back`, 'ok');
+            await setPaidBack(date, undo ? 'Not Yet' : 'Yes', paidOn);
+            toast(undo ? `${dLong(date)} delivery set back to Not Yet` : `${dLong(date)} delivery marked paid back on ${dLong(paidOn)}`, 'ok');
             const y = scrollY;
             await renderHeating(el);
             scrollTo(0, y);
@@ -412,7 +440,8 @@ export default async function renderHeating(el) {
         const price = numOf(f.price), gallons = numOf(f.gallons);
         const calc = Math.round(price * gallons * 100) / 100;
         const actual = String(f.actual).trim() === '' ? calc : numOf(f.actual);
-        return { date: dateOf(f.date), provider: String(f.provider).trim(), price, gallons, calc, actual, notes: f.notes, paidBack: f.paidBack };
+        return { date: dateOf(f.date), provider: String(f.provider).trim(), price, gallons, calc, actual, notes: f.notes,
+            paidBack: f.paidBack, paidBackDate: dateOf(f.paidBackDate) };
     };
     const previousOf = date => [...deliveries].reverse().find(d => d.date < date)?.date || null;
     const problems = d => {
@@ -423,6 +452,7 @@ export default async function renderHeating(el) {
         if (!Number.isFinite(d.price) || d.price <= 0) p.push('Enter the price per gallon.');
         if (!Number.isFinite(d.gallons) || d.gallons <= 0) p.push('Enter the gallons delivered.');
         if (!Number.isFinite(d.actual)) p.push('Enter the actual price, or leave it blank to use the calculated price.');
+        if (d.paidBack === 'Yes' && !d.paidBackDate) p.push('Enter the date it was paid back.');
         return p;
     };
     const preview = () => {
@@ -444,6 +474,8 @@ export default async function renderHeating(el) {
         form.date.value = isoDate(new Date());
         form.provider.value = last.provider;
         if (lastCheck) form.price.value = lastCheck.price;
+        form.paidBackDate.value = isoDate(new Date());
+        form.paidBackDate.disabled = true;
         form.hidden = false;
         $('#add-open').hidden = true;
         preview();
@@ -451,7 +483,7 @@ export default async function renderHeating(el) {
         form.gallons.focus({ preventScroll: true });
     };
     $('#add-cancel').onclick = () => { form.hidden = true; $('#add-open').hidden = false; };
-    form.oninput = preview;
+    form.oninput = () => { form.paidBackDate.disabled = form.paidBack.value !== 'Yes'; preview(); };
     form.onsubmit = async e => {
         e.preventDefault();
         form.dataset.tried = '1';
