@@ -12,6 +12,10 @@ import {
 let rememberedBill = null; // 'year-half' while you move between pages
 let chartYears = null; // years shown in the charts (null = all)
 
+// The town's online bill kiosk (same one as the water bills).
+const TOWN_PORTAL = 'https://nhtaxkiosk.com/?KIOSKID=ENFIELD';
+const portalLink = `<a class="ext-link" href="${TOWN_PORTAL}" target="_blank" rel="noopener">Enfield tax bills ↗</a>`;
+
 const RATE_PARTS = [
     { id: 'school', label: 'School', color: '#4a90d9' },
     { id: 'town', label: 'Town', color: '#27ae60' },
@@ -119,11 +123,11 @@ export default async function renderTaxes(el) {
         </section>
 
         <section>
-            <h2>All bills <span class="sub" id="count"></span></h2>
+            <h2>All bills <span class="sub" id="count"></span><span class="spacer"></span>${portalLink}</h2>
             <div id="t-bills" class="short-table"></div>
             <div class="row" style="margin-top:14px"><button class="primary" id="add-open">+ Add a bill</button></div>
             <form id="add-form" class="add-bill" hidden>
-                <h3>Add a tax bill</h3>
+                <h3 class="row">Add a tax bill <span class="spacer"></span><span style="font-weight:400">Get the bill from ${portalLink}</span></h3>
                 <div class="add-grid">
                     <label class="field">Bill<select name="which"></select></label>
                     <label class="field">Billing date<input type="date" name="billed" required></label>
