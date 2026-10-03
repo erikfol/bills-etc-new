@@ -131,6 +131,7 @@ export default async function renderHeating(el) {
 
         <section>
             <h2>Heatable price checks <span class="sub">from ${esc(PRICE_PATH)}</span></h2>
+            <canvas id="c-checks" style="display:block;width:100%;height:220px;margin-bottom:14px"></canvas>
             <div id="t-checks"></div>
             <form id="check-form" class="row" style="margin-top:12px;align-items:flex-end">
                 <label class="field">Date checked<input type="date" name="date" required></label>
@@ -337,7 +338,16 @@ export default async function renderHeating(el) {
     $('#yr-next').onclick = () => showYear(yearList[yearList.indexOf(rememberedSeason) + 1]);
     showYear(yearList.includes(rememberedSeason) ? rememberedSeason : yearList.at(-1));
 
-    // ── Price checks ──
+    // ── Heatable price checks: a bar per check, oldest to newest ──
+    const drawChecks = () => {
+        drawBars($('#c-checks'), {
+            labels: checks.map(c => shortDate(c.date)),
+            series: [{ name: 'Heatable price', values: checks.map(c => c.price), color: COLORS.price, valueLabels: true }],
+            fmt: v => '$' + v.toFixed(2), valueFmt: v => money(v), tipFmt: perGal,
+            tipHead: k => dLong(checks[k].date),
+        });
+    };
+    $('#c-checks').hidden = !checks.length;
     dataTable($('#t-checks'), {
         columns: [
             dateCol('date', 'Date checked', r => r.date),
@@ -501,7 +511,7 @@ export default async function renderHeating(el) {
         }
     };
 
-    const redraw = () => { draw(); drawYear(); };
+    const redraw = () => { draw(); drawYear(); drawChecks(); };
     setResize(redraw);
     show(i);
     requestAnimationFrame(redraw); // canvases have their real width once laid out
