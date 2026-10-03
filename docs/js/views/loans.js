@@ -214,7 +214,7 @@ function renderAccount(sec, account, rawPayments, rawActivity, { first, last, re
                 <div>
                     <h3 class="chart-title">Payments</h3>
                     <div class="t-pay short-table"></div>
-                    ${payments.some(p => p.projected) ? `<p class="note" style="margin-top:6px">Planned payments show the balance as if each one before it is made${Number(account.apr) > 0 ? `, with a month's interest at ${esc(String(account.apr))}% APR` : ''}.</p>` : ''}
+                    ${payments.some(p => p.projected) ? `<p class="note" style="margin-top:6px">Planned payments show the balance as if each one before it is made, with a month's interest each: ${esc(P.model?.text || interestModel(account, L).text)}.</p>` : ''}
                     <div class="row" style="margin-top:10px"><button type="button" class="primary small" data-pay-open>+ Add payment</button></div>
                     <form class="add-bill pay-form" hidden>
                         <h3>Add a payment</h3>
