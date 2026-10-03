@@ -9,6 +9,7 @@ import {
     isoDate, dateOf, numOf, card, vsEarlier, dateCol, moneyCol, setResize, clearResize, yearChips,
 } from './utilcommon.js';
 import renderWater from './water.js';
+import renderHeating from './heating.js';
 
 // The electric company's customer portal, where statements are downloaded.
 const ELECTRIC_PORTAL = 'https://myaccount.libertyenergyandwater.com/portal/#/login?LUNH';
@@ -17,6 +18,7 @@ const portalLink = `<a class="ext-link" href="${ELECTRIC_PORTAL}" target="_blank
 const SUBPAGES = [
     { id: 'electric', label: 'Electric', render: renderElectric },
     { id: 'water', label: 'Water', render: renderWater },
+    { id: 'heating', label: 'Home Heating', render: renderHeating },
 ];
 
 let rememberedBill = null; // selected bill id, kept while you move between pages

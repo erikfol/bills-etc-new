@@ -129,9 +129,12 @@ export function drawMonthBars(canvas, { labels, income, spending, selected }) {
  * (sideways when the bars are too narrow for it to fit across).
  * stacked: draw the series on top of each other in one bar (positive values); the value label is the bar's total.
  * Hover tooltip: when series have a `name`, pointing at a period lists each named series' value there,
- * formatted by the series' tipFmt, else the chart's tipFmt, else valueFmt, else fmt.
+ * formatted by the series' tipFmt, else the chart's tipFmt, else valueFmt, else fmt. A series with tipOnly: true
+ * isn't drawn, it only shows in the tooltip. tipHead(i) → tooltip title (default: the period's label).
  */
-export function drawBars(canvas, { labels, series, selected = -1, fmt = kFmt, valueFmt = null, stacked = false, tipFmt = null }) {
+export function drawBars(canvas, { labels, series, selected = -1, fmt = kFmt, valueFmt = null, stacked = false, tipFmt = null, tipHead = null }) {
+    const tipSeries = series;
+    series = series.filter(x => !x.tipOnly);
     const s = setup(canvas);
     const n = labels.length;
     canvas._hit = () => -1;
@@ -225,16 +228,16 @@ export function drawBars(canvas, { labels, series, selected = -1, fmt = kFmt, va
         const i = Math.floor((x - pad.left) / groupW);
         return i >= 0 && i < n ? i : -1;
     };
-    const named = series.filter(x => x.name);
+    const named = tipSeries.filter(x => x.name);
     canvas._tip = !named.length ? null : {
         hit: canvas._hit,
         html: i => {
             const lines = named.filter(x => Number.isFinite(x.values[i])).map(x => {
                 const f = x.tipFmt || tipFmt || valueFmt || fmt, v = x.values[i];
                 const color = v < 0 && x.negColor ? x.negColor : x.color;
-                return `<div><span class="tip-dot" style="background:${color}"></span>${esc(x.name)}: <strong>${esc(f(v))}</strong></div>`;
+                return `<div><span class="tip-dot" style="background:${x.tipOnly ? 'transparent' : color}"></span>${esc(x.name)}: <strong>${esc(f(v))}</strong></div>`;
             });
-            return lines.length ? `<div class="tip-head">${esc(labels[i])}</div>${lines.join('')}` : '';
+            return lines.length ? `<div class="tip-head">${esc(tipHead ? tipHead(i) : labels[i])}</div>${lines.join('')}` : '';
         },
     };
     bindTip(canvas);
