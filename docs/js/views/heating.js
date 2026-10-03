@@ -81,7 +81,7 @@ export default async function renderHeating(el) {
             <div class="row year-chips"></div>
             <div class="chart-legend">
                 <span><span class="legend-dot" style="background:${COLORS.price}"></span>Delivery price</span>
-                <span><span class="legend-dot" style="background:${COLORS.check}"></span>Price check (Heatable)</span>
+                <span><span class="legend-dot" style="background:${COLORS.check}"></span>Heatable price check</span>
             </div>
             <canvas id="c-price" style="display:block;width:100%;height:230px"></canvas>
         </section>
@@ -130,12 +130,12 @@ export default async function renderHeating(el) {
         </section>
 
         <section>
-            <h2>Price checks <span class="sub">from ${esc(PRICE_PATH)}</span></h2>
+            <h2>Heatable price checks <span class="sub">from ${esc(PRICE_PATH)}</span></h2>
             <div id="t-checks"></div>
             <form id="check-form" class="row" style="margin-top:12px;align-items:flex-end">
                 <label class="field">Date checked<input type="date" name="date" required></label>
-                <label class="field">Price per gallon ($)<input type="number" name="price" min="0" step="0.01" required placeholder="0.00"></label>
-                <button type="submit" class="primary">Add price check</button>
+                <label class="field">Heatable price per gallon ($)<input type="number" name="price" min="0" step="0.01" required placeholder="0.00"></label>
+                <button type="submit" class="primary">Add Heatable price check</button>
             </form>
         </section>
 
@@ -193,7 +193,7 @@ export default async function renderHeating(el) {
             labels: points.map(p => shortDate(p.date)),
             series: [
                 { name: 'Delivery price', values: points.map(p => p.delivery ?? NaN), color: COLORS.price },
-                { name: 'Price check', values: points.map(p => p.check ?? NaN), color: COLORS.check },
+                { name: 'Heatable price check', values: points.map(p => p.check ?? NaN), color: COLORS.check },
             ],
             stacked: true, // each date has one of the two prices, so one centred bar
             fmt: v => '$' + v.toFixed(2), tipFmt: perGal,
@@ -236,7 +236,7 @@ export default async function renderHeating(el) {
                 Number.isFinite(d.days) ? `<span class="muted">${d.days} days after the previous delivery</span>` : '<span class="muted">first delivery on record</span>'),
             card('Price per gallon', money(d.price),
                 vsEarlier(d.price, prev?.price, prevLabel, { higherIsGood: false, fmt: money, none: 'first delivery on record' })
-                + (lastCheck ? `<br><span class="muted">latest check ${esc(money(lastCheck.price))} (${esc(dLong(lastCheck.date))})</span>` : '')),
+                + (lastCheck ? `<br><span class="muted">latest Heatable check ${esc(money(lastCheck.price))} (${esc(dLong(lastCheck.date))})</span>` : '')),
             card('Oil used', perDay(d.perDay),
                 prev ? `<span class="muted">${esc(dLong(prev.date))} – ${esc(dLong(d.date))}</span><br>`
                     + vsEarlier(d.perDay, prev.perDay, prevLabel, { higherIsGood: false, fmt: perDay, fmtDiff: v => `${v.toFixed(2)} gal/day` })
@@ -347,7 +347,7 @@ export default async function renderHeating(el) {
         ],
         rows: checks.map((c, k) => ({ ...c, change: k ? c.price - checks[k - 1].price : NaN })),
         sort: { col: 'date', dir: 'desc' },
-        empty: 'No price checks yet',
+        empty: 'No Heatable price checks yet',
     });
     const checkForm = $('#check-form');
     checkForm.date.value = isoDate(new Date());
@@ -357,7 +357,7 @@ export default async function renderHeating(el) {
         if (!date || !Number.isFinite(price)) { toast('Enter the date and the price per gallon', 'bad'); return; }
         try {
             await addPriceCheck({ date, price });
-            toast(`Added a price check: ${money(price)}/gal on ${dLong(date)}`, 'ok');
+            toast(`Added a Heatable price check: ${money(price)}/gal on ${dLong(date)}`, 'ok');
             const y = scrollY;
             await renderHeating(el);
             scrollTo(0, y);
@@ -392,7 +392,7 @@ export default async function renderHeating(el) {
     // ── Banners: where things stand, and deliveries not yet paid back ──
     const since = daysBetween(last.date, today());
     $('#status').innerHTML = `<div class="banner ok">🛢️ <strong>Last delivery ${esc(dLong(last.date))}</strong> (${esc(gal(last.gallons))} from ${esc(last.provider)}), ${since} day${since === 1 ? '' : 's'} ago.`
-        + (lastCheck ? ` Latest price check: <strong>${esc(money(lastCheck.price))}/gal</strong> on ${esc(dLong(lastCheck.date))}.` : '') + '</div>';
+        + (lastCheck ? ` Latest Heatable price check: <strong>${esc(money(lastCheck.price))}/gal</strong> on ${esc(dLong(lastCheck.date))}.` : '') + '</div>';
     const unpaid = deliveries.filter(d => !d.isPaidBack);
     $('#unpaid').innerHTML = unpaid.length
         ? `<div class="banner bad unpaid-list"><strong>Not paid back yet:</strong> ${unpaid.map(d => `<span class="nowrap">${esc(dLong(d.date))} (${esc(money(d.actual))}, ${esc(d.paidBack || 'blank')}) ${markBtn(d)}</span>`).join(' ')}</div>` : '';
