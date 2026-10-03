@@ -60,13 +60,14 @@ export function cleanUrl(url) {
 }
 
 /** Add an account and create its empty payments and activity files. Returns the new account. */
-export async function addAccount({ title, description, type, url, openingBalance, openingDate }) {
+export async function addAccount({ title, description, type, url, openingBalance, openingDate, apr }) {
     const accounts = await loadAccounts();
     const id = slug(title, new Set(accounts.map(a => a.id)));
     const account = {
         id, title: title.trim(), description: (description || '').trim(), type: type || 'Other', url: cleanUrl(url),
         openingBalance: Number.isFinite(openingBalance) ? round2(openingBalance) : 0,
         openingDate: openingDate ? sheetDate(openingDate, false) : '',
+        apr: Number.isFinite(apr) && apr > 0 ? apr : null,
         file: `${LOANS_DIR}/${id}.csv`, activityFile: `${LOANS_DIR}/${id}-activity.csv`,
     };
     if ((await fs.readText(account.file)) == null) await fs.writeText(account.file, toCSV(PAYMENT_COLS, []));
@@ -85,6 +86,7 @@ export async function updateAccount(id, changes) {
     if (changes.url != null) a.url = cleanUrl(changes.url);
     if ('openingBalance' in changes) a.openingBalance = Number.isFinite(changes.openingBalance) ? round2(changes.openingBalance) : 0;
     if ('openingDate' in changes) a.openingDate = changes.openingDate ? sheetDate(changes.openingDate, false) : '';
+    for (const k of ['apr', 'planPayment']) if (k in changes) a[k] = Number.isFinite(changes[k]) && changes[k] > 0 ? changes[k] : null;
     await saveAccounts(accounts);
 }
 
@@ -217,4 +219,49 @@ export async function saveLedger(account, payments, activity) {
     }
     await saveActivity(account, activity);
     await savePayments(account, L.payments);
+}
+
+/** Same day n months later, kept within the month. */
+const plusMonths = (d, n) => new Date(d.getFullYear(), d.getMonth() + n,
+    Math.min(d.getDate(), new Date(d.getFullYear(), d.getMonth() + n + 1, 0).getDate()));
+
+/**
+ * When the balance would reach zero. Monthly payment: the account's planned monthly payment if set, else the next
+ * payment not made yet (its amount, or its minimum), else the average of the last three made. Interest: the APR if
+ * set (worked month by month), else the interest and fees recorded in the last three months as a monthly cost.
+ * Returns {status: 'paid' | 'ok' | 'never' | 'unknown', date, months, payment, interest (total, estimated), basis}.
+ */
+export function estimatePayoff(account, L, now = new Date()) {
+    const balance = L.balanceNow;
+    if (!(balance > 0.005)) return { status: 'paid' };
+    const unmade = L.payments.filter(p => !p.made);
+    const made = L.payments.filter(p => p.made && Number.isFinite(p.payment) && p.payment > 0);
+    const nextUnmade = unmade.find(p => Number.isFinite(p.payment) || Number.isFinite(p.minPayment)) || null;
+    let payment = Number(account.planPayment), basis;
+    if (payment > 0) basis = 'your planned monthly payment';
+    else if (nextUnmade) { payment = Number.isFinite(nextUnmade.payment) ? nextUnmade.payment : nextUnmade.minPayment; basis = Number.isFinite(nextUnmade.payment) ? 'your next payment' : 'the minimum payment'; }
+    else if (made.length) { const last = made.slice(-3); payment = last.reduce((a, p) => a + p.payment, 0) / last.length; basis = `your last ${last.length === 1 ? 'payment' : `${last.length} payments' average`}`; }
+    if (!(payment > 0)) return { status: 'unknown', reason: 'Add a payment (or a planned monthly payment in Edit) to estimate a payoff date.' };
+
+    const apr = Number(account.apr);
+    const rate = apr > 0 ? apr / 100 / 12 : 0;
+    const since = plusMonths(now, -3);
+    const recent = L.activity.filter(a => a.date && a.date >= since && /^(interest|fee)$/i.test(a.type) && Number.isFinite(a.amount));
+    const flat = rate ? 0 : recent.reduce((s, a) => s + a.amount, 0) / 3; // $ per month when there's no APR
+    let bal = balance, months = 0, interest = 0;
+    while (bal > 0.005 && months < 600) {
+        const i = rate ? bal * rate : flat;
+        if (payment <= i + 0.005) return { status: 'never', payment, basis, monthlyInterest: i };
+        interest += i;
+        bal = bal + i - payment;
+        months++;
+    }
+    if (months >= 600) return { status: 'never', payment, basis };
+    const lastDate = L.payments.filter(p => p.date).at(-1)?.date;
+    const start = nextUnmade?.date || (lastDate ? plusMonths(lastDate, 1) : plusMonths(now, 1));
+    return {
+        status: 'ok', months, payment, basis, interest,
+        date: plusMonths(start, months - 1),
+        rateText: rate ? `${apr}% APR` : flat ? `about $${flat.toFixed(2)}/mo interest & fees (from the last 3 months)` : 'no interest recorded',
+    };
 }

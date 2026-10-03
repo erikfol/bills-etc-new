@@ -1,6 +1,6 @@
 // Loan/CC: loans and credit cards you set up yourself, each with its own payments table.
 import {
-    loadAccounts, addAccount, updateAccount, removeAccount, moveAccount, loadPayments, loadActivity, ledger, saveLedger,
+    loadAccounts, addAccount, updateAccount, removeAccount, moveAccount, loadPayments, loadActivity, ledger, saveLedger, estimatePayoff,
     ACCOUNT_TYPES, ACTIVITY_TYPES, LOANS_DIR, cleanUrl,
 } from '../loans.js';
 import { drawBars } from '../charts.js';
@@ -54,7 +54,7 @@ export default {
                 <div class="add-grid">
                     <label class="field">Opening balance ($)<input type="number" step="0.01" name="openingBalance" placeholder="0.00"></label>
                     <label class="field">As of<input type="date" name="openingDate"></label>
-                    <span class="muted" style="align-self:end;font-size:0.85em;padding-bottom:8px">What you owed when you start tracking it.</span>
+                    <label class="field">APR (%)<input type="number" step="0.01" min="0" name="apr" placeholder="optional, for the payoff date"></label>
                 </div>
                 <div class="row">
                     <button type="submit" class="primary">Add account</button>
@@ -77,7 +77,7 @@ export default {
             if (acctForm.url.value.trim() && !cleanUrl(acctForm.url.value)) { toast('The payment website should start with https://', 'bad'); return; }
             try {
                 await addAccount({ title, description: acctForm.description.value, type: acctForm.type.value, url: acctForm.url.value,
-                    openingBalance: numOf(acctForm.openingBalance.value), openingDate: dateOf(acctForm.openingDate.value) || new Date() });
+                    openingBalance: numOf(acctForm.openingBalance.value), openingDate: dateOf(acctForm.openingDate.value) || new Date(), apr: numOf(acctForm.apr.value) });
                 toast(`Added ${title}`, 'ok');
                 this.render(el);
             } catch (err) {
@@ -136,6 +136,15 @@ function renderAccount(sec, account, rawPayments, rawActivity, { first, last, re
     const bySign = s => sum(activity.filter(a => Math.sign(a.signed) === s).map(a => Math.abs(a.signed)));
     const added = bySign(1), credits = bySign(-1);
     const interestFees = sum(activity.filter(a => /^(interest|fee)$/i.test(a.type)).map(a => a.amount).filter(Number.isFinite));
+    const P = estimatePayoff(account, L);
+    const mon = d => `${MON[d.getMonth()]} ${d.getFullYear()}`;
+    const payoffCard = P.status === 'paid' ? card('Payoff', 'Paid off ✓', '<span class="muted">the balance is zero</span>', 'var(--green)')
+        : P.status === 'unknown' ? card('Payoff estimate', '–', `<span class="muted">${esc(P.reason)}</span>`)
+        : P.status === 'never' ? card('Payoff estimate', 'Not at this rate', `<span class="delta-bad">${esc(money(P.payment))} a month${Number.isFinite(P.monthlyInterest) ? ` doesn't cover the ${esc(money(P.monthlyInterest))} monthly interest` : ' would take over 50 years'}</span>`
+            + '<br><span class="muted">pay more, or set a planned payment in Edit</span>', 'var(--red)')
+        : card('Payoff estimate', mon(P.date),
+            `<span class="muted">${P.months} payment${P.months === 1 ? '' : 's'} of ${esc(money(P.payment))} (${esc(P.basis)})<br>${esc(P.rateText)}`
+            + `${P.interest > 0.5 ? ` · about ${esc(money(P.interest))} interest` : ''}</span>`);
     const save = async (p, a) => {
         // Accounts set up before opening balances: keep the balance they started from before Before/After are stripped.
         if (!Number.isFinite(account.openingBalance)) {
@@ -164,6 +173,7 @@ function renderAccount(sec, account, rawPayments, rawActivity, { first, last, re
                     next ? `<span class="muted">${next.date ? `${next.date < today() ? 'was due' : 'due'} ${esc(dLong(next.date))}` : 'no date'}`
                         + `${Number.isFinite(next.minPayment) ? ` · minimum ${esc(money(next.minPayment))}` : ''}</span>` : '<span class="muted">every payment is made</span>')}
                 ${card('Paid so far', money(paid), `<span class="muted">${made.length} of ${payments.length} payment${payments.length === 1 ? '' : 's'} made</span>`, 'var(--green)')}
+                ${payoffCard}
                 ${card('Interest &amp; fees', money(interestFees), `<span class="muted">${activity.length} activity entr${activity.length === 1 ? 'y' : 'ies'}</span>`)}
             </div>
             ${L.points.length > 1 ? '<h3 class="chart-title">Balance over time</h3><canvas class="c-bal" style="display:block;width:100%;height:200px;margin-bottom:14px"></canvas>' : ''}
@@ -349,6 +359,11 @@ function renderAccount(sec, account, rawPayments, rawActivity, { first, last, re
                 <label class="field">Opening date<input type="date" name="openingDate" value="${L.openingDate ? isoDate(L.openingDate) : ''}"></label>
                 <span class="muted" style="align-self:end;font-size:0.85em;padding-bottom:8px">The balance before the first payment and activity below.</span>
             </div>
+            <div class="add-grid">
+                <label class="field">APR (%)<input type="number" step="0.01" min="0" name="apr" value="${Number(account.apr) > 0 ? account.apr : ''}" placeholder="optional"></label>
+                <label class="field">Planned monthly payment ($)<input type="number" step="0.01" min="0" name="planPayment" value="${Number(account.planPayment) > 0 ? account.planPayment : ''}" placeholder="optional"></label>
+                <span class="muted" style="align-self:end;font-size:0.85em;padding-bottom:8px">Used for the payoff estimate. Without a planned payment it uses your next payment.</span>
+            </div>
             <h3 class="chart-title">Payments <span class="muted" style="font-weight:400">Before and After are worked out from the balance</span></h3>
             <div class="table-wrap loan-grid"><table class="sheet-table pay-grid">
                 <thead><tr><th>Date</th><th>Min payment</th><th>Payment</th><th>Made</th><th>Notes</th><th></th></tr></thead>
@@ -410,6 +425,7 @@ function renderAccount(sec, account, rawPayments, rawActivity, { first, last, re
                 await updateAccount(account.id, {
                     title, type: ed.querySelector('[name=type]').value, description: ed.querySelector('[name=description]').value, url,
                     openingBalance: Number.isFinite(openingBalance) ? openingBalance : 0, openingDate,
+                    apr: numOf(ed.querySelector('[name=apr]').value), planPayment: numOf(ed.querySelector('[name=planPayment]').value),
                 });
                 const updated = { ...account, openingBalance: Number.isFinite(openingBalance) ? openingBalance : 0, openingDate: openingDate ? isoDate(openingDate) : '' };
                 await saveLedger(updated, pays, acts);
