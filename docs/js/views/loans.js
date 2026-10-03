@@ -13,7 +13,16 @@ import {
     sameDay, sameAmount, dupText,
 } from './utilcommon.js';
 
-let editing = new Set(); // account ids being edited with unsaved changes possible
+let editing = new Set();
+/** Loan/CC sub-tabs. An account shows on the tab its Type belongs to. */
+const TABS = [
+    { id: 'cards', label: 'Credit Cards', type: 'Credit card', one: 'credit card', has: a => a.type === 'Credit card',
+        lead: 'Your credit cards. Each card has a payments table and an activity table (charges, interest, fees, credits); together with the opening balance they work out the balance.',
+        titleHint: 'e.g. Chase Freedom', empty: 'No credit cards yet. Press <strong>+ Add credit card</strong> to set up your first one.' },
+    { id: 'loans', label: 'Loans', type: 'Loan', one: 'loan', has: a => a.type !== 'Credit card',
+        lead: 'Your loans: car, student, personal, mortgage. Set the opening balance to what you owe (or the original amount), the APR, and add payments as you make them; interest goes in the activity table.',
+        titleHint: 'e.g. Car loan (Ally)', empty: 'No loans yet. Press <strong>+ Add loan</strong> to set one up: the amount you owe as the opening balance, the APR, and your monthly payment in the payoff planner.' },
+]; // account ids being edited with unsaved changes possible
 const shortDate = d => `${MON[d.getMonth()]} ${d.getDate()} ’${String(d.getFullYear()).slice(2)}`;
 /** 'yyyy-m-d|12.34' for an entry with a date and amount, else null. */
 const dupKeyOf = (r, amountOf) => (r.date && Number.isFinite(amountOf(r)) ? `${r.date.getFullYear()}-${r.date.getMonth()}-${r.date.getDate()}|${amountOf(r).toFixed(2)}` : null);
@@ -48,7 +57,8 @@ export default {
         if (!requireFolder(el)) return;
         editing = new Set();
         el.innerHTML = '<p class="muted">Loading your loans and cards…</p>';
-        const accounts = await loadAccounts();
+        const tab = TABS.find(t => t.id === location.hash.split('/')[1]) || TABS[0];
+        const accounts = (await loadAccounts()).filter(tab.has);
         const all = await Promise.all(accounts.map(async a => {
             const rawPayments = await loadPayments(a), rawActivity = await loadActivity(a);
             // payments with Before/After worked out from the balance, for the due banner
@@ -59,14 +69,15 @@ export default {
             <div class="row dash-head">
                 <h1 class="page">Loan / CC</h1>
                 <span class="spacer"></span>
-                <button class="primary" id="acct-open">+ Add account</button>
+                <button class="primary" id="acct-open">+ Add ${tab.one}</button>
             </div>
-            <p class="lead">Your loans and credit cards. Each account has a payments table and an activity table (charges, interest, fees, credits); together with the opening balance they work out the balance.</p>
+            <nav class="subnav">${TABS.map(t => `<a href="#loans/${t.id}"${t === tab ? ' class="active"' : ''}>${t.label}</a>`).join('')}</nav>
+            <p class="lead">${tab.lead}</p>
             <form id="acct-form" class="add-bill" hidden style="margin-bottom:18px">
-                <h3>Add a loan or credit card</h3>
+                <h3>Add a ${tab.one}</h3>
                 <div class="add-grid">
-                    <label class="field">Title<input type="text" name="title" required placeholder="e.g. Car loan, Chase Freedom"></label>
-                    <label class="field">Type<select name="type">${ACCOUNT_TYPES.map(t => `<option>${t}</option>`).join('')}</select></label>
+                    <label class="field">Title<input type="text" name="title" required placeholder="${tab.titleHint}"></label>
+                    <label class="field">Type<select name="type">${ACCOUNT_TYPES.map(t => `<option${t === tab.type ? ' selected' : ''}>${t}</option>`).join('')}</select></label>
                     <span></span>
                 </div>
                 <div class="add-grid">
@@ -82,7 +93,7 @@ export default {
                 </div>
                 <div class="add-grid">
                     <label class="field">Account number<input type="text" name="accountNumber" autocomplete="off" placeholder="optional: the last 4 digits are enough"></label>
-                    <label class="field">Credit limit ($)<input type="number" step="0.01" min="0" name="creditLimit" placeholder="optional: works out available credit"></label>
+                    ${tab.id === 'cards' ? '<label class="field">Credit limit ($)<input type="number" step="0.01" min="0" name="creditLimit" placeholder="optional: works out available credit"></label>' : '<span></span>'}
                     <span></span>
                 </div>
                 <div class="row">
@@ -108,7 +119,7 @@ export default {
             try {
                 await addAccount({ title, description: acctForm.description.value, type: acctForm.type.value, url: acctForm.url.value,
                     openingBalance: numOf(acctForm.openingBalance.value), openingDate: dateOf(acctForm.openingDate.value) || new Date(), apr: numOf(acctForm.apr.value),
-                    accountNumber: acctForm.accountNumber.value, creditLimit: numOf(acctForm.creditLimit.value) });
+                    accountNumber: acctForm.accountNumber.value, creditLimit: acctForm.creditLimit ? numOf(acctForm.creditLimit.value) : NaN });
                 toast(`Added ${title}`, 'ok');
                 this.render(el);
             } catch (err) {
@@ -126,12 +137,12 @@ export default {
             + (!late.length && !soon.length && all.some(x => x.payments.length) ? '<div class="banner ok">✓ <strong>No payments due.</strong> Nothing is past due or due in the next two weeks.</div>' : '');
 
         if (!all.length) {
-            $('#accounts').innerHTML = '<section><p>No accounts yet. Press <strong>+ Add account</strong> to set up your first loan or credit card.</p></section>';
+            $('#accounts').innerHTML = `<section><p>${tab.empty}</p></section>`;
             return;
         }
 
         // ── One section per account ──
-        renderTotals($('#totals'), all);
+        renderTotals($('#totals'), all, tab);
 
         const redraws = [];
         all.forEach(({ account, rawPayments, rawActivity }, k) => {
@@ -164,7 +175,7 @@ export default {
  * Totals across every account: balance, available credit, monthly payments, when all of it is paid off, paid so far,
  * a row per account (click to open it), and which one to pay extra on first.
  */
-function renderTotals(el, all) {
+function renderTotals(el, all, tab) {
     const rows = all.map(({ account, rawPayments, rawActivity }) => {
         const L = ledger(account, rawPayments, rawActivity);
         const P = estimatePayoff(account, L);
@@ -197,7 +208,7 @@ function renderTotals(el, all) {
 
     el.hidden = false;
     el.innerHTML = `
-        <h2>All accounts <span class="sub">${rows.length} account${rows.length === 1 ? '' : 's'} · click a row to open it</span></h2>
+        <h2>All ${tab.label.toLowerCase()} <span class="sub">${rows.length} ${tab.one}${rows.length === 1 ? '' : 's'} · click a row to open it</span></h2>
         <div class="cards kpis totals-cards">
             ${card('Total balance', money(balance), `<span class="muted">across ${owing.length} account${owing.length === 1 ? '' : 's'} with a balance</span>`, 'var(--red)')}
             ${limit > 0 ? card('Available credit', money(available), `<span class="muted">of ${esc(money(limit))} total limit · </span><span class="${usedClass}">${Math.round(used * 100)}% used</span>`, available < 0 ? 'var(--red)' : 'var(--green)') : ''}
@@ -208,7 +219,7 @@ function renderTotals(el, all) {
             ${card('Paid so far', money(paid), '<span class="muted">payments marked made, all accounts</span>', 'var(--green)')}
         </div>
         <div class="table-wrap"><table class="totals-table">
-            <thead><tr><th>Account</th><th class="num">Balance</th><th class="num">APR</th><th class="num">Monthly payment</th><th>Payoff</th><th class="num">Interest left</th><th class="num">Available</th></tr></thead>
+            <thead><tr><th>Account</th><th class="num">Balance</th><th class="num">APR</th><th class="num">Monthly payment</th><th>Payoff</th><th class="num">Interest left</th><th class="num">${tab.id === 'loans' ? 'Paid off' : 'Available'}</th></tr></thead>
             <tbody>${rows.map(r => `<tr class="totals-row" data-open="${esc(r.account.id)}">
                 <td>${typeIcon(r.account.type)} <strong>${esc(r.account.title)}</strong></td>
                 <td class="amt">${esc(money(r.balance))}</td>
@@ -216,12 +227,16 @@ function renderTotals(el, all) {
                 <td class="amt">${Number.isFinite(r.P.payment) ? esc(money(r.P.payment)) : '<span class="muted">–</span>'}</td>
                 <td class="nowrap">${r.P.status === 'ok' ? esc(MON_LONG(r.P.date)) : r.P.status === 'paid' ? '<span class="delta-good">paid off</span>' : r.P.status === 'never' ? '<span class="delta-bad">not at this rate</span>' : '<span class="muted">–</span>'}</td>
                 <td class="amt">${r.P.status === 'ok' && r.P.interest > 0.5 ? esc(money(r.P.interest)) : '<span class="muted">–</span>'}</td>
-                <td class="amt">${Number.isFinite(r.limit) ? esc(money(r.limit - r.balance)) : '<span class="muted">–</span>'}</td>
+                <td class="amt">${tab.id === 'loans'
+                    ? (r.L.opening > 0 ? `${Math.max(0, Math.round((r.L.opening - r.balance) / r.L.opening * 100))}%` : '<span class="muted">–</span>')
+                    : Number.isFinite(r.limit) ? esc(money(r.limit - r.balance)) : '<span class="muted">–</span>'}</td>
             </tr>`).join('')}</tbody>
             <tfoot><tr class="total-row"><td><strong>Total</strong></td><td class="amt"><strong>${esc(money(balance))}</strong></td><td></td>
                 <td class="amt"><strong>${esc(money(monthly))}</strong></td><td></td>
                 <td class="amt"><strong>${interestLeft > 0.5 ? esc(money(interestLeft)) : ''}</strong></td>
-                <td class="amt"><strong>${limit > 0 ? esc(money(available)) : ''}</strong></td></tr></tfoot>
+                <td class="amt"><strong>${tab.id === 'loans'
+                    ? (() => { const o = sum(rows.map(r => r.L.opening).filter(v => v > 0)); return o > 0 ? `${Math.max(0, Math.round((o - balance) / o * 100))}%` : ''; })()
+                    : limit > 0 ? esc(money(available)) : ''}</strong></td></tr></tfoot>
         </table></div>
         ${tips.length ? `<ul class="insight-list" style="margin-top:12px">${tips.map(t => `<li>${t}</li>`).join('')}</ul>` : ''}`;
     el.querySelectorAll('[data-open]').forEach(tr => {
@@ -255,7 +270,12 @@ function renderAccount(sec, account, rawPayments, rawActivity, { first, last, re
             + `${P.interest > 0.5 ? ` · about ${esc(money(P.interest))} interest` : ''}</span>`);
     const limit = Number(account.creditLimit);
     const used = limit > 0 ? Math.max(0, L.balanceNow) / limit : NaN;
-    const creditCard = !(limit > 0) ? '' : card('Available credit', money(limit - L.balanceNow),
+    const isLoan = account.type !== 'Credit card';
+    const paidOff = Number.isFinite(L.opening) && L.opening > 0 ? (L.opening - L.balanceNow) / L.opening : NaN;
+    const loanCard = !isLoan || !Number.isFinite(paidOff) ? '' : card('Paid off', `${Math.max(0, Math.round(paidOff * 100))}%`,
+        `<div class="progress-bar"><div class="progress-fill" style="width:${Math.min(100, Math.max(0, paidOff * 100)).toFixed(1)}%"></div></div>`
+        + `<span class="muted">${esc(money(Math.max(0, L.opening - L.balanceNow)))} of ${esc(money(L.opening))}</span>`, 'var(--green)');
+    const creditCard = isLoan ? loanCard : !(limit > 0) ? '' : card('Available credit', money(limit - L.balanceNow),
         `<span class="muted">of ${esc(money(limit))} limit · </span><span class="${used >= 0.7 ? 'delta-bad' : used >= 0.3 ? 'badge-warn' : 'delta-good'}">${Math.round(used * 100)}% used</span>`,
         limit - L.balanceNow < 0 ? 'var(--red)' : 'var(--green)');
     const save = async (p, a) => {
