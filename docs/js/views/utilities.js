@@ -183,16 +183,16 @@ async function renderElectric(el) {
         const rows = chartRows(), sel = rows.indexOf(bills[i]);
         drawBars($('#c-amount'), {
             labels: rows.map(barLabel),
-            series: [{ values: rows.map(b => b.charge), color: '#e74c3c', negColor: '#27ae60' }],
-            selected: sel, fmt: axisMoney,
+            series: [{ name: 'This period', values: rows.map(b => b.charge), color: '#e74c3c', negColor: '#27ae60' }],
+            selected: sel, fmt: axisMoney, tipFmt: billText,
         });
         drawBars($('#c-energy'), {
             labels: rows.map(barLabel),
             series: [
-                { values: rows.map(b => b.used), color: '#e67e22' },
-                ...(solarFrom ? [{ values: rows.map(b => b.received), color: '#27ae60' }] : []),
+                { name: 'Used from the grid', values: rows.map(b => b.used), color: '#e67e22' },
+                ...(solarFrom ? [{ name: 'Sent to the grid', values: rows.map(b => b.received), color: '#27ae60' }] : []),
             ],
-            selected: sel, fmt: axisKwh,
+            selected: sel, fmt: axisKwh, tipFmt: kwh,
         });
     };
     for (const id of ['#c-amount', '#c-energy']) {
@@ -289,19 +289,19 @@ async function renderElectric(el) {
         drawBars($('#c-yr-amount'), {
             labels: MON,
             series: [
-                ...(hasPrev ? [{ values: byMonth(y - 1, b => b.charge), color: '#c5cbd6', negColor: '#c5cbd6' }] : []),
-                { values: byMonth(y, b => b.charge), color: '#e74c3c', negColor: '#27ae60', valueLabels: true },
+                ...(hasPrev ? [{ name: String(y - 1), values: byMonth(y - 1, b => b.charge), color: '#c5cbd6', negColor: '#c5cbd6' }] : []),
+                { name: String(y), values: byMonth(y, b => b.charge), color: '#e74c3c', negColor: '#27ae60', valueLabels: true },
             ],
-            fmt: axisMoney,
+            fmt: axisMoney, tipFmt: billText,
             valueFmt: v => '$' + Math.round(Math.abs(v)).toLocaleString('en-US'),
         });
         drawBars($('#c-yr-energy'), {
             labels: MON,
             series: [
-                { values: byMonth(y, b => b.used), color: '#e67e22', valueLabels: true },
-                { values: byMonth(y, b => b.received), color: '#27ae60', valueLabels: true },
+                { name: 'Used from the grid', values: byMonth(y, b => b.used), color: '#e67e22', valueLabels: true },
+                { name: 'Sent to the grid', values: byMonth(y, b => b.received), color: '#27ae60', valueLabels: true },
             ],
-            fmt: axisKwh,
+            fmt: axisKwh, tipFmt: kwh,
             valueFmt: axisKwh,
         });
     };

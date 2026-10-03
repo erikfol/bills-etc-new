@@ -164,13 +164,13 @@ export default async function renderWater(el) {
         drawBars($('#c-cost'), {
             labels: rows.map(qShort),
             series: COST_PARTS.filter(c => !costParts || costParts.has(c.id))
-                .map(c => ({ values: rows.map(c.value), color: c.color })),
-            selected: rows.indexOf(bills[i]), fmt: axisMoney,
+                .map(c => ({ name: c.label, values: rows.map(c.value), color: c.color })),
+            selected: rows.indexOf(bills[i]), fmt: axisMoney, tipFmt: money,
         });
         drawBars($('#c-gal'), {
             labels: rows.map(qShort),
-            series: [{ values: rows.map(b => b.gallons), color: COLORS.water }],
-            selected: rows.indexOf(bills[i]), fmt: axisNum,
+            series: [{ name: 'Gallons used', values: rows.map(b => b.gallons), color: COLORS.water, valueLabels: true }],
+            selected: rows.indexOf(bills[i]), fmt: axisNum, valueFmt: axisNum, tipFmt: gal,
         });
     };
     for (const id of ['#c-cost', '#c-gal']) {
@@ -288,18 +288,18 @@ export default async function renderWater(el) {
         drawBars($('#c-yr-cost'), {
             labels: QL,
             series: [
-                ...(hasPrev ? [{ values: byQuarter(y - 1, b => b.total), color: COLORS.prev }] : []),
-                { values: byQuarter(y, b => b.total), color: COLORS.usage, valueLabels: true },
+                ...(hasPrev ? [{ name: String(y - 1), values: byQuarter(y - 1, b => b.total), color: COLORS.prev }] : []),
+                { name: String(y), values: byQuarter(y, b => b.total), color: COLORS.usage, valueLabels: true },
             ],
             fmt: axisMoney, valueFmt: v => money(v),
         });
         drawBars($('#c-yr-gal'), {
             labels: QL,
             series: [
-                ...(hasPrev ? [{ values: byQuarter(y - 1, b => b.gallons), color: COLORS.prev }] : []),
-                { values: byQuarter(y, b => b.gallons), color: COLORS.water, valueLabels: true },
+                ...(hasPrev ? [{ name: String(y - 1), values: byQuarter(y - 1, b => b.gallons), color: COLORS.prev }] : []),
+                { name: String(y), values: byQuarter(y, b => b.gallons), color: COLORS.water, valueLabels: true },
             ],
-            fmt: axisNum, valueFmt: axisNum,
+            fmt: axisNum, valueFmt: axisNum, tipFmt: gal,
         });
     };
     const showYear = y => {

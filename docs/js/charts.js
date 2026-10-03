@@ -1,4 +1,5 @@
 // Canvas charts, ported from the HTML report that script 2 generates.
+import { esc } from './util.js';
 
 export const CHART_COLORS = ['#4a90d9', '#e74c3c', '#27ae60', '#f39c12', '#9b59b6', '#1abc9c', '#e67e22', '#e91e63', '#607d8b', '#34495e'];
 const FONT = '-apple-system, BlinkMacSystemFont, sans-serif';
@@ -127,8 +128,10 @@ export function drawMonthBars(canvas, { labels, income, spending, selected }) {
  * valueFmt(value) → text printed at the end of each bar of a series with valueLabels: true
  * (sideways when the bars are too narrow for it to fit across).
  * stacked: draw the series on top of each other in one bar (positive values); the value label is the bar's total.
+ * Hover tooltip: when series have a `name`, pointing at a period lists each named series' value there,
+ * formatted by the series' tipFmt, else the chart's tipFmt, else valueFmt, else fmt.
  */
-export function drawBars(canvas, { labels, series, selected = -1, fmt = kFmt, valueFmt = null, stacked = false }) {
+export function drawBars(canvas, { labels, series, selected = -1, fmt = kFmt, valueFmt = null, stacked = false, tipFmt = null }) {
     const s = setup(canvas);
     const n = labels.length;
     canvas._hit = () => -1;
@@ -222,4 +225,45 @@ export function drawBars(canvas, { labels, series, selected = -1, fmt = kFmt, va
         const i = Math.floor((x - pad.left) / groupW);
         return i >= 0 && i < n ? i : -1;
     };
+    const named = series.filter(x => x.name);
+    canvas._tip = !named.length ? null : {
+        hit: canvas._hit,
+        html: i => {
+            const lines = named.filter(x => Number.isFinite(x.values[i])).map(x => {
+                const f = x.tipFmt || tipFmt || valueFmt || fmt, v = x.values[i];
+                const color = v < 0 && x.negColor ? x.negColor : x.color;
+                return `<div><span class="tip-dot" style="background:${color}"></span>${esc(x.name)}: <strong>${esc(f(v))}</strong></div>`;
+            });
+            return lines.length ? `<div class="tip-head">${esc(labels[i])}</div>${lines.join('')}` : '';
+        },
+    };
+    bindTip(canvas);
+}
+
+// ── Hover tooltip shared by every chart that sets canvas._tip = { hit(x) → index, html(index) → html } ──
+let tipEl = null;
+function hideTip() { if (tipEl) tipEl.hidden = true; }
+function showTip(html, x, y) {
+    if (!tipEl) {
+        tipEl = document.createElement('div');
+        tipEl.className = 'chart-tip';
+        document.body.appendChild(tipEl);
+        window.addEventListener('scroll', hideTip, { passive: true });
+        window.addEventListener('hashchange', hideTip);
+    }
+    tipEl.innerHTML = html;
+    tipEl.hidden = false;
+    const w = tipEl.offsetWidth, h = tipEl.offsetHeight;
+    tipEl.style.left = `${Math.min(x + 14, window.innerWidth - w - 8)}px`;
+    tipEl.style.top = `${y + 16 + h > window.innerHeight ? y - h - 10 : y + 16}px`;
+}
+function bindTip(canvas) {
+    if (canvas._tipBound) return;
+    canvas._tipBound = true;
+    canvas.addEventListener('mousemove', e => {
+        const t = canvas._tip, i = t ? t.hit(e.offsetX) : -1;
+        const html = i >= 0 ? t.html(i) : '';
+        html ? showTip(html, e.clientX, e.clientY) : hideTip();
+    });
+    canvas.addEventListener('mouseleave', hideTip);
 }
