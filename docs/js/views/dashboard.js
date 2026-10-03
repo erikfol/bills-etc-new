@@ -4,7 +4,7 @@ import { drawMonthBars, drawTrends, CHART_COLORS } from '../charts.js';
 import { generate, insightsPrompt, aiEnabled } from '../ollama.js';
 import { monthLabel, longMonthLabel, yearMonth, MONTH_NAMES } from '../dates.js';
 import { esc, money, mdToHtml, toast } from '../util.js';
-import { bindCellEditing, merchantInput, categorySelect, notesInput } from '../celledit.js';
+import { bindCellEditing, merchantInput, categorySelect, notesInput, merchantText, categoryText, notesText } from '../celledit.js';
 import { requireFolder } from '../app.js';
 import { dataTable, dateColumn, moneyColumn, closeFilterMenu } from '../datatable.js';
 import { renamed, getCategories } from '../rules.js';
@@ -12,6 +12,7 @@ import { renamed, getCategories } from '../rules.js';
 let onResize = null;
 let remembered = null; // selected month, kept while you move between pages
 let dirty = new Set(); // master row indexes with unsaved edits
+let editing = false; // transactions table is read-only until Edit is pressed
 
 const shortLabel = ym => `${MONTH_NAMES[+ym.slice(5) - 1].slice(0, 3)} ’${ym.slice(2, 4)}`;
 
@@ -45,6 +46,7 @@ export default {
         const rows = normalizeMaster(master.rows);
         rows.forEach((r, i) => { r._i = i; }); // index back into master.rows for saving edits
         dirty = new Set();
+        editing = false;
         const months = monthlyBreakdown(rows);
         const yms = months.map(m => m.ym);
         const thisYm = yearMonth(new Date());
@@ -91,13 +93,17 @@ export default {
                     <span id="tx-chip"></span>
                     <span class="spacer"></span><span class="muted" id="tx-count" style="font-size:0.85em"></span>
                 </div>
+                <div class="row table-tools" id="tx-tools">
+                    <button class="small" id="tx-edit">✎ Edit</button>
+                    <span class="muted" id="tx-hint">Press Edit to change a transaction's merchant, category or notes.</span>
+                </div>
                 <div class="save-bar" id="tx-save-bar" hidden>
                     <span id="tx-dirty"></span>
                     <span class="spacer"></span>
-                    <button id="tx-discard">Discard</button>
+                    <button id="tx-discard">Cancel</button>
                     <button class="primary" id="tx-save">Save changes</button>
                 </div>
-                <p class="note" style="margin:0 0 8px">Edit the merchant, category or notes right in the table, then click Save changes. The description is the bank's original text and can't be changed (it's how duplicates are recognised).</p>
+                <p class="note" id="tx-note" style="margin:0 0 8px" hidden>Edit the merchant, category or notes right in the table, then click Save changes. The description is the bank's original text and can't be changed (it's how duplicates are recognised).</p>
                 <div id="t-tx"></div>
             </section>
 
@@ -129,10 +135,10 @@ export default {
             columns: [
                 dateColumn('date', 'Date', r => r.Date),
                 { id: 'desc', label: 'Description', value: r => r.Description ?? '', tdClass: () => 'desc-cell' },
-                { id: 'merchant', label: 'Merchant', value: r => r['Cleaned Merchant'] ?? '', tdClass: () => 'edit-cell', cell: r => merchantInput(r._i, r['Cleaned Merchant']) },
+                { id: 'merchant', label: 'Merchant', value: r => r['Cleaned Merchant'] ?? '', tdClass: () => (editing ? 'edit-cell' : ''), cell: r => (editing ? merchantInput(r._i, r['Cleaned Merchant']) : merchantText(r['Cleaned Merchant'])) },
                 moneyColumn('amt', 'Amount', r => r._amt, { signed: true }),
-                { id: 'cat', label: 'Category', value: r => r['AI Category'] ?? '', tdClass: () => 'edit-cell', cell: r => categorySelect(r._i, r['AI Category']) },
-                { id: 'notes', label: 'Notes', value: r => (r.Notes ?? '').trim(), tdClass: () => 'edit-cell', cell: r => notesInput(r._i, r.Notes) },
+                { id: 'cat', label: 'Category', value: r => r['AI Category'] ?? '', tdClass: () => (editing ? 'edit-cell' : ''), cell: r => (editing ? categorySelect(r._i, r['AI Category']) : categoryText(r['AI Category'])) },
+                { id: 'notes', label: 'Notes', value: r => (r.Notes ?? '').trim(), tdClass: () => (editing ? 'edit-cell' : ''), cell: r => (editing ? notesInput(r._i, r.Notes) : notesText(r.Notes)) },
             ],
             rows,
             sort: { col: 'date', dir: 'asc' },
@@ -154,9 +160,12 @@ export default {
 
         // ── Editing ──
         const updateSaveBar = () => {
-            $('#tx-save-bar').hidden = !dirty.size;
-            $('#tx-dirty').textContent = `${dirty.size} unsaved change${dirty.size === 1 ? '' : 's'}`;
+            $('#tx-tools').hidden = editing;
+            $('#tx-save-bar').hidden = $('#tx-note').hidden = !editing;
+            $('#tx-dirty').textContent = dirty.size ? `${dirty.size} unsaved change${dirty.size === 1 ? '' : 's'}` : 'Editing';
+            $('#tx-save').disabled = !dirty.size;
         };
+        $('#tx-edit').onclick = () => { editing = true; updateSaveBar(); tx.redraw(); };
         bindCellEditing($('#t-tx'), (i, col) => rows[i][col] ?? '', (i, col, value, input) => {
             rows[i][col] = value;
             master.rows[i][col] = value;
@@ -169,14 +178,17 @@ export default {
                 await writeTable(PATHS.master, master);
                 toast(`Saved ${dirty.size} change${dirty.size === 1 ? '' : 's'}`, 'ok');
                 dirty.clear();
+                editing = false;
                 this.render(el); // recompute the totals with the new categories
             } catch (e) {
                 toast(`Save failed: ${e.message}. Is the file open in Excel?`, 'bad');
             }
         };
         $('#tx-discard').onclick = () => {
+            if (!dirty.size) { editing = false; updateSaveBar(); tx.redraw(); return; }
             if (!confirm('Discard your unsaved changes?')) return;
             dirty.clear();
+            editing = false;
             this.render(el);
         };
         const setCat = c => { catFilter = c === catFilter ? null : c; applyTx(); };

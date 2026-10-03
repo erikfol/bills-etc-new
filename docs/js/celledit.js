@@ -12,6 +12,11 @@ export function catOptions(value) {
         + `<option value="${NEW_CATEGORY}">＋ New category…</option>`;
 }
 
+// Read-only versions, shown until the table's Edit button is pressed.
+export const merchantText = v => esc(v ?? '');
+export const categoryText = v => (v ? `<span class="cat-badge">${esc(v)}</span>` : '');
+export const notesText = v => (String(v ?? '').trim() ? `<span class="note-text">${esc(v)}</span>` : '');
+
 export const merchantInput = (i, v) =>
     `<input type="text" class="cell-input" data-i="${i}" data-col="Cleaned Merchant" value="${esc(v)}" aria-label="Merchant">`;
 export const notesInput = (i, v) =>

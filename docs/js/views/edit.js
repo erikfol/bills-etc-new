@@ -1,7 +1,7 @@
 import { PATHS, readTable, writeTable } from '../data.js';
 import { parseDate, yearMonth, monthLabel } from '../dates.js';
 import { esc, money, amountOf, toast } from '../util.js';
-import { bindCellEditing, merchantInput, categorySelect, notesInput } from '../celledit.js';
+import { bindCellEditing, merchantInput, categorySelect, notesInput, merchantText, categoryText, notesText } from '../celledit.js';
 import { openFilterMenu, closeFilterMenu } from '../filtermenu.js';
 import { requireFolder } from '../app.js';
 
@@ -44,7 +44,7 @@ export default {
                 <span class="spacer"></span>
                 <select id="file">${Object.entries(FILES).map(([k, f]) => `<option value="${k}"${k === file ? ' selected' : ''}>${esc(f.label)}</option>`).join('')}</select>
             </div>
-            <p class="lead">All your transactions in one table: fix categories, merchant names and notes, then save. Use the ▾ on each column to sort or filter, like Excel. Edits in the current month are kept when you re-run step 3.</p>
+            <p class="lead">All your transactions in one table. Press Edit to fix categories, merchant names and notes, then Save. Use the ▾ on each column to sort or filter, like Excel. Edits in the current month are kept when you re-run step 3.</p>
             <div id="body"><p class="muted">Loading…</p></div>`;
 
         el.querySelector('#file').onchange = e => {
@@ -62,7 +62,7 @@ export default {
         }
         for (const c of ['Cleaned Merchant', 'AI Category', 'Notes']) if (!table.columns.includes(c)) table.columns.push(c);
         const yms = table.rows.map(r => { const d = parseDate(r.Date); return d ? yearMonth(d) : ''; });
-        state = { file, table, yms, dirty: new Set(), filters: new Map(), sort: { col: 'date', dir: 'asc' } };
+        state = { file, table, yms, dirty: new Set(), filters: new Map(), sort: { col: 'date', dir: 'asc' }, editing: false };
         const months = [...new Set(yms.filter(Boolean))].sort();
 
         body.innerHTML = `
@@ -73,8 +73,9 @@ export default {
                     <button class="small" id="clear-filters" hidden>Clear all filters</button>
                     <span class="spacer"></span>
                     <span id="dirty" class="muted" style="font-size:0.85em"></span>
-                    <button id="revert" disabled>Discard</button>
-                    <button class="primary" id="save" disabled>Save</button>
+                    <button id="edit-on">✎ Edit</button>
+                    <button id="revert" hidden>Cancel</button>
+                    <button class="primary" id="save" hidden disabled>Save</button>
                 </div>
                 <div id="count" class="muted" style="font-size:0.85em;margin-bottom:8px"></div>
                 <div class="table-wrap"><table class="filter-table">
@@ -91,10 +92,11 @@ export default {
         if (file === 'master' && months.length) fMonth.value = months.at(-1);
 
         const updateDirty = () => {
-            const n = state.dirty.size;
-            body.querySelector('#dirty').textContent = n ? `${n} unsaved row${n === 1 ? '' : 's'}` : '';
+            const n = state.dirty.size, on = state.editing;
+            body.querySelector('#dirty').textContent = !on ? '' : n ? `${n} unsaved row${n === 1 ? '' : 's'}` : 'Editing: change merchant, category or notes, then Save.';
+            body.querySelector('#edit-on').hidden = on;
+            body.querySelector('#save').hidden = body.querySelector('#revert').hidden = !on;
             body.querySelector('#save').disabled = !n;
-            body.querySelector('#revert').disabled = !n;
         };
 
         /** Row indexes passing the month, search and every column filter except `skipCol`. */
@@ -137,9 +139,10 @@ export default {
                     <td style="white-space:nowrap">${esc(r.Date)}</td>
                     <td class="desc-cell">${esc(r.Description)}</td>
                     <td class="${a > 0 ? 'income-amt' : 'expense-amt'}">${esc(fmtAmount(r.Amount))}</td>
-                    <td class="edit-cell">${merchantInput(i, r['Cleaned Merchant'])}</td>
+                    ${state.editing ? `<td class="edit-cell">${merchantInput(i, r['Cleaned Merchant'])}</td>
                     <td class="edit-cell">${categorySelect(i, r['AI Category'])}</td>
-                    <td class="edit-cell">${notesInput(i, r.Notes)}</td>
+                    <td class="edit-cell">${notesInput(i, r.Notes)}</td>`
+                    : `<td>${merchantText(r['Cleaned Merchant'])}</td><td>${categoryText(r['AI Category'])}</td><td>${notesText(r.Notes)}</td>`}
                 </tr>`;
             }).join('');
             drawHeaders();
@@ -183,10 +186,12 @@ export default {
         fQ.oninput = draw;
         body.querySelector('#clear-filters').onclick = () => { state.filters.clear(); fQ.value = ''; draw(); };
 
+        body.querySelector('#edit-on').onclick = () => { state.editing = true; updateDirty(); draw(); };
         body.querySelector('#save').onclick = async () => {
             try {
                 await writeTable(FILES[file].path, table);
                 state.dirty.clear();
+                state.editing = false;
                 updateDirty();
                 draw();
                 toast(`Saved ${FILES[file].path}`, 'ok');
@@ -195,7 +200,8 @@ export default {
             }
         };
         body.querySelector('#revert').onclick = () => {
-            if (!confirm('Discard unsaved changes?')) return;
+            if (state.dirty.size && !confirm('Discard unsaved changes?')) return;
+            if (!state.dirty.size) { state.editing = false; updateDirty(); draw(); return; }
             state.dirty.clear();
             this.render(el, file);
         };
