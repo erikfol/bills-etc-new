@@ -1,7 +1,7 @@
 // Utilities: one sub-page per utility (#utilities/electric, …).
-import { loadElectric, sameBillLastYear, ELECTRIC_PATH } from '../electric.js';
+import { loadElectric, sameBillLastYear, addElectricBill, serviceDays, ELECTRIC_PATH } from '../electric.js';
 import { drawBars } from '../charts.js';
-import { esc, money, sum } from '../util.js';
+import { esc, money, sum, toast } from '../util.js';
 import { requireFolder } from '../app.js';
 import { dataTable, closeFilterMenu } from '../datatable.js';
 
@@ -111,6 +111,36 @@ async function renderElectric(el) {
         <section>
             <h2>All bills <span class="sub" id="bill-count"></span></h2>
             <div id="t-bills"></div>
+            <div class="row" style="margin-top:14px"><button class="primary" id="add-open">+ Add a bill</button></div>
+            <form id="add-form" class="add-bill" hidden>
+                <h3>Add a bill</h3>
+                <div class="add-grid">
+                    <label class="field">Service start<input type="date" name="start" required></label>
+                    <label class="field">Service end<input type="date" name="end" required></label>
+                    <label class="field">Due date<input type="date" name="due"></label>
+                </div>
+                <div class="add-grid">
+                    <label class="field">Meter reading, previous<input type="number" name="prevRead" min="0" step="1" required></label>
+                    <label class="field">Meter reading, current<input type="number" name="curRead" min="0" step="1" required></label>
+                    <label class="field">Multiplier<input type="number" name="multiplier" min="0" step="any" required></label>
+                </div>
+                <div class="add-grid">
+                    <label class="field">Sent to grid (Rec) reading, previous<input type="number" name="prevRec" min="0" step="1"></label>
+                    <label class="field">Sent to grid (Rec) reading, current<input type="number" name="curRec" min="0" step="1"></label>
+                    <span></span>
+                </div>
+                <div class="add-grid">
+                    <label class="field">Amount<input type="number" name="amount" min="0" step="0.01" required placeholder="0.00"></label>
+                    <label class="field">This bill is<select name="kind"><option value="due">Amount due (you pay)</option><option value="credit">A credit</option></select></label>
+                    <label class="field">Notes<input type="text" name="notes" placeholder="optional"></label>
+                </div>
+                <p class="add-preview" id="add-preview"></p>
+                <div class="row">
+                    <button type="submit" class="primary" id="add-save">Save bill</button>
+                    <button type="button" id="add-cancel">Cancel</button>
+                    <span class="muted" style="font-size:0.85em">Adds a row to ${esc(ELECTRIC_PATH)}. Close the file in Excel first.</span>
+                </div>
+            </form>
         </section>`;
 
     const $ = s => el.querySelector(s);
@@ -244,6 +274,78 @@ async function renderElectric(el) {
         onChange: list => { $('#bill-count').textContent = `${list.length} bill${list.length === 1 ? '' : 's'} · from ${ELECTRIC_PATH}`; },
     });
 
+    // ── Add a bill: prefilled from the latest bill (readings carry over, the new period starts the next day) ──
+    const form = $('#add-form'), last = bills.at(-1);
+    const isoDate = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const dateOf = v => { const m = String(v).match(/^(\d{4})-(\d{2})-(\d{2})$/); return m ? new Date(+m[1], m[2] - 1, +m[3]) : null; };
+    const numOf = v => (String(v).trim() === '' ? NaN : Number(v));
+    const readForm = () => {
+        const f = Object.fromEntries(new FormData(form));
+        const amount = numOf(f.amount);
+        return {
+            start: dateOf(f.start), end: dateOf(f.end), due: dateOf(f.due),
+            prevRead: numOf(f.prevRead), curRead: numOf(f.curRead), multiplier: numOf(f.multiplier),
+            prevRec: numOf(f.prevRec), curRec: numOf(f.curRec),
+            amount: f.kind === 'credit' ? -amount : amount, notes: f.notes,
+        };
+    };
+    /** Problems with the entry, or [] when it can be saved. */
+    const problems = b => {
+        const p = [];
+        if (!b.start || !b.end) p.push('Enter the service start and end dates.');
+        else if (b.end <= b.start) p.push('The service end must be after the start.');
+        else if (bills.some(x => x.end.getTime() === b.end.getTime())) p.push(`There is already a bill ending ${dLong(b.end)}.`);
+        if (!Number.isFinite(b.prevRead) || !Number.isFinite(b.curRead)) p.push('Enter both meter readings.');
+        else if (b.curRead < b.prevRead) p.push('The current meter reading is lower than the previous one.');
+        if (!(b.multiplier > 0)) p.push('The multiplier must be more than 0.');
+        if (Number.isFinite(b.curRec) !== Number.isFinite(b.prevRec)) p.push('Enter both sent-to-grid readings, or neither.');
+        else if (b.curRec < b.prevRec) p.push('The current sent-to-grid reading is lower than the previous one.');
+        if (!Number.isFinite(b.amount)) p.push('Enter the amount.');
+        return p;
+    };
+    const preview = () => {
+        const b = readForm(), p = problems(b);
+        const used = (b.curRead - b.prevRead) * b.multiplier, sent = b.curRec - b.prevRec;
+        const bits = [];
+        if (b.start && b.end && b.end > b.start) bits.push(`${serviceDays(b.start, b.end)} days`);
+        if (Number.isFinite(used) && used >= 0) bits.push(`${kwh(used)} used`);
+        if (Number.isFinite(sent) && sent >= 0) bits.push(`${kwh(sent)} sent to the grid`);
+        if (Number.isFinite(b.amount)) bits.push(billText(b.amount) + (used > 0 ? ` (${b.amount < 0 ? `${money(-b.amount / used)} credit` : money(b.amount / used)} per kWh)` : ''));
+        $('#add-preview').innerHTML = (bits.length ? esc(bits.join(' · ')) : '')
+            + (form.dataset.tried && p.length ? `<br><span class="negative">${p.map(esc).join(' ')}</span>` : '');
+    };
+    $('#add-open').onclick = () => {
+        form.reset();
+        delete form.dataset.tried;
+        form.start.value = isoDate(new Date(last.end.getFullYear(), last.end.getMonth(), last.end.getDate() + 1));
+        if (Number.isFinite(last.curRead)) form.prevRead.value = last.curRead;
+        form.multiplier.value = Number.isFinite(last.multiplier) ? last.multiplier : 1;
+        if (Number.isFinite(last.curRec)) form.prevRec.value = last.curRec;
+        form.hidden = false;
+        $('#add-open').hidden = true;
+        preview();
+        form.end.focus();
+    };
+    $('#add-cancel').onclick = () => { form.hidden = true; $('#add-open').hidden = false; };
+    form.oninput = preview;
+    form.onsubmit = async e => {
+        e.preventDefault();
+        form.dataset.tried = '1';
+        const b = readForm();
+        if (problems(b).length) { preview(); return; }
+        $('#add-save').disabled = true;
+        try {
+            await addElectricBill(b);
+            toast(`Added the bill ending ${dLong(b.end)}`, 'ok');
+            rememberedBill = null; // open on the latest bill
+            await renderElectric(el);
+        } catch (err) {
+            toast(`Save failed: ${err.message}. Is the file open in Excel?`, 'bad');
+            $('#add-save').disabled = false;
+        }
+    };
+
+    if (onResize) window.removeEventListener('resize', onResize);
     onResize = draw;
     window.addEventListener('resize', onResize);
     show(i);
