@@ -1,6 +1,5 @@
 // History-first categorization: reuse the category you've already given a merchant.
 // Keep merchantKey() identical to merchant_key() in history_lookup.py.
-import { applyOverrides, applyMerchantCatOverrides } from './rules.js';
 
 /** "TST* JOES PIZZA 1234 HANOVER NH" → "TST JOES PIZZA": letters only, first 3 words. */
 export function merchantKey(description) {
@@ -39,17 +38,11 @@ export function buildHistory(rows) {
 }
 
 /**
- * {merchant, category, source} from the merchant+category overrides ('rules') or history ('history');
- * null if the merchant is new or ambiguous. Category overrides still apply on top of history.
+ * {merchant, category, source: 'history'} from your history; null if the merchant is new or ambiguous.
+ * Callers apply your merchant rules on top (merchants.js applyMerchantRules).
  */
 export function historyLookup(lookup, description) {
-    const mc = applyMerchantCatOverrides(description);
-    if (mc) return { ...mc, source: 'rules' };
     const hit = lookup.get(merchantKey(description));
     if (!hit) return null;
-    return {
-        merchant: hit.merchant || String(description ?? ''),
-        category: applyOverrides(description, hit.category),
-        source: 'history',
-    };
+    return { merchant: hit.merchant || String(description ?? ''), category: hit.category, source: 'history' };
 }

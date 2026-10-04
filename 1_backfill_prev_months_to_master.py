@@ -1,7 +1,7 @@
 import pandas as pd
 import ollama
 import os
-from bills_config import category_settings, renamed, merchant_rules, apply_merchant_rules
+from bills_config import category_settings, renamed, merchant_rules, apply_merchant_rules, rules_only, tx_type_merchant
 from history_lookup import merchant_key, load_history
 
 # --- CONFIGURATION ---
@@ -40,87 +40,16 @@ def normalize_category(cat):
             return renamed(CATEGORY_RENAMES, CATEGORY_MAP[word])
     return renamed(CATEGORY_RENAMES, 'Miscellaneous')
 
-# Hardcoded overrides — checked after AI runs, first match wins (case-insensitive).
-# Add rows here for any merchant the AI keeps miscategorizing.
-CATEGORY_OVERRIDES = [
-    # Mortgage
-    ('ROCKET MORTGAGE',       'Rent/Mortgage'),
-    ('NSM DBAMR',             'Rent/Mortgage'),
-    # Credit card & loan payments
-    ('CRCARDPMT',             'Credit Card'),
-    ('CARD PYMT',             'Credit Card'),
-    ('BEST BUY AUTO PYMT',    'Credit Card'),
-    ('AMZ_STORECRD_PMT',      'Credit Card'),
-    ('MORI LOAN',             'Miscellaneous'),
-    # Bank & government fees
-    ('EXCHANGE FEE',          'Miscellaneous'),
-    ('OVERDRAFT',             'Miscellaneous'),
-    ('ATM FEE',               'Miscellaneous'),
-    ('IC FEE',                'Miscellaneous'),
-    ('PEACE OF MIND REBATE',  'Miscellaneous'),
-    ('PASSPORTSERVICES',      'Miscellaneous'),
-    # Property tax / municipal fees
-    ('REAL ESTAT',            'Miscellaneous'),
-    ('T.O.H.',                'Miscellaneous'),
-    # Transfers
-    ('TO SAVINGS',            'Savings'),
-    ('TO CHECKING',           'Miscellaneous'),
-    ('FROM SAVINGS',          'Miscellaneous'),
-    ('SCHEDULED TRANSFER',    'Miscellaneous'),
-    # Utilities (pin so AI can't drift)
-    ('CLEAN ENERGY LOAN',     'Utilities'),
-    ('COMCAST',               'Utilities'),
-    ('XFINITY',               'Utilities'),
-    ('LIBERTY UTILITIE',      'Utilities'),
-    ('STRAIGHTTALK',          'Utilities'),
-    # Gas / Transport
-    ('IRVING OIL',            'Gas'),
-    ('NH TURNPIKE',           'Transport'),
-    # Entertainment / vacation
-    ('VACASA',                'Entertainment'),
-    ('VRBO',                  'Entertainment'),
-    # Income
-    ('PAYROLL',               'Income'),
-    ('IRS TREAS',             'Income'),
-]
-
-# Overrides that force BOTH merchant name AND category
-MERCHANT_CATEGORY_OVERRIDES = [
-    # (substring, merchant_name, category)
-    ('AWS',                 'Amazon AWS',   'Utilities'),
-    ('AMAZON WEB',          'Amazon AWS',   'Utilities'),
-    ('EXCHANGE FEE',        'Exchange Fee', 'Miscellaneous'),
-    ('DISNEY MOUNTAIN VIEW','Disney Plus',          'Entertainment'),
-    ('TRAVELERS',           'Travelers Insurance',  'Transport'),
-    ('DUNKIN',              'Dunkin',               'Dining Out'),
-]
-
-def apply_overrides(description, category):
-    """Apply hardcoded category fixes for known AI mistakes."""
-    desc_upper = str(description).upper()
-    for keyword, forced in CATEGORY_OVERRIDES:
-        if keyword.upper() in desc_upper:
-            return renamed(CATEGORY_RENAMES, forced)
-    return category
-
-def apply_merchant_cat_overrides(description):
-    """If description matches a merchant+category pattern, return (merchant, category); else (None, None)."""
-    desc_upper = str(description).upper()
-    for keyword, merchant, category in MERCHANT_CATEGORY_OVERRIDES:
-        if keyword in desc_upper:
-            return merchant, renamed(CATEGORY_RENAMES, category)
-    return None, None
+# Merchant names and forced categories come from your merchant rules in config.json
+# (GUI: Config > Merchants), applied by bills_config.apply_merchant_rules.
 
 def lookup_history(history, description):
-    """(merchant, category) from merchant overrides or your history; (None, None) if the merchant is new."""
-    mc_merchant, mc_category = apply_merchant_cat_overrides(description)
-    if mc_merchant:
-        return mc_merchant, mc_category
+    """(merchant, category) from your history; (None, None) if the merchant is new or ambiguous."""
     hit = history.get(merchant_key(description))
     if not hit:
         return None, None
     category, merchant = hit
-    return (merchant or str(description)), apply_overrides(description, category)
+    return (merchant or str(description)), category
 
 def ask_local_ai(description, amount):
     """Sends the transaction description to Ollama for a clean name and category."""
@@ -161,41 +90,11 @@ IMPORTANT RULES:
         # Expected format: "Merchant: Joe's Coffee | Category: Dining Out"
         parts = result.split('|')
         merchant = parts[0].replace("Merchant:", "").strip()
-        desc_lower = description.lower()
-        if 'onlyfans' in desc_lower:
-            merchant = 'OF'
-        elif 'to savings' in desc_lower:
-            merchant = 'TO SAVINGS'
-        elif 'tomtom' in desc_lower or 'tom tom' in desc_lower:
-            merchant = 'TOMTOM'
-        elif 'irving' in desc_lower:
-            merchant = 'Irving Gas'
-        elif 'mori' in desc_lower:
-            merchant = 'Marriott Loan'
-        category = apply_overrides(description, normalize_category(parts[1].replace("Category:", "").strip()))
-        mc_merchant, mc_category = apply_merchant_cat_overrides(description)
-        if mc_merchant:
-            return mc_merchant, mc_category
+        category = normalize_category(parts[1].replace("Category:", "").strip())
         return merchant, category
     except Exception as e:
         print(f"Error processing '{description}': {e}")
-        desc_lower = description.lower()
-        if 'onlyfans' in desc_lower:
-            merchant = 'OF'
-        elif 'to savings' in desc_lower:
-            merchant = 'TO SAVINGS'
-        elif 'tomtom' in desc_lower or 'tom tom' in desc_lower:
-            merchant = 'TOMTOM'
-        elif 'irving' in desc_lower:
-            merchant = 'Irving Gas'
-        elif 'mori' in desc_lower:
-            merchant = 'Marriott Loan'
-        else:
-            merchant = description
-        mc_merchant, mc_category = apply_merchant_cat_overrides(description)
-        if mc_merchant:
-            return mc_merchant, mc_category
-        return merchant, apply_overrides(description, "Miscellaneous")
+        return str(description), renamed(CATEGORY_RENAMES, 'Miscellaneous')
 
 def _norm_key(date_val, desc_val, amt_val):
     """Normalize a dedup key: date → DD-Mmm-YY, amount → float 2dp string."""
@@ -283,6 +182,7 @@ def main():
 
         print(f"Processing {len(df)} new transactions (history first, then local AI)...")
         from_history = 0
+        from_rules = 0
         for index, row in df.iterrows():
             desc = row[DESCRIPTION_COL]
             amt = row[AMOUNT_COL]
@@ -290,6 +190,10 @@ def main():
             clean_merchant, category = lookup_history(history, desc)
             if clean_merchant is not None:
                 from_history += 1
+            elif rules_only(MERCHANT_RULES, CATEGORY_RENAMES, desc)[0] is not None:
+                # Your merchant rules settle both name and category: no need to ask the AI
+                clean_merchant, category = rules_only(MERCHANT_RULES, CATEGORY_RENAMES, desc)
+                from_rules += 1
             else:
                 print(f" [AI] Analyzing: {desc} (${amt})")
                 clean_merchant, category = ask_local_ai(desc, amt)
@@ -298,18 +202,13 @@ def main():
                     history[merchant_key(desc)] = (category, clean_merchant)
             # Your merchant rules from config.json (clean name, and category if the rule has one)
             clean_merchant, category = apply_merchant_rules(MERCHANT_RULES, CATEGORY_RENAMES, clean_merchant, category, desc)
-            tx_type_val = str(row.get('Transaction Type', '')).lower()
-            if 'Transaction Type' in df.columns and 'atm' in tx_type_val:
-                clean_merchant = 'ATM'
-            elif 'Transaction Type' in df.columns and 'check' in tx_type_val:
-                clean_merchant = 'CHECK'
-            elif 'Transaction Type' in df.columns and 'transfer' in tx_type_val:
-                clean_merchant = 'TRANSFER'
+            if 'Transaction Type' in df.columns:
+                clean_merchant = tx_type_merchant(row.get('Transaction Type', ''), clean_merchant)
 
             ai_merchants.append(clean_merchant)
             ai_categories.append(category)
 
-        print(f"  {from_history} from history, {len(df) - from_history} by AI.")
+        print(f"  {from_history} from history, {from_rules} by your merchant rules, {len(df) - from_history - from_rules} by AI.")
 
         # Append the smart local AI data back into this specific file's dataframe
         df['Cleaned Merchant'] = ai_merchants
@@ -321,26 +220,13 @@ def main():
         df.to_csv(OUTPUT_FILE, mode='a', index=False, header=not file_exists)
         print(f"Successfully added {len(df)} new transactions from {file_name} to master history!")
 
-    # Clean up merchant names across the entire master CSV
+    # Older masters may lack the Notes column the GUI uses.
     if os.path.exists(OUTPUT_FILE):
         master = pd.read_csv(OUTPUT_FILE)
         master.columns = master.columns.str.strip()
-        if 'Cleaned Merchant' in master.columns and 'Description' in master.columns:
-            desc = master['Description'].str.lower().fillna('')
-            master.loc[desc.str.contains('onlyfans'), 'Cleaned Merchant'] = 'OF'
-            master.loc[desc.str.contains('to savings'), 'Cleaned Merchant'] = 'TO SAVINGS'
-            master.loc[desc.str.contains('tomtom') | desc.str.contains('tom tom'), 'Cleaned Merchant'] = 'TOMTOM'
-            master.loc[desc.str.contains('irving'), 'Cleaned Merchant'] = 'Irving Gas'
-            master.loc[desc.str.contains('mori'), 'Cleaned Merchant'] = 'Marriott Loan'
-            if 'Transaction Type' in master.columns:
-                tx_type = master['Transaction Type'].str.lower().fillna('')
-                master.loc[tx_type.str.contains('atm'), 'Cleaned Merchant'] = 'ATM'
-                master.loc[tx_type.str.contains('check'), 'Cleaned Merchant'] = 'CHECK'
-                master.loc[tx_type.str.contains('transfer'), 'Cleaned Merchant'] = 'TRANSFER'
-            if 'Notes' not in master.columns:
-                master['Notes'] = ''
+        if 'Notes' not in master.columns:
+            master['Notes'] = ''
             master.to_csv(OUTPUT_FILE, index=False)
-            print("Master merchant names cleaned up.")
 
 if __name__ == "__main__":
     main()

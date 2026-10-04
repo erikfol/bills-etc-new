@@ -24,3 +24,6 @@ desktop.ini
 .idea/
 .claude/
 
+
+# Backups the tools write next to config.json
+config.json.*.bak

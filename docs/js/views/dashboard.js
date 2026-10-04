@@ -72,7 +72,7 @@ export default {
                 </div>
             </div>
             <p class="lead" id="lead"></p>
-            ${unlisted.length ? `<div class="banner">${unlisted.map(c => `<strong>${esc(c)}</strong>`).join(', ')} ${unlisted.length === 1 ? 'is' : 'are'} used in your history but not in your category list, so ${unlisted.length === 1 ? 'it is' : 'they are'} counted as ${esc(renamed('Miscellaneous'))} here. Add ${unlisted.length === 1 ? 'it' : 'them'} on the <a href="#config">Config</a> page (Categories → Add to list) to see ${unlisted.length === 1 ? 'it' : 'them'} separately.</div>` : ''}
+            ${unlisted.length ? `<div class="banner">${unlisted.map(c => `<strong>${esc(c)}</strong>`).join(', ')} ${unlisted.length === 1 ? 'is' : 'are'} used in your history but not in your category list, so ${unlisted.length === 1 ? 'it is' : 'they are'} counted as ${esc(renamed('Miscellaneous'))} here. Add ${unlisted.length === 1 ? 'it' : 'them'} on <a href="#config/categories">Config → Categories</a> (Add to list) to see ${unlisted.length === 1 ? 'it' : 'them'} separately.</div>` : ''}
 
             <div class="cards kpis" id="kpis"></div>
 

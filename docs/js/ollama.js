@@ -1,5 +1,5 @@
 // Talks to the user's local Ollama straight from the browser. Requires OLLAMA_ORIGINS to allow this page.
-import { applyOverrides, applyMerchantCatOverrides, cleanupMerchant, normalizeCategory } from './rules.js';
+import { normalizeCategory } from './rules.js';
 
 const DEFAULTS = { base: 'http://localhost:11434', model: 'qwen2.5:3b' };
 
@@ -84,22 +84,15 @@ IMPORTANT RULES:
 }
 
 /**
- * Ask the local model for {merchant, category}, then apply the hardcoded overrides.
+ * Ask the local model for {merchant, category}; the caller applies your merchant rules on top.
  * Network/abort errors are rethrown so a run stops instead of filling the master with fallbacks;
- * an unparseable answer falls back to the override rules, like the scripts do.
+ * an unparseable answer falls back to the bank text and Miscellaneous.
  */
 export async function aiCategorize(description, amount, signal, known = []) {
-    // A merchant+category override always wins, so don't spend a model call on it.
-    const mc = applyMerchantCatOverrides(description);
-    if (mc) return { ...mc, parsed: true };
     const text = (await generate(categorizePrompt(description, amount, known), signal)).trim();
     const parts = text.split('|');
-    if (parts.length < 2) {
-        return { merchant: cleanupMerchant(description, null, description), category: applyOverrides(description, 'Miscellaneous'), parsed: false, raw: text };
-    }
-    const merchant = cleanupMerchant(description, null, parts[0].replace('Merchant:', '').trim());
-    const category = applyOverrides(description, normalizeCategory(parts[1].replace('Category:', '').trim()));
-    return { merchant, category, parsed: true };
+    if (parts.length < 2) return { merchant: String(description ?? ''), category: normalizeCategory('Miscellaneous'), parsed: false, raw: text };
+    return { merchant: parts[0].replace('Merchant:', '').trim(), category: normalizeCategory(parts[1].replace('Category:', '').trim()), parsed: true };
 }
 
 export function insightsPrompt(summaryText) {

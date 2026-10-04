@@ -1,5 +1,5 @@
-// Categorization rules — ported from the Python scripts. Keep these in sync with
-// CATEGORY_OVERRIDES / MERCHANT_CATEGORY_OVERRIDES there when adding merchants.
+// Category list, renames, and turning a free-text category (from the AI) into one of yours.
+// Merchant names and forced categories come from your merchant rules (merchants.js / config.json).
 
 export const DEFAULT_CATEGORIES = ['Groceries', 'Dining Out', 'Utilities', 'Rent/Mortgage',
     'Entertainment', 'Shopping', 'Transport', 'Gas', 'Income',
@@ -36,50 +36,6 @@ const CATEGORY_MAP = {
     miscellaneous: 'Miscellaneous', misc: 'Miscellaneous', other: 'Miscellaneous',
 };
 
-// Checked after AI runs, first match wins (case-insensitive).
-const CATEGORY_OVERRIDES = [
-    ['ROCKET MORTGAGE', 'Rent/Mortgage'],
-    ['NSM DBAMR', 'Rent/Mortgage'],
-    ['CRCARDPMT', 'Credit Card'],
-    ['CARD PYMT', 'Credit Card'],
-    ['BEST BUY AUTO PYMT', 'Credit Card'],
-    ['AMZ_STORECRD_PMT', 'Credit Card'],
-    ['MORI LOAN', 'Miscellaneous'],
-    ['EXCHANGE FEE', 'Miscellaneous'],
-    ['OVERDRAFT', 'Miscellaneous'],
-    ['ATM FEE', 'Miscellaneous'],
-    ['IC FEE', 'Miscellaneous'],
-    ['PEACE OF MIND REBATE', 'Miscellaneous'],
-    ['PASSPORTSERVICES', 'Miscellaneous'],
-    ['REAL ESTAT', 'Miscellaneous'],
-    ['T.O.H.', 'Miscellaneous'],
-    ['TO SAVINGS', 'Savings'],
-    ['TO CHECKING', 'Miscellaneous'],
-    ['FROM SAVINGS', 'Miscellaneous'],
-    ['SCHEDULED TRANSFER', 'Miscellaneous'],
-    ['CLEAN ENERGY LOAN', 'Utilities'],
-    ['COMCAST', 'Utilities'],
-    ['XFINITY', 'Utilities'],
-    ['LIBERTY UTILITIE', 'Utilities'],
-    ['STRAIGHTTALK', 'Utilities'],
-    ['IRVING OIL', 'Gas'],
-    ['NH TURNPIKE', 'Transport'],
-    ['VACASA', 'Entertainment'],
-    ['VRBO', 'Entertainment'],
-    ['PAYROLL', 'Income'],
-    ['IRS TREAS', 'Income'],
-];
-
-// Force BOTH merchant name and category: [substring, merchant, category]
-const MERCHANT_CATEGORY_OVERRIDES = [
-    ['AWS', 'Amazon AWS', 'Utilities'],
-    ['AMAZON WEB', 'Amazon AWS', 'Utilities'],
-    ['EXCHANGE FEE', 'Exchange Fee', 'Miscellaneous'],
-    ['DISNEY MOUNTAIN VIEW', 'Disney Plus', 'Entertainment'],
-    ['TRAVELERS', 'Travelers Insurance', 'Transport'],
-    ['DUNKIN', 'Dunkin', 'Dining Out'],
-];
-
 export function normalizeCategory(cat) {
     cat = renamed(String(cat ?? '').trim());
     const exact = categories.find(c => c.toLowerCase() === cat.toLowerCase());
@@ -90,46 +46,7 @@ export function normalizeCategory(cat) {
     return renamed('Miscellaneous');
 }
 
-export function applyOverrides(description, category) {
-    const desc = String(description ?? '').toUpperCase();
-    for (const [keyword, forced] of CATEGORY_OVERRIDES) {
-        if (desc.includes(keyword.toUpperCase())) return renamed(forced);
-    }
-    return category;
-}
-
-/** Returns {merchant, category} or null. */
-export function applyMerchantCatOverrides(description) {
-    const desc = String(description ?? '').toUpperCase();
-    for (const [keyword, merchant, category] of MERCHANT_CATEGORY_OVERRIDES) {
-        if (desc.includes(keyword)) return { merchant, category: renamed(category) };
-    }
-    return null;
-}
-
-/** Fixed merchant names applied across the master (later rules win, as in the scripts' cleanup pass). */
-export function cleanupMerchant(description, txType, merchant) {
-    const d = String(description ?? '').toLowerCase();
-    if (d.includes('onlyfans')) merchant = 'OF';
-    if (d.includes('to savings')) merchant = 'TO SAVINGS';
-    if (d.includes('tomtom') || d.includes('tom tom')) merchant = 'TOMTOM';
-    if (d.includes('irving')) merchant = 'Irving Gas';
-    if (d.includes('mori')) merchant = 'Marriott Loan';
-    if (txType != null) {
-        const t = String(txType).toLowerCase();
-        if (t.includes('atm')) merchant = 'ATM';
-        if (t.includes('check')) merchant = 'CHECK';
-        if (t.includes('transfer')) merchant = 'TRANSFER';
-    }
-    return merchant;
-}
-
-/** Override-only categorization (script 3 without --ai). */
+/** Fallback without AI: the bank text as the name, a category guessed from its words. Merchant rules apply on top. */
 export function categorizeByRules(description) {
-    const mc = applyMerchantCatOverrides(description);
-    if (mc) return mc;
-    return {
-        merchant: String(description ?? ''),
-        category: applyOverrides(description, normalizeCategory(description)),
-    };
+    return { merchant: String(description ?? ''), category: normalizeCategory(description) };
 }

@@ -1,7 +1,7 @@
 import pandas as pd
 import json
 import os
-from bills_config import category_settings, renamed, merchant_rules, apply_merchant_rules
+from bills_config import category_settings, renamed, merchant_rules, apply_merchant_rules, rules_only
 import argparse
 from history_lookup import merchant_key, load_history
 import calendar
@@ -39,38 +39,6 @@ CATEGORY_MAP = {
     'miscellaneous': 'Miscellaneous', 'misc': 'Miscellaneous', 'other': 'Miscellaneous',
 }
 
-CATEGORY_OVERRIDES = [
-    ('ROCKET MORTGAGE',       'Rent/Mortgage'),
-    ('NSM DBAMR',             'Rent/Mortgage'),
-    ('CRCARDPMT',             'Credit Card'),
-    ('CARD PYMT',             'Credit Card'),
-    ('BEST BUY AUTO PYMT',    'Credit Card'),
-    ('AMZ_STORECRD_PMT',      'Credit Card'),
-    ('MORI LOAN',             'Miscellaneous'),
-    ('EXCHANGE FEE',          'Miscellaneous'),
-    ('OVERDRAFT',             'Miscellaneous'),
-    ('ATM FEE',               'Miscellaneous'),
-    ('IC FEE',                'Miscellaneous'),
-    ('PEACE OF MIND REBATE',  'Miscellaneous'),
-    ('PASSPORTSERVICES',      'Miscellaneous'),
-    ('REAL ESTAT',            'Miscellaneous'),
-    ('T.O.H.',                'Miscellaneous'),
-    ('TO SAVINGS',            'Savings'),
-    ('TO CHECKING',           'Miscellaneous'),
-    ('FROM SAVINGS',          'Miscellaneous'),
-    ('SCHEDULED TRANSFER',    'Miscellaneous'),
-    ('CLEAN ENERGY LOAN',     'Utilities'),
-    ('COMCAST',               'Utilities'),
-    ('XFINITY',               'Utilities'),
-    ('LIBERTY UTILITIE',      'Utilities'),
-    ('STRAIGHTTALK',          'Utilities'),
-    ('IRVING OIL',            'Gas'),
-    ('NH TURNPIKE',           'Transport'),
-    ('VACASA',                'Entertainment'),
-    ('VRBO',                  'Entertainment'),
-    ('PAYROLL',               'Income'),
-    ('IRS TREAS',             'Income'),
-]
 
 def normalize_category(cat):
     cat = renamed(CATEGORY_RENAMES, str(cat).strip())
@@ -81,42 +49,16 @@ def normalize_category(cat):
             return renamed(CATEGORY_RENAMES, CATEGORY_MAP[word])
     return renamed(CATEGORY_RENAMES, 'Miscellaneous')
 
-def apply_overrides(description, category):
-    desc_upper = str(description).upper()
-    for keyword, forced in CATEGORY_OVERRIDES:
-        if keyword.upper() in desc_upper:
-            return renamed(CATEGORY_RENAMES, forced)
-    return category
-
-# Overrides that force BOTH merchant name AND category
-MERCHANT_CATEGORY_OVERRIDES = [
-    # (substring, merchant_name, category)
-    ('AWS',                 'Amazon AWS',   'Utilities'),
-    ('AMAZON WEB',          'Amazon AWS',   'Utilities'),
-    ('EXCHANGE FEE',        'Exchange Fee', 'Miscellaneous'),
-    ('DISNEY MOUNTAIN VIEW','Disney Plus',          'Entertainment'),
-    ('TRAVELERS',           'Travelers Insurance',  'Transport'),
-    ('DUNKIN',              'Dunkin',               'Dining Out'),
-]
-
-def apply_merchant_cat_overrides(description):
-    """If description matches a merchant+category pattern, return (merchant, category); else (None, None)."""
-    desc_upper = str(description).upper()
-    for keyword, merchant, category in MERCHANT_CATEGORY_OVERRIDES:
-        if keyword in desc_upper:
-            return merchant, renamed(CATEGORY_RENAMES, category)
-    return None, None
+# Merchant names and forced categories come from your merchant rules in config.json
+# (GUI: Config > Merchants), applied by bills_config.apply_merchant_rules.
 
 def lookup_history(history, description):
-    """(merchant, category) from merchant overrides or your history; (None, None) if the merchant is new."""
-    mc_merchant, mc_category = apply_merchant_cat_overrides(description)
-    if mc_merchant:
-        return mc_merchant, mc_category
+    """(merchant, category) from your history; (None, None) if the merchant is new or ambiguous."""
     hit = history.get(merchant_key(description))
     if not hit:
         return None, None
     category, merchant = hit
-    return (merchant or str(description)), apply_overrides(description, category)
+    return (merchant or str(description)), category
 
 # ── AI categorization ────────────────────────────────────────────────────────
 
@@ -146,24 +88,11 @@ CATEGORY DEFINITIONS — pick the single best match:
         response = ollama.generate(model=MODEL_NAME, prompt=prompt)
         parts    = response['response'].strip().split('|')
         merchant = parts[0].replace("Merchant:", "").strip()
-        category = apply_overrides(description,
-                                   normalize_category(parts[1].replace("Category:", "").strip()))
-        desc_lower = description.lower()
-        if 'onlyfans'              in desc_lower: merchant = 'OF'
-        elif 'to savings'          in desc_lower: merchant = 'TO SAVINGS'
-        elif 'tomtom' in desc_lower or 'tom tom' in desc_lower: merchant = 'TOMTOM'
-        elif 'irving'              in desc_lower: merchant = 'Irving Gas'
-        elif 'mori'                in desc_lower: merchant = 'Marriott Loan'
-        mc_merchant, mc_category = apply_merchant_cat_overrides(description)
-        if mc_merchant:
-            return mc_merchant, mc_category
+        category = normalize_category(parts[1].replace("Category:", "").strip())
         return merchant, category
     except Exception as e:
         print(f"  [AI error] {description}: {e}")
-        mc_merchant, mc_category = apply_merchant_cat_overrides(description)
-        if mc_merchant:
-            return mc_merchant, mc_category
-        return description, apply_overrides(description, 'Miscellaneous')
+        return description, renamed(CATEGORY_RENAMES, 'Miscellaneous')
 
 # ── Cache helpers ────────────────────────────────────────────────────────────
 
@@ -587,6 +516,9 @@ def main():
             cat, merchant = cache_lookup[key]
             cached_hits += 1
             sources.append('cache')
+        elif rules_only(MERCHANT_RULES, CATEGORY_RENAMES, row['Description'])[0] is not None:
+            merchant, cat = rules_only(MERCHANT_RULES, CATEGORY_RENAMES, row['Description'])
+            sources.append('merchant')
         elif args.ai:
             print(f"  [AI] Categorizing: {row['Description']} (${row['Amount']})")
             merchant, cat = ask_local_ai(row['Description'], row['Amount'])
@@ -598,13 +530,8 @@ def main():
             })
             sources.append('ai')
         else:
-            mc_merchant, mc_category = apply_merchant_cat_overrides(row['Description'])
-            if mc_merchant:
-                cat, merchant = mc_category, mc_merchant
-            else:
-                cat      = apply_overrides(row['Description'],
-                                           normalize_category(str(row.get('Description', ''))))
-                merchant = str(row.get('Description', ''))
+            cat      = normalize_category(str(row.get('Description', '')))
+            merchant = str(row.get('Description', ''))
             sources.append('rules')
         if sources[-1] != 'edited':  # your edits always win
             merchant, cat = apply_merchant_rules(MERCHANT_RULES, CATEGORY_RENAMES, merchant, cat, row['Description'])

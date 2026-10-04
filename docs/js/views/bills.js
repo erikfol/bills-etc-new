@@ -71,7 +71,7 @@ export default {
                 <h2>Your bills <span class="sub">${bills.length} bill${bills.length === 1 ? '' : 's'}</span><span class="spacer"></span><button class="small" id="add">+ Add a bill</button></h2>
                 <form id="bill-form" class="add-bill" hidden style="margin-bottom:14px"></form>
                 <div id="t-bills"></div>
-                <p class="note">A transaction counts as this bill when its merchant (as shown in Finance Table) is one of the bill's merchants. Rename or merge merchants on the Config page and your bills follow.</p>
+                <p class="note">A transaction counts as this bill when its merchant (as shown in Finance Table) is one of the bill's merchants. Rename or merge merchants on <a href="#config/merchants">Config → Merchants</a> and your bills follow.</p>
             </section>
 
             <section id="grid-sec"${bills.length ? '' : ' hidden'}>

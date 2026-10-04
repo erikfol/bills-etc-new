@@ -39,62 +39,6 @@ def normalize_category(cat):
             return renamed(CATEGORY_RENAMES, CATEGORY_MAP[word])
     return renamed(CATEGORY_RENAMES, 'Miscellaneous')
 
-CATEGORY_OVERRIDES = [
-    ('ROCKET MORTGAGE',       'Rent/Mortgage'),
-    ('NSM DBAMR',             'Rent/Mortgage'),
-    ('CRCARDPMT',             'Credit Card'),
-    ('CARD PYMT',             'Credit Card'),
-    ('BEST BUY AUTO PYMT',    'Credit Card'),
-    ('AMZ_STORECRD_PMT',      'Credit Card'),
-    ('MORI LOAN',             'Miscellaneous'),
-    ('EXCHANGE FEE',          'Miscellaneous'),
-    ('OVERDRAFT',             'Miscellaneous'),
-    ('ATM FEE',               'Miscellaneous'),
-    ('IC FEE',                'Miscellaneous'),
-    ('PEACE OF MIND REBATE',  'Miscellaneous'),
-    ('PASSPORTSERVICES',      'Miscellaneous'),
-    ('REAL ESTAT',            'Miscellaneous'),
-    ('T.O.H.',                'Miscellaneous'),
-    ('TO SAVINGS',            'Savings'),
-    ('TO CHECKING',           'Miscellaneous'),
-    ('FROM SAVINGS',          'Miscellaneous'),
-    ('SCHEDULED TRANSFER',    'Miscellaneous'),
-    ('CLEAN ENERGY LOAN',     'Utilities'),
-    ('COMCAST',               'Utilities'),
-    ('XFINITY',               'Utilities'),
-    ('LIBERTY UTILITIE',      'Utilities'),
-    ('STRAIGHTTALK',          'Utilities'),
-    ('IRVING OIL',            'Gas'),
-    ('NH TURNPIKE',           'Transport'),
-    ('VACASA',                'Entertainment'),
-    ('VRBO',                  'Entertainment'),
-    ('PAYROLL',               'Income'),
-    ('IRS TREAS',             'Income'),
-]
-
-def apply_overrides(description, category):
-    desc_upper = str(description).upper()
-    for keyword, forced in CATEGORY_OVERRIDES:
-        if keyword.upper() in desc_upper:
-            return renamed(CATEGORY_RENAMES, forced)
-    return category
-
-MERCHANT_CATEGORY_OVERRIDES = [
-    ('AWS',                 'Amazon AWS',          'Utilities'),
-    ('AMAZON WEB',          'Amazon AWS',          'Utilities'),
-    ('EXCHANGE FEE',        'Exchange Fee',        'Miscellaneous'),
-    ('DISNEY MOUNTAIN VIEW','Disney Plus',         'Entertainment'),
-    ('TRAVELERS',           'Travelers Insurance', 'Transport'),
-    ('DUNKIN',              'Dunkin',              'Dining Out'),
-]
-
-def apply_merchant_cat_overrides(description):
-    desc_upper = str(description).upper()
-    for keyword, merchant, category in MERCHANT_CATEGORY_OVERRIDES:
-        if keyword in desc_upper:
-            return merchant, renamed(CATEGORY_RENAMES, category)
-    return None, None
-
 def generate_ai_insights(summary_text):
     prompt = f"""
     You are a high-end personal financial planner and data analyst.

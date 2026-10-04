@@ -1,6 +1,7 @@
-// Merchant clean-up: find spellings of the same merchant, merge them, and remember the result as a
-// merchant rule (config.json `merchant_rules`) so new transactions arrive with the clean name/category.
-// Keep merchantNameKey() and applyMerchantRules() identical to bills_config.py.
+// Merchant rules — the one place merchant names and forced categories come from (config.json
+// `merchant_rules`), shared with the Python scripts. A rule: { name?, match: [spellings], bank_text: [pieces],
+// category? }. Keep merchantNameKey(), compactText() and applyMerchantRules() identical to bills_config.py.
+// Also: find spellings of the same merchant and merge them.
 import * as fs from './fs.js';
 import { PATHS, DEFAULT_CONFIG, readTable, writeTable, loadConfig } from './data.js';
 import { renamed } from './rules.js';
@@ -14,40 +15,63 @@ export function merchantNameKey(name) {
 
 /** Bank text as letters only: "STRAIGHTTALK*P 800-299 FL" → "straighttalkpfl". Rules' `bank_text` match inside this. */
 export const compactText = s => String(s ?? '').toLowerCase().replace(/[^a-z]+/g, '');
+export const MIN_BANK_TEXT = 3;
 
 // Words that don't identify a merchant when grouping suggestions.
 const NOISE = new Set(['the', 'sq', 'tst', 'pos', 'debit', 'purchase', 'online', 'payment', 'pmt', 'pp', 'paypal', 'www', 'inc', 'llc', 'co']);
 
-let rules = []; // [{ name, match: [keys], bank: [compact bank text], category: string|null }]
-export const getMerchantRules = () => rules;
-export function setMerchantRules(cfg) {
-    rules = (Array.isArray(cfg?.merchant_rules) ? cfg.merchant_rules : [])
-        .filter(r => r && typeof r.name === 'string' && r.name.trim() && Array.isArray(r.match))
-        .map(r => ({
-            name: r.name.trim(), match: r.match.filter(k => typeof k === 'string' && k),
-            bank: (Array.isArray(r.bank_text) ? r.bank_text : []).map(compactText).filter(b => b.length >= 4),
-            category: typeof r.category === 'string' && r.category ? r.category : null,
-        }));
+/** Clean list from config.json; `i` = position in config's list (used to edit a rule). */
+export function parseRules(cfg) {
+    return (Array.isArray(cfg?.merchant_rules) ? cfg.merchant_rules : []).map((r, i) => {
+        if (!r || typeof r !== 'object') return null;
+        const name = typeof r.name === 'string' && r.name.trim() ? r.name.trim() : null;
+        const match = (Array.isArray(r.match) ? r.match : []).filter(k => typeof k === 'string' && k);
+        const bank = (Array.isArray(r.bank_text) ? r.bank_text : []).map(compactText).filter(b => b.length >= MIN_BANK_TEXT);
+        const category = typeof r.category === 'string' && r.category ? r.category : null;
+        if (!(name || category) || !(match.length || bank.length)) return null;
+        return { i, name, match, bank, category, notes: typeof r.notes === 'string' ? r.notes : '' };
+    }).filter(Boolean);
 }
 
-/** The rule whose bank text appears in `description` (longest match wins), or null. */
-export function ruleByBankText(description) {
-    const d = compactText(description);
+let rules = [];
+export const getMerchantRules = () => rules;
+export function setMerchantRules(cfg) { rules = parseRules(cfg); }
+
+/** Longest bank-text match among rules passing `want`, or null. */
+function byBankText(d, want) {
     let best = null, len = 0;
-    for (const r of rules) for (const b of r.bank) if (b.length > len && d.includes(b)) { best = r; len = b.length; }
+    for (const r of rules) if (want(r)) for (const b of r.bank) if (b.length > len && d.includes(b)) { best = r; len = b.length; }
     return best;
 }
 
 /**
- * Apply merchant rules to a categorization result {merchant, category}. A rule matches when the
- * merchant's (or the whole description's) cleaned-up name is exactly one of its spellings — never a
- * prefix, so a rule for "Amazon" can't catch "AMAZON CORP SYF PAYMNT" — or, failing that, when the
- * bank text contains one of the rule's `bank_text` pieces (longest wins). Returns a new object.
+ * Apply merchant rules to {merchant, category}. Name and category are settled separately:
+ * a rule listing this exact spelling (of the merchant or the whole description) wins; otherwise the
+ * rule with the longest `bank_text` found in the description. Spellings must match exactly — a rule
+ * for "Amazon" can't catch "AMAZON CORP SYF PAYMNT". Returns a new object.
  */
 export function applyMerchantRules(hit, description) {
-    const mKey = merchantNameKey(hit.merchant), dKey = merchantNameKey(description);
-    const r = rules.find(x => x.match.includes(mKey) || x.match.includes(dKey)) || ruleByBankText(description);
-    return r ? { ...hit, merchant: r.name, category: r.category ? renamed(r.category) : hit.category } : hit;
+    const mKey = merchantNameKey(hit.merchant), dKey = merchantNameKey(description), d = compactText(description);
+    const exact = rules.find(r => r.match.includes(mKey) || r.match.includes(dKey));
+    const nameRule = exact?.name ? exact : byBankText(d, r => r.name);
+    const catRule = exact?.category ? exact : byBankText(d, r => r.category);
+    return {
+        ...hit,
+        merchant: nameRule ? nameRule.name : hit.merchant,
+        category: catRule ? renamed(catRule.category) : hit.category,
+    };
+}
+
+/** {merchant, category} when the bank text alone settles both (no need to ask the AI), else null. */
+export function rulesOnly(description) {
+    const r = applyMerchantRules({ merchant: '', category: '' }, description);
+    return r.merchant && r.category ? r : null;
+}
+
+/** Rules that would apply to this transaction (for showing why it got its name/category). */
+export function rulesFor(description) {
+    const d = compactText(description), dKey = merchantNameKey(description);
+    return rules.filter(r => r.match.includes(dKey) || r.bank.some(b => d.includes(b)));
 }
 
 const DATA_FILES = [PATHS.master, PATHS.processed, PATHS.cache];
@@ -70,13 +94,22 @@ export async function merchantSummary() {
     return [...map.values()].map(e => ({ ...e, key: merchantNameKey(e.name) }));
 }
 
-/** Longest start the bank texts share ("straighttalksmiami", "straighttalkp" → "straighttalk"); '' if under 4 letters. */
-export function sharedBankText(descs) {
-    const list = [...new Set(descs.filter(Boolean))];
+/**
+ * Bank text to suggest for a merchant: the longest start (4+ letters) that at least 90% of its
+ * transactions share, so one mislabeled transaction doesn't spoil it ("hannaford…" ×41, "ckenorth…" ×1
+ * → "hannaford"). '' when there isn't one.
+ */
+export function sharedBankText(descs, share = 0.9) {
+    const list = descs.filter(Boolean);
     if (!list.length) return '';
-    let p = list[0];
-    for (const d of list) { let i = 0; while (i < p.length && i < d.length && p[i] === d[i]) i++; p = p.slice(0, i); }
-    return p.length >= 4 ? p : '';
+    const counts = new Map();
+    for (const d of list) counts.set(d, (counts.get(d) || 0) + 1);
+    const common = [...counts].sort((a, b) => b[1] - a[1])[0][0];
+    for (let len = common.length; len >= 4; len--) {
+        const p = common.slice(0, len);
+        if (list.filter(d => d.startsWith(p)).length >= list.length * share) return p;
+    }
+    return '';
 }
 
 /** "Straight Talk" ~ "StraightTalk" ~ "Straighthatalk*": same letters, or (both 8+ letters) within 2 typos. */
@@ -104,7 +137,7 @@ export function knownMerchants(rows, limit = 80) {
         const n = String(r['Cleaned Merchant'] ?? '').trim();
         if (n && !['ATM', 'CHECK', 'TRANSFER'].includes(n)) counts.set(n, (counts.get(n) || 0) + 1);
     }
-    const names = [...rules.map(r => r.name), ...[...counts].sort((a, b) => b[1] - a[1]).map(([n]) => n)];
+    const names = [...rules.map(r => r.name).filter(Boolean), ...[...counts].sort((a, b) => b[1] - a[1]).map(([n]) => n)];
     const out = [];
     for (const n of names) if (!out.some(o => sameMerchant(o, n))) out.push(n);
     return out.slice(0, limit);
@@ -151,7 +184,7 @@ export async function mergeMerchants({ spellings, name, category = null, remembe
     name = String(name ?? '').trim();
     if (!name) throw new Error('Enter the merchant name to use.');
     const set = new Set(spellings);
-    const bank = [...new Set(bankText.map(compactText).filter(b => b.length >= 4))];
+    const bank = [...new Set(bankText.map(compactText).filter(b => b.length >= MIN_BANK_TEXT))];
     const hits = r => set.has(String(r['Cleaned Merchant'] ?? '').trim()) || bank.some(b => compactText(r.Description).includes(b));
     let changed = 0;
     for (const path of DATA_FILES) {
@@ -192,38 +225,78 @@ export async function mergeMerchants({ spellings, name, category = null, remembe
         } else {
             list.push({ name, match: keys, ...(bank.length ? { bank_text: bank } : {}), category });
         }
-        cfg.merchant_rules = list.filter(r => r.match?.length);
+        cfg.merchant_rules = list.filter(r => r.match?.length || r.bank_text?.length);
         await fs.writeText(PATHS.config, JSON.stringify(cfg, null, 2) + '\n');
         setMerchantRules(cfg);
     }
     return changed;
 }
 
-export async function removeMerchantRule(name) {
-    const cfg = await loadConfig();
-    if (!cfg) return;
-    cfg.merchant_rules = (cfg.merchant_rules || []).filter(r => r.name !== name);
+async function saveRules(cfg) {
     await fs.writeText(PATHS.config, JSON.stringify(cfg, null, 2) + '\n');
     setMerchantRules(cfg);
 }
 
-/** Replace a rule's bank text pieces (letters only, 4+ each). */
-export async function setRuleBankText(name, pieces) {
-    const cfg = await loadConfig();
-    const r = cfg?.merchant_rules?.find(x => x.name === name);
-    if (!r) return;
-    const bank = [...new Set(pieces.map(compactText).filter(b => b.length >= 4))];
-    if (bank.length) r.bank_text = bank; else delete r.bank_text;
-    await fs.writeText(PATHS.config, JSON.stringify(cfg, null, 2) + '\n');
-    setMerchantRules(cfg);
+/** Clean a rule from the editor: { name, match, bank_text, category, notes } with empty parts left out. */
+function cleanRule(r) {
+    const out = {};
+    const name = String(r.name ?? '').trim();
+    if (name) out.name = name;
+    const match = [...new Set((r.match || []).map(merchantNameKey).filter(Boolean))];
+    if (name && !match.includes(merchantNameKey(name))) match.unshift(merchantNameKey(name));
+    if (match.length) out.match = match;
+    const bank = [...new Set((r.bank_text || []).map(compactText).filter(b => b.length >= MIN_BANK_TEXT))];
+    if (bank.length) out.bank_text = bank;
+    out.category = r.category || null;
+    if (r.notes) out.notes = String(r.notes).trim();
+    if (!out.name && !out.category) throw new Error('A rule needs a merchant name, a category, or both.');
+    if (!out.match && !out.bank_text) throw new Error(`Give the rule some bank text (${MIN_BANK_TEXT}+ letters) to match.`);
+    return out;
 }
 
-/** Change a rule's category (null = leave each transaction's category alone). */
-export async function setRuleCategory(name, category) {
+/** Add a rule, or replace the rule at position `i` in config.json's list. Returns the cleaned rule. */
+export async function saveRule(rule, i = null) {
+    const cfg = (await loadConfig()) || structuredClone(DEFAULT_CONFIG);
+    const list = Array.isArray(cfg.merchant_rules) ? cfg.merchant_rules : [];
+    const r = cleanRule(rule);
+    if (r.name && list.some((x, k) => k !== i && x?.name === r.name)) throw new Error(`There is already a rule for “${r.name}”. Edit that one instead.`);
+    if (i == null) list.push(r); else list[i] = r;
+    cfg.merchant_rules = list;
+    await saveRules(cfg);
+    return r;
+}
+
+export async function removeRule(i) {
     const cfg = await loadConfig();
-    const r = cfg?.merchant_rules?.find(x => x.name === name);
-    if (!r) return;
-    r.category = category || null;
-    await fs.writeText(PATHS.config, JSON.stringify(cfg, null, 2) + '\n');
-    setMerchantRules(cfg);
+    if (!cfg?.merchant_rules?.[i]) return;
+    cfg.merchant_rules.splice(i, 1);
+    await saveRules(cfg);
+}
+
+/** Whether a cleaned rule ({name, match, bank_text, category}) applies to a transaction. */
+export function ruleMatches(rule, row) {
+    const keys = (rule.match || []).map(merchantNameKey);
+    if (rule.name) keys.push(merchantNameKey(rule.name));
+    const bank = (rule.bank_text || []).map(compactText).filter(b => b.length >= MIN_BANK_TEXT);
+    const d = compactText(row.Description);
+    return keys.includes(merchantNameKey(row['Cleaned Merchant'])) || keys.includes(merchantNameKey(row.Description)) || bank.some(b => d.includes(b));
+}
+
+/** Give every existing transaction the rule matches its name and/or category. Returns the number changed. */
+export async function applyRuleToExisting(rule) {
+    let changed = 0;
+    for (const path of DATA_FILES) {
+        const table = await readTable(path);
+        if (!table) continue;
+        let n = 0;
+        for (const r of table.rows) {
+            if (!ruleMatches(rule, r)) continue;
+            const before = `${r['Cleaned Merchant']}\u0001${r['AI Category']}`;
+            if (rule.name) r['Cleaned Merchant'] = rule.name;
+            if (rule.category) r['AI Category'] = renamed(rule.category);
+            if (`${r['Cleaned Merchant']}\u0001${r['AI Category']}` !== before) n++;
+        }
+        if (n) { await writeTable(path, table); if (path !== PATHS.cache) changed += n; }
+    }
+    return changed;
 }

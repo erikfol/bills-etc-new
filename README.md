@@ -15,11 +15,11 @@ Personal spending tracker. Exports Come Citizens Bank transaction CSV, categoriz
 - In **Chrome or Edge** you connect this folder on the Setup page. The app then reads and writes the same files as the scripts (`inputs/`, `output_master_data/`, `config.json`), so you can mix the GUI and the scripts.
 - AI calls go straight from the browser to your local Ollama. Allow the page's origin once, then restart Ollama:
   `setx OLLAMA_ORIGINS "https://erikfol.github.io"`
-- Pages: **Setup** (add bank CSVs, optional AI for new merchants, close the month), **This Month** (projection), **Bills** (scheduled bills in `config.json` `scheduled_bills`: paid / due / late each month, 12-month grid, suggestions from history; transactions matching a bill's merchant count as scheduled, everything else as unscheduled), **Dashboard** (history report and AI analysis), **Finance Table** (fix the processed month or the master), **Config** (edit `config.json`).
+- Pages: **Setup** (add bank CSVs, optional AI for new merchants, close the month), **This Month** (projection), **Bills** (scheduled bills in `config.json` `scheduled_bills`: paid / due / late each month, 12-month grid, suggestions from history; transactions matching a bill's merchant count as scheduled, everything else as unscheduled), **Dashboard** (history report and AI analysis), **Finance Table** (fix the processed month or the master), **Config** (tabs: Income & Bills, Categories, Merchants — one table of merchant rules and the names that still need one).
 
 To run it locally instead: `python -m http.server 8000 -d docs` and open http://localhost:8000. Ollama allows localhost by default.
 
-The categorization rules are duplicated in `docs/js/rules.js`. When you add an override to the scripts, add it there too.
+Merchant names and forced categories come only from `merchant_rules` in `config.json` (edit them on Config → Merchants); the GUI and the scripts apply them the same way. The rules that used to be hardcoded were moved there by `tools/migrate_rules.py`.
 
 ## Workflow
 
@@ -58,7 +58,7 @@ The categorization rules are duplicated in `docs/js/rules.js`. When you add an o
 | `variable_categories` | Categories that are day-scaled to project the full month |
 | `categories` | Your category list (optional; defaults to the built-in 12). Managed on the GUI's Config page |
 | `category_renames` | Old → new names, so the built-in rules and older data follow a rename (managed by the GUI) |
-| `merchant_rules` | Merchant spellings to merge into one name (and optionally one category) for new transactions; created from Config → Merchants |
+| `merchant_rules` | `{name?, bank_text: [...], match: [...], category?}`: when the bank text contains one of `bank_text` (letters only) or the merchant is one of `match`, use this name and/or category. The only place merchant names and forced categories come from, in the GUI and the scripts (`bills_config.py`). Managed on Config → Merchants |
 
 Keys starting with `_` are ignored. See the notes in the file itself.
 

@@ -2,9 +2,9 @@
 import * as fs from './fs.js';
 import { PATHS, MASTER_COLS, CACHE_COLS, readTable, writeTable, readBankCsv, keyOf, loadConfig, parseConfig } from './data.js';
 import { aiCategorize } from './ollama.js';
-import { categorizeByRules, cleanupMerchant, renamed } from './rules.js';
+import { categorizeByRules } from './rules.js';
 import { buildHistory, historyLookup, merchantKey } from './history.js';
-import { applyMerchantRules, ruleByBankText, knownMerchants, snapMerchant } from './merchants.js';
+import { applyMerchantRules, rulesOnly, knownMerchants, snapMerchant } from './merchants.js';
 import { parseDate, yearMonth, longMonthLabel, normalizeDateCell } from './dates.js';
 import { computeProjection } from './finance.js';
 import { amountOf, money } from './util.js';
@@ -13,17 +13,17 @@ import { amountOf, money } from './util.js';
 export const lastSources = new Map();
 
 /**
- * Categorize one row: merchant overrides → your history → a merchant rule matching the bank text (if it
- * sets a category) → AI (if enabled) → keyword rules, then your merchant rules from Config (clean name,
- * and category if the rule has one). The AI is given your merchant names (`known`) and a name it returns
- * that is only a respelling of one of them is replaced by yours.
+ * Categorize one row: your history → your merchant rules alone (when they settle both name and category)
+ * → AI (if enabled) → the bank text with a guessed category. Your merchant rules are applied on top of
+ * every result. The AI is given your merchant names (`known`) and a name it returns that is only a
+ * respelling of one of them is replaced by yours.
  * A merchant the AI just categorized is remembered so repeats in the same run skip the model.
  */
 async function categorize(row, lookup, useAI, signal, known = []) {
     const hit = historyLookup(lookup, row.Description);
     if (hit) return applyMerchantRules(hit, row.Description);
-    const bankRule = ruleByBankText(row.Description);
-    if (bankRule?.category) return { merchant: bankRule.name, category: renamed(bankRule.category), source: 'merchant' };
+    const byRules = rulesOnly(row.Description);
+    if (byRules) return { ...byRules, source: 'merchant' };
     if (useAI) {
         if (signal.aborted) throw new DOMException('Cancelled', 'AbortError');
         const raw = await aiCategorize(row.Description, row.Amount, signal, known);
@@ -63,52 +63,41 @@ export async function backfill({ useAI, log, signal }) {
     const known = useAI ? knownMerchants(master.rows) : [];
     log(`History knows ${lookup.size} merchant(s).`, 'dim');
 
-    try {
-        for (const file of files) {
-            log(`\n--- Processing File: ${file} ---`);
-            const bank = await readBankCsv(`${PATHS.pastMonths}/${file}`);
-            if (bank.dropped.length) log(`Dropping potentially sensitive columns: ${bank.dropped.join(', ')}`, 'dim');
+    for (const file of files) {
+        log(`\n--- Processing File: ${file} ---`);
+        const bank = await readBankCsv(`${PATHS.pastMonths}/${file}`);
+        if (bank.dropped.length) log(`Dropping potentially sensitive columns: ${bank.dropped.join(', ')}`, 'dim');
 
-            const fresh = bank.rows.filter(r => !existing.has(keyOf(r)));
-            const skipped = bank.rows.length - fresh.length;
-            if (skipped) log(`  Skipping ${skipped} transactions already in master.`, 'dim');
-            if (!fresh.length) { log(`  Nothing new in ${file}. Skipping.`, 'dim'); continue; }
+        const fresh = bank.rows.filter(r => !existing.has(keyOf(r)));
+        const skipped = bank.rows.length - fresh.length;
+        if (skipped) log(`  Skipping ${skipped} transactions already in master.`, 'dim');
+        if (!fresh.length) { log(`  Nothing new in ${file}. Skipping.`, 'dim'); continue; }
 
-            log(`Processing ${fresh.length} new transactions...`);
-            const added = [];
-            const counts = { history: 0, merchant: 0, ai: 0, rules: 0 };
-            try {
-                for (const row of fresh) {
-                    if (signal.aborted) throw new DOMException('Cancelled', 'AbortError');
-                    const { merchant, category, source, parsed } = await categorize(row, lookup, useAI, signal, known);
-                    counts[source]++;
-                    if (source === 'ai') {
-                        log(`  [AI] ${row.Description} (${row.Amount}) → ${category}${parsed ? '' : '  [unparsed AI reply, used rules]'}`, parsed ? '' : 'err');
-                    }
-                    added.push({ ...row, 'Cleaned Merchant': txTypeMerchant(row, merchant), 'AI Category': category, Notes: '' });
+        log(`Processing ${fresh.length} new transactions...`);
+        const added = [];
+        const counts = { history: 0, merchant: 0, ai: 0, rules: 0 };
+        try {
+            for (const row of fresh) {
+                if (signal.aborted) throw new DOMException('Cancelled', 'AbortError');
+                const { merchant, category, source, parsed } = await categorize(row, lookup, useAI, signal, known);
+                counts[source]++;
+                if (source === 'ai') {
+                    log(`  [AI] ${row.Description} (${row.Amount}) → ${category}${parsed ? '' : '  [unparsed AI reply, used rules]'}`, parsed ? '' : 'err');
                 }
-            } finally {
-                log(`  ${counts.history} from history, ${counts.merchant} by your merchant rules, ${counts.ai} by AI, ${counts.rules} by keyword rules.`, 'dim');
-                for (const k of ['history', 'merchant', 'ai', 'rules']) totals[k] += counts[k];
-                // Save whatever finished, even if cancelled mid-file; dedupe skips it next run.
-                if (added.length) {
-                    master.rows.push(...added);
-                    added.forEach(r => existing.add(keyOf(r)));
-                    await writeTable(PATHS.master, master);
-                    totals.added += added.length;
-                    totals.files.push(file);
-                    log(`Added ${added.length} new transactions from ${file} to master history.`, 'ok');
-                }
+                added.push({ ...row, 'Cleaned Merchant': txTypeMerchant(row, merchant), 'AI Category': category, Notes: '' });
             }
-        }
-    } finally {
-        // Only rewrite the master when rows were added (it may be open in Excel otherwise).
-        if (totals.added) {
-            for (const r of master.rows) {
-                r['Cleaned Merchant'] = cleanupMerchant(r.Description, master.columns.includes('Transaction Type') ? r['Transaction Type'] : null, r['Cleaned Merchant']);
+        } finally {
+            log(`  ${counts.history} from history, ${counts.merchant} by your merchant rules, ${counts.ai} by AI, ${counts.rules} by keyword rules.`, 'dim');
+            for (const k of ['history', 'merchant', 'ai', 'rules']) totals[k] += counts[k];
+            // Save whatever finished, even if cancelled mid-file; dedupe skips it next run.
+            if (added.length) {
+                master.rows.push(...added);
+                added.forEach(r => existing.add(keyOf(r)));
+                await writeTable(PATHS.master, master);
+                totals.added += added.length;
+                totals.files.push(file);
+                log(`Added ${added.length} new transactions from ${file} to master history.`, 'ok');
             }
-            await writeTable(PATHS.master, master);
-            log('Master merchant names cleaned up.', 'dim');
         }
     }
     log(`\nDone. ${totals.added} transaction(s) added. Review them in Finance Table → Master.`, 'ok');

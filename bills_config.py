@@ -5,6 +5,7 @@ config.json may contain:
   "categories":       ["Groceries", "Dining Out", ...]   your category list
   "category_renames": {"Dining Out": "Restaurants"}     old name -> new name
   "merchant_rules":   [{"name": "Amazon", "match": ["amazon"], "bank_text": ["amazon"], "category": "Shopping"}]
+                      name and category are each optional (a rule may only rename, or only set a category)
 All are managed on the GUI's Config page; when absent, the scripts' built-in list is used.
 """
 import json
@@ -62,29 +63,60 @@ def compact_text(s):
     return re.sub(r'[^a-z]+', '', str(s).lower())
 
 
+MIN_BANK_TEXT = 3
+
+
 def merchant_rules():
+    """Your rules from config.json: {name or None, match: [spellings], bank: [compact text], category or None}."""
     rules = []
     for r in _load_config().get('merchant_rules') or []:
-        if isinstance(r, dict) and isinstance(r.get('name'), str) and r['name'].strip() and isinstance(r.get('match'), list):
-            cat = r.get('category') if isinstance(r.get('category'), str) and r.get('category') else None
-            bank = [compact_text(b) for b in (r.get('bank_text') or []) if isinstance(b, str)]
-            rules.append({'name': r['name'].strip(), 'match': [k for k in r['match'] if isinstance(k, str) and k],
-                          'bank': [b for b in bank if len(b) >= 4], 'category': cat})
+        if not isinstance(r, dict):
+            continue
+        name = r['name'].strip() if isinstance(r.get('name'), str) and r['name'].strip() else None
+        match = [k for k in (r.get('match') or []) if isinstance(k, str) and k]
+        bank = [compact_text(b) for b in (r.get('bank_text') or []) if isinstance(b, str)]
+        bank = [b for b in bank if len(b) >= MIN_BANK_TEXT]
+        cat = r['category'] if isinstance(r.get('category'), str) and r['category'] else None
+        if (name or cat) and (match or bank):
+            rules.append({'name': name, 'match': match, 'bank': bank, 'category': cat})
     return rules
 
 
+def _by_bank_text(rules, d, field):
+    best, size = None, 0
+    for r in rules:
+        if r[field]:
+            for b in r['bank']:
+                if len(b) > size and b in d:
+                    best, size = r, len(b)
+    return best
+
+
 def apply_merchant_rules(rules, renames, merchant, category, description):
-    """(merchant, category) after your merchant rules. A rule matches when the merchant's (or the whole
-    description's) cleaned-up name is exactly one of its spellings -- never a prefix -- or, failing that,
-    when the bank text contains one of the rule's bank_text pieces (longest wins)."""
-    m_key, d_key = merchant_name_key(merchant), merchant_name_key(description)
-    rule = next((r for r in rules if m_key in r['match'] or d_key in r['match']), None)
-    if rule is None:
-        d, best = compact_text(description), 0
-        for r in rules:
-            for b in r.get('bank', []):
-                if len(b) > best and b in d:
-                    rule, best = r, len(b)
-    if rule is None:
-        return merchant, category
-    return rule['name'], (renamed(renames, rule['category']) if rule['category'] else category)
+    """(merchant, category) after your merchant rules. Name and category are settled separately: a rule
+    listing this exact spelling (of the merchant or the whole description) wins; otherwise the rule with
+    the longest bank_text found in the description. Spellings must match exactly, never as a prefix."""
+    m_key, d_key, d = merchant_name_key(merchant), merchant_name_key(description), compact_text(description)
+    exact = next((r for r in rules if m_key in r['match'] or d_key in r['match']), None)
+    name_rule = exact if exact and exact['name'] else _by_bank_text(rules, d, 'name')
+    cat_rule = exact if exact and exact['category'] else _by_bank_text(rules, d, 'category')
+    return (name_rule['name'] if name_rule else merchant,
+            renamed(renames, cat_rule['category']) if cat_rule else category)
+
+
+def rules_only(rules, renames, description):
+    """(merchant, category) when your rules alone settle both from the bank text, else (None, None)."""
+    merchant, category = apply_merchant_rules(rules, renames, '', '', description)
+    return (merchant, category) if merchant and category else (None, None)
+
+
+def tx_type_merchant(tx_type, merchant):
+    """ATM / CHECK / TRANSFER from the bank's Transaction Type column, else the merchant."""
+    t = str(tx_type or '').lower()
+    if 'atm' in t:
+        return 'ATM'
+    if 'check' in t:
+        return 'CHECK'
+    if 'transfer' in t:
+        return 'TRANSFER'
+    return merchant
