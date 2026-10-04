@@ -4,7 +4,7 @@ import { getCategories } from '../rules.js';
 import { categoryUsage, addCategory, renameCategory, removeCategory, validateName, LOCKED } from '../categories.js';
 import { esc, money, toast } from '../util.js';
 import { requireFolder } from '../app.js';
-import { merchantSummary, suggestGroups, mergeMerchants, removeMerchantRule, setRuleCategory, getMerchantRules } from '../merchants.js';
+import { merchantSummary, suggestGroups, mergeMerchants, removeMerchantRule, setRuleCategory, setRuleBankText, getMerchantRules, sharedBankText, compactText } from '../merchants.js';
 import { dataTable, closeFilterMenu } from '../datatable.js';
 import { hasBills } from '../bills.js';
 
@@ -87,6 +87,10 @@ export default {
                         <span id="m-what"></span>
                         <label class="field" style="flex-direction:row;align-items:center;gap:6px">into <input type="text" id="m-name" style="width:200px"></label>
                         <label class="field" style="flex-direction:row;align-items:center;gap:6px">Category <select id="m-cat"></select></label>
+                    </div>
+                    <div class="row" style="margin-top:8px">
+                        <label class="field" style="flex-direction:row;align-items:center;gap:6px" title="Letters from the bank's description. Every transaction whose description contains them gets this merchant, whatever name the AI gave it.">Also match bank text containing <input type="text" id="m-bank" style="width:200px" placeholder="e.g. STRAIGHTTALK"></label>
+                        <span class="muted" id="m-bank-info" style="font-size:0.85em"></span>
                     </div>
                     <div class="row" style="margin-top:8px">
                         <label class="check"><input type="checkbox" id="m-remember" checked> Apply to new transactions too</label>
@@ -230,10 +234,36 @@ export default {
             const cats = {};
             for (const m of picked) for (const [c, k] of Object.entries(m.cats)) cats[c] = (cats[c] || 0) + k;
             el.querySelector('#m-cats-now').textContent = 'Now: ' + Object.entries(cats).sort((a, b) => b[1] - a[1]).map(([c, k]) => `${c} ${k}`).join(' · ');
+            const bankInput = el.querySelector('#m-bank');
+            if (!bankInput.dataset.touched) bankInput.value = sharedBankText(picked.flatMap(m => m.descs)).toUpperCase();
+            bankInfo();
             const keep = catSelect.value;
             catSelect.innerHTML = `<option value="">Keep each transaction's category</option>` + getCategories().map(c => `<option${c === keep ? ' selected' : ''}>${esc(c)}</option>`).join('');
         };
         el.querySelector('#m-name').addEventListener('input', e => { e.target.dataset.touched = '1'; });
+        // Bank text: letters only, comma-separated pieces of 4+ letters.
+        const bankPieces = () => el.querySelector('#m-bank').value.split(',').map(compactText).filter(b => b.length >= 4);
+        const bankHits = () => {
+            const pieces = bankPieces();
+            if (!pieces.length) return { total: 0, others: [] };
+            let total = 0;
+            const others = [];
+            for (const m of summary) {
+                const n = m.descs.filter(d => pieces.some(b => d.includes(b))).length;
+                total += n;
+                if (n && !selected.has(m.name)) others.push({ name: m.name, n });
+            }
+            return { total, others };
+        };
+        const bankInfo = () => {
+            const raw = el.querySelector('#m-bank').value.trim();
+            if (!raw) { el.querySelector('#m-bank-info').textContent = 'optional: catches future misspellings too'; return; }
+            if (!bankPieces().length) { el.querySelector('#m-bank-info').textContent = 'use at least 4 letters'; return; }
+            const { total, others } = bankHits();
+            el.querySelector('#m-bank-info').innerHTML = `matches ${total} transaction${total === 1 ? '' : 's'}${others.length
+                ? `, <strong>including ${others.reduce((a, o) => a + o.n, 0)} under other names</strong>: ${others.slice(0, 6).map(o => `${esc(o.name)} (${o.n})`).join(', ')}${others.length > 6 ? ', …' : ''}` : ''}`;
+        };
+        el.querySelector('#m-bank').addEventListener('input', e => { e.target.dataset.touched = '1'; bankInfo(); });
         el.querySelector('#m-table').addEventListener('change', e => {
             const i = e.target.dataset?.sp;
             if (i == null) return;
@@ -249,7 +279,7 @@ export default {
         };
         el.querySelector('#m-showall').onclick = () => showOnly(null);
         el.querySelector('#m-clear').onclick = () => {
-            selected.clear(); delete el.querySelector('#m-name').dataset.touched;
+            selected.clear(); delete el.querySelector('#m-name').dataset.touched; delete el.querySelector('#m-bank').dataset.touched;
             showOnly(null); refreshBar();
         };
 
@@ -278,6 +308,7 @@ export default {
             selected.clear();
             g.likely.forEach(n => selected.add(n));
             delete el.querySelector('#m-name').dataset.touched;
+            delete el.querySelector('#m-bank').dataset.touched;
             showOnly(g.spellings.map(m => m.name));
             refreshBar();
             el.querySelector('#m-bar').scrollIntoView({ block: 'nearest', behavior: 'smooth' });
@@ -289,11 +320,13 @@ export default {
             const spellings = [...selected];
             const name = el.querySelector('#m-name').value.trim();
             const category = catSelect.value || null;
-            const n = summary.filter(m => selected.has(m.name)).reduce((a, m) => a + m.count, 0);
+            const bankText = bankPieces();
+            const extra = bankHits().others.reduce((a, o) => a + o.n, 0);
+            const n = summary.filter(m => selected.has(m.name)).reduce((a, m) => a + m.count, 0) + extra;
             if (!name) return toast('Enter the merchant name to keep.', 'bad');
-            if (!confirm(`Rename ${n} transaction${n === 1 ? '' : 's'} to “${name}”${category ? ` and set their category to ${category}` : ''}?`)) return;
+            if (!confirm(`Rename ${n} transaction${n === 1 ? '' : 's'} to “${name}”${category ? ` and set their category to ${category}` : ''}?${extra ? `\n\nThat includes ${extra} found by the bank text under other names.` : ''}`)) return;
             try {
-                const changed = await mergeMerchants({ spellings, name, category, remember: el.querySelector('#m-remember').checked });
+                const changed = await mergeMerchants({ spellings, name, category, remember: el.querySelector('#m-remember').checked, bankText });
                 toast(`Updated ${changed} transaction${changed === 1 ? '' : 's'} → “${name}”`, 'ok');
                 this.render(el);
             } catch (e) { toast(e.message, 'bad'); }
@@ -302,10 +335,12 @@ export default {
         const drawRules = () => {
             const rules = getMerchantRules();
             el.querySelector('#m-rules').innerHTML = rules.length ? `<div class="table-wrap"><table class="summary-table">
-                <thead><tr><th>Merchant</th><th>Matches spellings like</th><th>Category for new transactions</th><th></th></tr></thead>
+                <thead><tr><th>Merchant</th><th>Matches spellings like</th><th>Bank text contains</th><th>Category for new transactions</th><th></th></tr></thead>
                 <tbody>${rules.map((r, ri) => `<tr>
                     <td><strong>${esc(r.name)}</strong></td>
                     <td class="muted" style="font-size:0.88em">${r.match.map(esc).join(', ')}</td>
+                    <td class="nowrap" data-bank-cell="${ri}">${r.bank.length ? `<code>${r.bank.map(b => esc(b.toUpperCase())).join('</code>, <code>')}</code>` : '<span class="muted">—</span>'}
+                        <button class="small" data-bank-edit="${ri}" title="Letters from the bank's description that always mean this merchant">Edit</button></td>
                     <td><select data-rule-cat="${ri}"><option value="">Keep whatever it's categorized as</option>${getCategories().map(c => `<option${c === r.category ? ' selected' : ''}>${esc(c)}</option>`).join('')}</select></td>
                     <td style="text-align:right"><button class="small danger" data-rule-del="${ri}">Remove</button></td></tr>`).join('')}</tbody></table></div>`
                 : '<p class="muted" style="font-size:0.9em">None yet. Merging with “Apply to new transactions too” ticked creates one.</p>';
@@ -317,6 +352,26 @@ export default {
             toast('Rule updated', 'ok');
         });
         el.querySelector('#m-rules').addEventListener('click', async e => {
+            const be = e.target.dataset?.bankEdit, bs = e.target.dataset?.bankSave;
+            if (be != null) {
+                const r = getMerchantRules()[+be];
+                const cell = el.querySelector(`[data-bank-cell="${be}"]`);
+                cell.innerHTML = `<input type="text" value="${esc(r.bank.map(b => b.toUpperCase()).join(', '))}" placeholder="e.g. ${esc(compactText(r.name).toUpperCase())}" style="width:170px">
+                    <button class="small primary" data-bank-save="${be}">Save</button> <button class="small" data-bank-cancel>Cancel</button>`;
+                cell.querySelector('input').focus();
+                return;
+            }
+            if (e.target.dataset?.bankCancel != null) { drawRules(); return; }
+            if (bs != null) {
+                if (!busyGuard()) return;
+                const r = getMerchantRules()[+bs];
+                const pieces = el.querySelector(`[data-bank-cell="${bs}"] input`).value.split(',').map(s => s.trim()).filter(Boolean);
+                if (pieces.some(p => compactText(p).length < 4)) return toast('Use at least 4 letters for each piece of bank text.', 'bad');
+                await setRuleBankText(r.name, pieces);
+                toast(`Updated the rule for “${r.name}”. New transactions use it; merge above to fix existing ones.`, 'ok');
+                drawRules();
+                return;
+            }
             const ri = e.target.dataset?.ruleDel;
             if (ri == null || !busyGuard()) return;
             const r = getMerchantRules()[+ri];

@@ -214,7 +214,7 @@ const home = {
                 let html = '';
                 if (t.added) {
                     html += `<div class="banner ok"><strong>Loaded ${t.added} new transaction${t.added === 1 ? '' : 's'}</strong> from ${t.files.map(esc).join(', ')}.
-                        ${t.history} matched merchants from your history${t.ai ? `; ${t.ai} new merchant${t.ai === 1 ? ' was' : 's were'} categorized by the AI` : ''}${t.rules ? `; <strong>${t.rules} new merchant${t.rules === 1 ? ' was' : 's were'}</strong> categorized by keyword rules (mostly “Miscellaneous”). Check them in <a href="#edit">Finance Table</a> → Master history, filtering Category to Miscellaneous` : ''}.</div>`;
+                        ${t.history} matched merchants from your history${t.merchant ? `; ${t.merchant} matched your merchant rules` : ''}${t.ai ? `; ${t.ai} new merchant${t.ai === 1 ? ' was' : 's were'} categorized by the AI` : ''}${t.rules ? `; <strong>${t.rules} new merchant${t.rules === 1 ? ' was' : 's were'}</strong> categorized by keyword rules (mostly “Miscellaneous”). Check them in <a href="#edit">Finance Table</a> → Master history, filtering Category to Miscellaneous` : ''}.</div>`;
                 }
                 if (current) {
                     const p = await processCurrentMonth({ useAI, log, signal });

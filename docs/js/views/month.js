@@ -41,6 +41,7 @@ const SOURCE_TAGS = {
     history: '<span class="source-tag source-history">history</span>',
     cache: '<span class="source-tag source-cache">cache</span>',
     ai: '<span class="source-tag source-ai">AI</span>',
+    merchant: '<span class="source-tag source-history">merchant rule</span>',
     rules: '<span class="source-tag source-rules">rules</span>',
 };
 
@@ -92,7 +93,7 @@ export default {
             <section>
                 <h2>Transactions <span class="sub">(${p.rows.length} rows)</span><span class="spacer"></span><a href="#edit" style="font-size:0.85em;text-transform:none;letter-spacing:0">Open in Finance Table →</a></h2>
                 <div id="t-tx"></div>
-                ${hasSources ? `<p class="note">Source: ${SOURCE_TAGS.edited} your manual edit · ${SOURCE_TAGS.history} same category as this merchant in your history · ${SOURCE_TAGS.cache} AI-categorized on an earlier run · ${SOURCE_TAGS.ai} AI-categorized this run · ${SOURCE_TAGS.rules} override/keyword rules only</p>` : ''}
+                ${hasSources ? `<p class="note">Source: ${SOURCE_TAGS.edited} your manual edit · ${SOURCE_TAGS.history} same category as this merchant in your history · ${SOURCE_TAGS.cache} AI-categorized on an earlier run · ${SOURCE_TAGS.merchant} your merchant rule (bank text) · ${SOURCE_TAGS.ai} AI-categorized this run · ${SOURCE_TAGS.rules} override/keyword rules only</p>` : ''}
             </section>`;
 
         const sumOf = (rows, f) => rows.reduce((a, r) => a + (f(r) || 0), 0);

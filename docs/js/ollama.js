@@ -49,13 +49,17 @@ export async function generate(prompt, signal) {
     return (await res.json()).response;
 }
 
-function categorizePrompt(description, amount) {
+function categorizePrompt(description, amount, known = []) {
     return `
 You are a precise bank transaction categorizer. Analyze this transaction: "${description}" ($${amount})
 
 Respond ONLY in this exact format, nothing else:
 Merchant: [clean name] | Category: [category]
-
+${known.length ? `
+MERCHANT NAME: if this transaction is from one of these merchants, copy its name exactly as written here
+(same spelling, spacing and capitals). Otherwise give a short, clean name with no store numbers, cities or symbols.
+${known.join('; ')}
+` : ''}
 CATEGORY DEFINITIONS — pick the single best match:
 - Groceries: Supermarkets, grocery stores (Hannaford, Price Chopper, Walmart groceries)
 - Dining Out: Restaurants, fast food, cafes, bars, coffee shops (McDonald's, TST*, SQ* food)
@@ -84,11 +88,11 @@ IMPORTANT RULES:
  * Network/abort errors are rethrown so a run stops instead of filling the master with fallbacks;
  * an unparseable answer falls back to the override rules, like the scripts do.
  */
-export async function aiCategorize(description, amount, signal) {
+export async function aiCategorize(description, amount, signal, known = []) {
     // A merchant+category override always wins, so don't spend a model call on it.
     const mc = applyMerchantCatOverrides(description);
     if (mc) return { ...mc, parsed: true };
-    const text = (await generate(categorizePrompt(description, amount), signal)).trim();
+    const text = (await generate(categorizePrompt(description, amount, known), signal)).trim();
     const parts = text.split('|');
     if (parts.length < 2) {
         return { merchant: cleanupMerchant(description, null, description), category: applyOverrides(description, 'Miscellaneous'), parsed: false, raw: text };

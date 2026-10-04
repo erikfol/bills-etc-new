@@ -2,9 +2,9 @@
 import * as fs from './fs.js';
 import { PATHS, MASTER_COLS, CACHE_COLS, readTable, writeTable, readBankCsv, keyOf, loadConfig, parseConfig } from './data.js';
 import { aiCategorize } from './ollama.js';
-import { categorizeByRules, cleanupMerchant } from './rules.js';
+import { categorizeByRules, cleanupMerchant, renamed } from './rules.js';
 import { buildHistory, historyLookup, merchantKey } from './history.js';
-import { applyMerchantRules } from './merchants.js';
+import { applyMerchantRules, ruleByBankText, knownMerchants, snapMerchant } from './merchants.js';
 import { parseDate, yearMonth, longMonthLabel, normalizeDateCell } from './dates.js';
 import { computeProjection } from './finance.js';
 import { amountOf, money } from './util.js';
@@ -13,16 +13,21 @@ import { amountOf, money } from './util.js';
 export const lastSources = new Map();
 
 /**
- * Categorize one row: merchant overrides → your history → AI (if enabled) → keyword rules,
- * then your merchant rules from Config (clean name, and category if the rule has one).
+ * Categorize one row: merchant overrides → your history → a merchant rule matching the bank text (if it
+ * sets a category) → AI (if enabled) → keyword rules, then your merchant rules from Config (clean name,
+ * and category if the rule has one). The AI is given your merchant names (`known`) and a name it returns
+ * that is only a respelling of one of them is replaced by yours.
  * A merchant the AI just categorized is remembered so repeats in the same run skip the model.
  */
-async function categorize(row, lookup, useAI, signal) {
+async function categorize(row, lookup, useAI, signal, known = []) {
     const hit = historyLookup(lookup, row.Description);
     if (hit) return applyMerchantRules(hit, row.Description);
+    const bankRule = ruleByBankText(row.Description);
+    if (bankRule?.category) return { merchant: bankRule.name, category: renamed(bankRule.category), source: 'merchant' };
     if (useAI) {
         if (signal.aborted) throw new DOMException('Cancelled', 'AbortError');
-        const ai = applyMerchantRules(await aiCategorize(row.Description, row.Amount, signal), row.Description);
+        const raw = await aiCategorize(row.Description, row.Amount, signal, known);
+        const ai = applyMerchantRules({ ...raw, merchant: snapMerchant(raw.merchant, known) }, row.Description);
         const key = merchantKey(row.Description);
         if (key && ai.parsed) lookup.set(key, { category: ai.category, merchant: ai.merchant });
         return { ...ai, source: 'ai' };
@@ -41,9 +46,9 @@ function txTypeMerchant(row, merchant) {
 
 // ── Step 1: backfill past months into the master ─────────────────────────────
 
-/** Returns totals: { added, history, ai, rules, files: [names that added rows] }. */
+/** Returns totals: { added, history, merchant, ai, rules, files: [names that added rows] }. */
 export async function backfill({ useAI, log, signal }) {
-    const totals = { added: 0, history: 0, ai: 0, rules: 0, files: [] };
+    const totals = { added: 0, history: 0, merchant: 0, ai: 0, rules: 0, files: [] };
     const files = await fs.listFiles(PATHS.pastMonths);
     if (!files.length) {
         log(`No CSV files found in ${PATHS.pastMonths}/. Import your bank statements there first.`, 'err');
@@ -55,6 +60,7 @@ export async function backfill({ useAI, log, signal }) {
     const existing = new Set(master.rows.map(keyOf));
     if (existing.size) log(`Master file has ${existing.size} existing transactions. Duplicates will be skipped.`, 'dim');
     const lookup = buildHistory(master.rows);
+    const known = useAI ? knownMerchants(master.rows) : [];
     log(`History knows ${lookup.size} merchant(s).`, 'dim');
 
     try {
@@ -70,11 +76,11 @@ export async function backfill({ useAI, log, signal }) {
 
             log(`Processing ${fresh.length} new transactions...`);
             const added = [];
-            const counts = { history: 0, ai: 0, rules: 0 };
+            const counts = { history: 0, merchant: 0, ai: 0, rules: 0 };
             try {
                 for (const row of fresh) {
                     if (signal.aborted) throw new DOMException('Cancelled', 'AbortError');
-                    const { merchant, category, source, parsed } = await categorize(row, lookup, useAI, signal);
+                    const { merchant, category, source, parsed } = await categorize(row, lookup, useAI, signal, known);
                     counts[source]++;
                     if (source === 'ai') {
                         log(`  [AI] ${row.Description} (${row.Amount}) → ${category}${parsed ? '' : '  [unparsed AI reply, used rules]'}`, parsed ? '' : 'err');
@@ -82,8 +88,8 @@ export async function backfill({ useAI, log, signal }) {
                     added.push({ ...row, 'Cleaned Merchant': txTypeMerchant(row, merchant), 'AI Category': category, Notes: '' });
                 }
             } finally {
-                log(`  ${counts.history} from history, ${counts.ai} by AI, ${counts.rules} by rules.`, 'dim');
-                for (const k of ['history', 'ai', 'rules']) totals[k] += counts[k];
+                log(`  ${counts.history} from history, ${counts.merchant} by your merchant rules, ${counts.ai} by AI, ${counts.rules} by keyword rules.`, 'dim');
+                for (const k of ['history', 'merchant', 'ai', 'rules']) totals[k] += counts[k];
                 // Save whatever finished, even if cancelled mid-file; dedupe skips it next run.
                 if (added.length) {
                     master.rows.push(...added);
@@ -140,7 +146,8 @@ export async function processCurrentMonth({ useAI, log, signal }) {
     const newCache = [];
     const master = await readTable(PATHS.master);
     const lookup = buildHistory(master?.rows || []);
-    const counts = { edited: 0, history: 0, cache: 0, ai: 0, rules: 0 };
+    const known = useAI ? knownMerchants(master?.rows || []) : [];
+    const counts = { edited: 0, history: 0, cache: 0, merchant: 0, ai: 0, rules: 0 };
     lastSources.clear();
     try {
         for (const row of bank.rows) {
@@ -150,7 +157,7 @@ export async function processCurrentMonth({ useAI, log, signal }) {
             else if ((hit = historyLookup(lookup, row.Description))) source = hit.source;
             else if ((hit = cacheLookup.get(key))) source = 'cache';
             else {
-                hit = await categorize(row, lookup, useAI, signal);
+                hit = await categorize(row, lookup, useAI, signal, known);
                 source = hit.source;
                 if (source === 'ai') {
                     log(`  [AI] ${row.Description} (${row.Amount}) → ${hit.category}`);

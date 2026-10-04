@@ -4,7 +4,7 @@
 config.json may contain:
   "categories":       ["Groceries", "Dining Out", ...]   your category list
   "category_renames": {"Dining Out": "Restaurants"}     old name -> new name
-  "merchant_rules":   [{"name": "Amazon", "match": ["amazon"], "category": "Shopping"}]
+  "merchant_rules":   [{"name": "Amazon", "match": ["amazon"], "bank_text": ["amazon"], "category": "Shopping"}]
 All are managed on the GUI's Config page; when absent, the scripts' built-in list is used.
 """
 import json
@@ -57,20 +57,34 @@ def merchant_name_key(name):
     return ' '.join(s.split())
 
 
+def compact_text(s):
+    """Bank text as letters only: "STRAIGHTTALK*P 800-299 FL" -> "straighttalkpfl"."""
+    return re.sub(r'[^a-z]+', '', str(s).lower())
+
+
 def merchant_rules():
     rules = []
     for r in _load_config().get('merchant_rules') or []:
         if isinstance(r, dict) and isinstance(r.get('name'), str) and r['name'].strip() and isinstance(r.get('match'), list):
             cat = r.get('category') if isinstance(r.get('category'), str) and r.get('category') else None
-            rules.append({'name': r['name'].strip(), 'match': [k for k in r['match'] if isinstance(k, str) and k], 'category': cat})
+            bank = [compact_text(b) for b in (r.get('bank_text') or []) if isinstance(b, str)]
+            rules.append({'name': r['name'].strip(), 'match': [k for k in r['match'] if isinstance(k, str) and k],
+                          'bank': [b for b in bank if len(b) >= 4], 'category': cat})
     return rules
 
 
 def apply_merchant_rules(rules, renames, merchant, category, description):
-    """(merchant, category) after your merchant rules. A rule matches only when the merchant's (or the
-    whole description's) cleaned-up name is exactly one of its spellings -- never a prefix."""
+    """(merchant, category) after your merchant rules. A rule matches when the merchant's (or the whole
+    description's) cleaned-up name is exactly one of its spellings -- never a prefix -- or, failing that,
+    when the bank text contains one of the rule's bank_text pieces (longest wins)."""
     m_key, d_key = merchant_name_key(merchant), merchant_name_key(description)
-    for r in rules:
-        if m_key in r['match'] or d_key in r['match']:
-            return r['name'], (renamed(renames, r['category']) if r['category'] else category)
-    return merchant, category
+    rule = next((r for r in rules if m_key in r['match'] or d_key in r['match']), None)
+    if rule is None:
+        d, best = compact_text(description), 0
+        for r in rules:
+            for b in r.get('bank', []):
+                if len(b) > best and b in d:
+                    rule, best = r, len(b)
+    if rule is None:
+        return merchant, category
+    return rule['name'], (renamed(renames, rule['category']) if rule['category'] else category)
