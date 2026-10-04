@@ -6,6 +6,7 @@ import { esc, money, toast } from '../util.js';
 import { requireFolder } from '../app.js';
 import { merchantSummary, suggestGroups, mergeMerchants, removeMerchantRule, setRuleCategory, getMerchantRules } from '../merchants.js';
 import { dataTable, closeFilterMenu } from '../datatable.js';
+import { hasBills } from '../bills.js';
 
 let dirty = false;
 
@@ -31,6 +32,8 @@ export default {
 
         const incomes = Object.entries(cfg).filter(([k, v]) => k.startsWith('monthly_income') && typeof v === 'number');
         const fixed = Object.entries(cfg.fixed_expenses || {}).filter(([k, v]) => !k.startsWith('_') && typeof v === 'number');
+        const billsMode = hasBills(cfg); // fixed expenses then come from the Bills page
+        const fixedSum = fixed.reduce((a, [, v]) => a + v, 0);
         const vars = new Set((cfg.variable_categories || []).filter(c => typeof c === 'string' && !c.startsWith('_')));
         const varChoices = [...getCategories().filter(c => c !== 'Income'), ...[...vars].filter(c => !getCategories().includes(c))];
 
@@ -51,15 +54,19 @@ export default {
                     <p class="note">Don't count bonuses or tax refunds.</p>
                 </section>
                 <section>
-                    <h2>Fixed Expenses <span class="sub">same amount every month</span></h2>
+                    ${billsMode ? `<h2>Scheduled Bills <span class="sub">monthly equivalent</span></h2>
+                    <p>Your ${fixed.length} active bills come to <strong>${esc(money(fixedSum))}</strong> a month. Add or change them on the <a href="#bills">Bills</a> page.</p>
+                    <p class="note">config.json's <code>fixed_expenses</code> is kept in step with your bills, so the Python scripts use them too.</p>`
+                    : `<h2>Fixed Expenses <span class="sub">same amount every month</span></h2>
                     <div id="fixed">${fixed.map(([k, v]) => kvRow(k, v, 'e.g. Internet')).join('')}</div>
                     <button class="small" id="add-fixed">+ Add bill</button>
+                    <p class="note">Tip: set up scheduled bills on the <a href="#bills">Bills</a> page instead, to see which are paid and which are still due.</p>`}
                 </section>
             </div>
             <section style="margin-top:18px">
                 <h2>Variable Categories <span class="sub">day-scaled to project the full month</span></h2>
                 <div class="check-grid">${varChoices.map(c => `<label class="check"><input type="checkbox" value="${esc(c)}"${vars.has(c) ? ' checked' : ''}> ${esc(c)}</label>`).join('')}</div>
-                <p class="note">Projection = (spent so far ÷ days elapsed) × days in month. Fixed expenses are added on top.</p>
+                <p class="note">Projection = (spent so far ÷ days elapsed) × days in month. ${billsMode ? 'Scheduled bills are left out of this and added on top.' : 'Fixed expenses are added on top.'}</p>
             </section></div>
             <section id="cats">
                 <h2>Categories <span class="sub">add, rename or merge; changes apply right away</span></h2>
@@ -98,7 +105,7 @@ export default {
 
         const totals = () => {
             const sumOf = id => [...el.querySelectorAll(`#${id} .v`)].reduce((a, i) => a + (parseFloat(i.value) || 0), 0);
-            const inc = sumOf('incomes'), fix = sumOf('fixed');
+            const inc = sumOf('incomes'), fix = billsMode ? fixedSum : sumOf('fixed');
             el.querySelector('#total').textContent = `Income ${money(inc)} − fixed ${money(fix)} = ${money(inc - fix, true)} for variable spending`;
         };
         const markDirty = () => { dirty = true; totals(); };
@@ -108,7 +115,7 @@ export default {
             if (e.target.matches('[data-remove]')) { e.target.closest('.kv-row').remove(); markDirty(); }
         });
         el.querySelector('#add-income').onclick = () => { el.querySelector('#incomes').insertAdjacentHTML('beforeend', kvRow('', '', 'source name')); markDirty(); };
-        el.querySelector('#add-fixed').onclick = () => { el.querySelector('#fixed').insertAdjacentHTML('beforeend', kvRow('', '', 'e.g. Internet')); markDirty(); };
+        if (!billsMode) el.querySelector('#add-fixed').onclick = () => { el.querySelector('#fixed').insertAdjacentHTML('beforeend', kvRow('', '', 'e.g. Internet')); markDirty(); };
         totals();
 
         // ── Categories ──
@@ -334,7 +341,7 @@ export default {
             };
             for (const [k, v] of Object.entries(cfg)) {
                 if (k.startsWith('monthly_income') && typeof v === 'number') { if (!incomeWritten) writeIncomes(); continue; }
-                if (k === 'fixed_expenses') {
+                if (k === 'fixed_expenses' && !billsMode) {
                     out.fixed_expenses = Object.fromEntries(Object.entries(v || {}).filter(([fk]) => fk.startsWith('_')));
                     for (const [fk, fv] of read('fixed')) out.fixed_expenses[fk] = fv;
                     continue;
@@ -349,7 +356,7 @@ export default {
                 out[k] = v;
             }
             if (!incomeWritten) writeIncomes();
-            if (!out.fixed_expenses) out.fixed_expenses = Object.fromEntries(read('fixed'));
+            if (!out.fixed_expenses && !billsMode) out.fixed_expenses = Object.fromEntries(read('fixed'));
             if (!out.variable_categories) out.variable_categories = [...el.querySelectorAll('.check-grid input:checked')].map(i => i.value);
 
             try {

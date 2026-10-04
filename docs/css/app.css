@@ -432,3 +432,10 @@ details.bucket-group > summary { cursor: pointer; margin-bottom: 8px; }
 .spec-label { display: block; font-size: 0.75em; text-transform: uppercase; letter-spacing: 0.4px; color: var(--muted); margin-bottom: 2px; }
 section.unit h2 .badge { text-transform: none; letter-spacing: 0; font-size: 0.72em; }
 .log-grid input[data-k=work], .log-grid input[data-k=notes] { width: 100%; min-width: 180px; }
+
+/* Bills */
+.late-cell { color: var(--orange); font-weight: 600; }
+.missed-cell { color: var(--red); font-weight: 700; }
+.bill-grid td, .bill-grid th { white-space: nowrap; font-size: 0.88em; }
+.sched-tag { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 0.8em; background: #e8f0fe; color: var(--blue-text); white-space: nowrap; }
+.sched-tag.unsched { background: #f0f0f0; color: #888; }

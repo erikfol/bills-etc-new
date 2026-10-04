@@ -106,6 +106,17 @@ export async function mergeMerchants({ spellings, name, category = null, remembe
         }
         if (n) { await writeTable(path, table); if (path !== PATHS.cache) changed += n; }
     }
+    // Scheduled bills follow the merge (they match on merchant names).
+    const billCfg = await loadConfig();
+    if (Array.isArray(billCfg?.scheduled_bills)) {
+        let touched = false;
+        for (const b of billCfg.scheduled_bills) {
+            if (!Array.isArray(b?.merchants) || !b.merchants.some(m => set.has(m))) continue;
+            b.merchants = [...new Set(b.merchants.map(m => (set.has(m) ? name : m)))];
+            touched = true;
+        }
+        if (touched) await fs.writeText(PATHS.config, JSON.stringify(billCfg, null, 2) + '\n');
+    }
     if (remember) {
         const cfg = (await loadConfig()) || structuredClone(DEFAULT_CONFIG);
         const list = Array.isArray(cfg.merchant_rules) ? cfg.merchant_rules : [];

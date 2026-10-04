@@ -1,5 +1,6 @@
 import { PATHS, readTable, loadConfig, parseConfig, keyOf } from '../data.js';
-import { computeProjection, statusBadge } from '../finance.js';
+import { computeProjection, statusBadge, withParsed } from '../finance.js';
+import { parseBills, hasBills, billMatcher, schedColumn, paymentsByMonth, billMonth, STATUS } from '../bills.js';
 import { lastSources } from '../workflow.js';
 import { MONTH_NAMES, parseDate, yearMonth } from '../dates.js';
 import { esc, money } from '../util.js';
@@ -18,7 +19,21 @@ async function loadProjection() {
     const now = new Date();
     const ended = latest && yearMonth(latest) < yearMonth(now);
     const today = ended ? new Date(latest.getFullYear(), latest.getMonth() + 1, 0) : now;
-    return { ...computeProjection({ config: parseConfig(cfg), rows: processed.rows, masterRows: master?.rows, today }), ended };
+
+    // Scheduled bills: what's been paid this month, plus what's still due; their payments aren't day-scaled.
+    let bills = null, exclude = null, fixedTotal = null, match = null;
+    if (hasBills(cfg)) {
+        const list = parseBills(cfg);
+        match = billMatcher(list);
+        exclude = r => !!match(r);
+        const ym = yearMonth(today);
+        const pays = paymentsByMonth(list, withParsed(processed.rows).filter(r => r._date));
+        bills = list.map(b => billMonth(b, ym, pays.get(b.name).get(ym), { dataThrough: latest, today: now }))
+            .filter(x => x.due || x.payments.length)
+            .map(x => ({ ...x, counted: x.payments.length ? x.paid : x.due && !ended ? x.expected : 0 }));
+        fixedTotal = bills.reduce((a, x) => a + x.counted, 0);
+    }
+    return { ...computeProjection({ config: parseConfig(cfg), rows: processed.rows, masterRows: master?.rows, today, exclude, fixedTotal }), ended, bills, match };
 }
 
 const SOURCE_TAGS = {
@@ -52,7 +67,7 @@ export default {
 
             <div class="cards">
                 <div class="card"><div class="label">Expected Income</div><div class="value" style="color:#2980b9">${money(p.income)}</div><div class="sub">per month, from config</div></div>
-                <div class="card"><div class="label">Total Projected Spend</div><div class="value" style="color:var(--red)">${money(p.totalProjected)}</div><div class="sub">fixed + variable projection</div></div>
+                <div class="card"><div class="label">Total Projected Spend</div><div class="value" style="color:var(--red)">${money(p.totalProjected)}</div><div class="sub">${p.bills ? 'scheduled bills + unscheduled projection' : 'fixed + variable projection'}</div></div>
                 <div class="card"><div class="label">${p.surplus >= 0 ? 'Projected Surplus' : 'Projected Deficit'}</div><div class="value" style="color:${sdColor}">${money(p.surplus, true)}</div><div class="sub">end-of-month estimate</div></div>
             </div>
 
@@ -64,13 +79,15 @@ export default {
             </section>
 
             <section>
-                <h2>Fixed Expenses <span class="sub">(from config)</span></h2>
+                ${p.bills ? `<h2>Scheduled Bills <span class="sub">paid, or still due this month</span><span class="spacer"></span><a href="#bills" style="font-size:0.85em;text-transform:none;letter-spacing:0">Manage bills →</a></h2>`
+                    : `<h2>Fixed Expenses <span class="sub">(from config)</span></h2>`}
                 <div id="t-fixed"></div>
+                ${p.bills ? '' : '<p class="note">Set up your scheduled bills on the <a href="#bills">Bills</a> page to see which are paid and which are still due.</p>'}
             </section>
             <section>
-                <h2>Variable Spending</h2>
+                <h2>${p.bills ? 'Unscheduled Spending' : 'Variable Spending'}</h2>
                 <div id="t-var"></div>
-                <p class="note">Historical average covers ${p.hist.months} completed month(s); the current month is excluded.</p>
+                <p class="note">Historical average covers ${p.hist.months} completed month(s); the current month is excluded.${p.bills ? ' Scheduled bill payments are left out here (and from the averages) so they aren’t counted twice.' : ''}</p>
             </section>
             <section>
                 <h2>Transactions <span class="sub">(${p.rows.length} rows)</span><span class="spacer"></span><a href="#edit" style="font-size:0.85em;text-transform:none;letter-spacing:0">Open in Finance Table →</a></h2>
@@ -80,7 +97,20 @@ export default {
 
         const sumOf = (rows, f) => rows.reduce((a, r) => a + (f(r) || 0), 0);
 
-        dataTable(el.querySelector('#t-fixed'), {
+        if (p.bills) dataTable(el.querySelector('#t-fixed'), {
+            columns: [
+                { id: 'name', label: 'Bill', value: x => x.bill.name },
+                dateColumn('due', 'Due', x => (x.due ? x.dueOn.toLocaleDateString('en-US') : '')),
+                { id: 'status', label: 'Status', value: x => STATUS[x.status][1], cell: x => `<span class="badge ${STATUS[x.status][0]}">${STATUS[x.status][1]}</span>` },
+                { ...moneyColumn('paid', 'Paid', x => (x.payments.length ? x.paid : NaN)), tdClass: x => (x.changed ? 'late-cell' : '') },
+                moneyColumn('counted', p.ended ? 'Counted' : 'Counted in projection', x => x.counted, { bold: true }),
+            ],
+            rows: p.bills,
+            sort: { col: 'due', dir: 'asc' },
+            footer: (rows, filtered) => `<tr class="total-row"><td colspan="3"><strong>Total scheduled${filtered ? ' (filtered)' : ''}</strong></td><td class="amt">${money(sumOf(rows, x => x.paid))}</td><td class="amt"><strong>${money(sumOf(rows, x => x.counted))}</strong></td></tr>`,
+            empty: 'No scheduled bills this month',
+        });
+        else dataTable(el.querySelector('#t-fixed'), {
             columns: [
                 { id: 'item', label: 'Item', value: r => r.item },
                 moneyColumn('amt', 'Monthly', r => r.amount),
@@ -118,6 +148,7 @@ export default {
                 { id: 'merchant', label: 'Merchant', value: r => r['Cleaned Merchant'] ?? '' },
                 moneyColumn('amt', 'Amount', r => r._amt, { signed: true }),
                 categoryColumn('cat', 'Category', r => r['AI Category']),
+                ...(p.match ? [schedColumn(p.match)] : []),
                 ...(hasSources ? [{ id: 'src', label: 'Source', value: r => lastSources.get(keyOf(r)) || '', cell: r => SOURCE_TAGS[lastSources.get(keyOf(r))] || '' }] : []),
             ],
             rows: p.rows,

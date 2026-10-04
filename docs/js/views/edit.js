@@ -1,4 +1,5 @@
-import { PATHS, readTable, writeTable } from '../data.js';
+import { PATHS, readTable, writeTable, loadConfig } from '../data.js';
+import { parseBills, hasBills, billMatcher, scheduleLabel, schedTag } from '../bills.js';
 import { parseDate, yearMonth, monthLabel } from '../dates.js';
 import { esc, money, amountOf, toast } from '../util.js';
 import { bindCellEditing, merchantInput, categorySelect, notesInput, merchantText, categoryText, notesText } from '../celledit.js';
@@ -24,7 +25,10 @@ const COLUMNS = [
     { id: 'cat', label: 'Category', value: r => text(r['AI Category']) },
     { id: 'notes', label: 'Notes', value: r => text(r.Notes) },
 ];
-const COL = Object.fromEntries(COLUMNS.map(c => [c.id, c]));
+let match = null; // scheduled-bill matcher, when bills are set up
+// Read-only: which bill a transaction pays (worked out from its merchant, never saved in the file).
+const SCHED = { id: 'sched', label: 'Scheduled', value: r => (match ? scheduleLabel(r, match) : '') };
+const COL = Object.fromEntries([...COLUMNS, SCHED].map(c => [c.id, c]));
 
 function compare(col, a, b) {
     if (col.sortKey) { const x = col.sortKey(a), y = col.sortKey(b); return x < y ? -1 : x > y ? 1 : 0; }
@@ -55,6 +59,9 @@ export default {
 
         const body = el.querySelector('#body');
         const table = await readTable(FILES[file].path);
+        const cfg = await loadConfig().catch(() => null);
+        match = hasBills(cfg) ? billMatcher(parseBills(cfg)) : null;
+        const columns = match ? [...COLUMNS.slice(0, 5), SCHED, ...COLUMNS.slice(5)] : COLUMNS;
         if (!table) {
             body.innerHTML = `<div class="banner">${esc(FILES[file].path)} doesn't exist yet. ${file === 'processed' ? 'Add this month’s bank export' : 'Add bank files'} on the <a href="#home">Setup</a> page.</div>`;
             state = null;
@@ -79,7 +86,7 @@ export default {
                 </div>
                 <div id="count" class="muted" style="font-size:0.85em;margin-bottom:8px"></div>
                 <div class="table-wrap"><table class="filter-table">
-                    <thead><tr>${COLUMNS.map(c => `
+                    <thead><tr>${columns.map(c => `
                         <th data-col="${c.id}"${c.num ? ' class="num"' : ''}>
                             <span class="th-inner"><span class="th-label" title="Click to sort">${c.label}<span class="sort-ind"></span></span><button class="fbtn" aria-label="Sort and filter ${c.label}" title="Sort and filter">▾</button></span>
                         </th>`).join('')}</tr></thead>
@@ -105,7 +112,7 @@ export default {
             const out = [];
             table.rows.forEach((r, i) => {
                 if (fMonth.value && yms[i] !== fMonth.value) return;
-                if (q && !COLUMNS.some(c => c.value(r).toLowerCase().includes(q) || (c.display && c.display(c.value(r)).toLowerCase().includes(q)))) return;
+                if (q && !columns.some(c => c.value(r).toLowerCase().includes(q) || (c.display && c.display(c.value(r)).toLowerCase().includes(q)))) return;
                 for (const [id, allowed] of state.filters) {
                     if (id !== skipCol && !allowed.has(COL[id].value(r))) return;
                 }
@@ -140,9 +147,9 @@ export default {
                     <td class="desc-cell">${esc(r.Description)}</td>
                     <td class="${a > 0 ? 'income-amt' : 'expense-amt'}">${esc(fmtAmount(r.Amount))}</td>
                     ${state.editing ? `<td class="edit-cell">${merchantInput(i, r['Cleaned Merchant'])}</td>
-                    <td class="edit-cell">${categorySelect(i, r['AI Category'])}</td>
+                    <td class="edit-cell">${categorySelect(i, r['AI Category'])}</td>${match ? `<td>${schedTag(scheduleLabel(r, match))}</td>` : ''}
                     <td class="edit-cell">${notesInput(i, r.Notes)}</td>`
-                    : `<td>${merchantText(r['Cleaned Merchant'])}</td><td>${categoryText(r['AI Category'])}</td><td>${notesText(r.Notes)}</td>`}
+                    : `<td>${merchantText(r['Cleaned Merchant'])}</td><td>${categoryText(r['AI Category'])}</td>${match ? `<td>${schedTag(scheduleLabel(r, match))}</td>` : ''}<td>${notesText(r.Notes)}</td>`}
                 </tr>`;
             }).join('');
             drawHeaders();

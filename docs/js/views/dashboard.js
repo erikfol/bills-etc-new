@@ -1,4 +1,5 @@
-import { PATHS, readTable, writeTable } from '../data.js';
+import { PATHS, readTable, writeTable, loadConfig } from '../data.js';
+import { parseBills, hasBills, billMatcher, schedColumn } from '../bills.js';
 import { normalizeMaster, buildReport, reportSummaryText, monthlyBreakdown, baseline } from '../finance.js';
 import { drawMonthBars, drawTrends, CHART_COLORS } from '../charts.js';
 import { generate, insightsPrompt, aiEnabled } from '../ollama.js';
@@ -44,6 +45,9 @@ export default {
         const unlisted = [...new Set(master.rows.map(r => renamed(String(r['AI Category'] ?? '').trim())).filter(c => c && !listed.has(c)))].sort();
         for (const c of ['Cleaned Merchant', 'AI Category', 'Notes']) if (!master.columns.includes(c)) master.columns.push(c);
         const rows = normalizeMaster(master.rows);
+        const cfg = await loadConfig().catch(() => null);
+        const match = hasBills(cfg) ? billMatcher(parseBills(cfg)) : null;
+        if (match) for (const r of rows) r._bill = match(r)?.name || '';
         rows.forEach((r, i) => { r._i = i; }); // index back into master.rows for saving edits
         dirty = new Set();
         editing = false;
@@ -54,6 +58,7 @@ export default {
         const defaultYm = [...yms].reverse().find(ym => ym < thisYm) || yms.at(-1);
         let ym = yms.includes(remembered) ? remembered : defaultYm;
         let catFilter = null;
+        let schedFilter = null; // 'sched' | 'unsched'
         const card = renamed('Credit Card'), savings = renamed('Savings');
 
         el.innerHTML = `
@@ -75,6 +80,7 @@ export default {
                 <h2>Where the money went <span class="sub" id="where-sub"></span></h2>
                 <div id="where"></div>
                 <div id="moved" class="moved"></div>
+                <div id="sched" class="moved"${match ? '' : ' hidden'}></div>
             </section>
 
             <section>
@@ -138,6 +144,7 @@ export default {
                 { id: 'merchant', label: 'Merchant', value: r => r['Cleaned Merchant'] ?? '', tdClass: () => (editing ? 'edit-cell' : ''), cell: r => (editing ? merchantInput(r._i, r['Cleaned Merchant']) : merchantText(r['Cleaned Merchant'])) },
                 moneyColumn('amt', 'Amount', r => r._amt, { signed: true }),
                 { id: 'cat', label: 'Category', value: r => r['AI Category'] ?? '', tdClass: () => (editing ? 'edit-cell' : ''), cell: r => (editing ? categorySelect(r._i, r['AI Category']) : categoryText(r['AI Category'])) },
+                ...(match ? [schedColumn(match)] : []),
                 { id: 'notes', label: 'Notes', value: r => (r.Notes ?? '').trim(), tdClass: () => (editing ? 'edit-cell' : ''), cell: r => (editing ? notesInput(r._i, r.Notes) : notesText(r.Notes)) },
             ],
             rows,
@@ -149,11 +156,15 @@ export default {
         const applyTx = () => {
             const q = $('#tx-q').value.trim().toLowerCase();
             tx.setFilter(r => r._ym === ym && (!catFilter || r['AI Category'] === catFilter)
+                && (!schedFilter || (schedFilter === 'sched' ? !!r._bill : !r._bill && r._amt < 0))
                 && (!q || `${r['Cleaned Merchant']} ${r.Description} ${r.Notes}`.toLowerCase().includes(q)));
             $('#tx-title').innerHTML = `Transactions <span class="sub">${esc(longMonthLabel(ym))}</span>`;
-            $('#tx-chip').innerHTML = catFilter
-                ? `<button class="chip active" id="clear-chip" title="Show all categories">${esc(catFilter)} ✕</button>` : '';
+            $('#tx-chip').innerHTML = (catFilter
+                ? `<button class="chip active" id="clear-chip" title="Show all categories">${esc(catFilter)} ✕</button>` : '')
+                + (schedFilter ? ` <button class="chip active" id="clear-sched" title="Show all transactions">${schedFilter === 'sched' ? 'Scheduled' : 'Unscheduled'} ✕</button>` : '');
             $('#clear-chip')?.addEventListener('click', () => setCat(null));
+            $('#clear-sched')?.addEventListener('click', () => setSched(null));
+            el.querySelectorAll('#sched [data-sched]').forEach(b => b.classList.toggle('active', b.dataset.sched === schedFilter));
             el.querySelectorAll('#where [data-cat], #moved [data-cat]').forEach(b => b.classList.toggle('active', b.dataset.cat === catFilter));
         };
         $('#tx-q').oninput = applyTx;
@@ -192,6 +203,7 @@ export default {
             this.render(el);
         };
         const setCat = c => { catFilter = c === catFilter ? null : c; applyTx(); };
+        const setSched = v => { schedFilter = v === schedFilter ? null : v; applyTx(); };
 
         // ── Month chart ──
         const chartWindow = () => {
@@ -218,6 +230,7 @@ export default {
         const show = next => {
             ym = remembered = next;
             catFilter = null;
+            schedFilter = null;
             const i = yms.indexOf(ym), m = months[i], base = baseline(months, i);
             $('#month').value = ym;
             $('#prev').disabled = i === 0;
@@ -259,6 +272,19 @@ export default {
                 ${m.otherIn > 0.005 ? `<span class="muted">· Other money in (refunds, transfers in): <strong>${esc(money(m.otherIn))}</strong></span>` : ''}
                 <span class="muted" style="font-size:0.85em;flex-basis:100%">Card purchases aren't itemized in the bank export, so they show here as one payment.</span>`;
             el.querySelectorAll('#where [data-cat], #moved [data-cat]').forEach(b => { b.onclick = () => setCat(b.dataset.cat); });
+            if (match) {
+                const inMonth = rows.filter(r => r._ym === ym && r._amt < 0);
+                const sched = inMonth.filter(r => r._bill);
+                const schedTotal = -sched.reduce((a, r) => a + r._amt, 0);
+                const isSpending = r => r['AI Category'] !== 'Income' && r['AI Category'] !== card && r['AI Category'] !== savings;
+                const unsched = m.spending + sched.filter(isSpending).reduce((a, r) => a + r._amt, 0);
+                $('#sched').innerHTML = `
+                    <span class="muted">Bills:</span>
+                    <button class="chip" data-sched="sched">Scheduled ${esc(money(schedTotal))} <span class="muted">(${new Set(sched.map(r => r._bill)).size} bills)</span></button>
+                    <button class="chip" data-sched="unsched">Unscheduled spending ${esc(money(unsched))}</button>
+                    <span class="muted" style="font-size:0.85em;flex-basis:100%">Scheduled includes card payments and savings transfers that are set up as bills. <a href="#bills">Manage bills →</a></span>`;
+                el.querySelectorAll('#sched [data-sched]').forEach(b => { b.onclick = () => setSched(b.dataset.sched); });
+            }
 
             drawMonths();
             applyTx();

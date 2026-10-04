@@ -73,10 +73,10 @@ export function reportSummaryText(report) {
     return s;
 }
 
-/** Script 3's historical averages: completed months only (current month excluded). */
-export function historicalAverages(masterRows, variableCats, today) {
+/** Script 3's historical averages: completed months only (current month excluded). `exclude` drops rows (scheduled bills). */
+export function historicalAverages(masterRows, variableCats, today, exclude = null) {
     const currentYm = yearMonth(today);
-    const exp = withParsed(masterRows).filter(r => r._ym && r._ym !== currentYm && r['AI Category'] !== 'Income');
+    const exp = withParsed(masterRows).filter(r => r._ym && r._ym !== currentYm && r['AI Category'] !== 'Income' && !exclude?.(r));
     const months = [...new Set(exp.map(r => r._ym))];
     const n = months.length;
     const byMonthCat = sumBy(exp, r => r._ym + '|' + r['AI Category']);
@@ -88,22 +88,25 @@ export function historicalAverages(masterRows, variableCats, today) {
     return { avgs, months: n };
 }
 
-/** Script 3's projection for the current month. */
-export function computeProjection({ config, rows, masterRows, today = new Date() }) {
+/**
+ * Script 3's projection for the current month. With scheduled bills, pass `exclude` (row is a bill payment)
+ * and `fixedTotal` (bills paid + still due): bill payments are then left out of the day-scaled spending.
+ */
+export function computeProjection({ config, rows, masterRows, today = new Date(), exclude = null, fixedTotal = null }) {
     const { income, fixed, variableCats } = config;
     const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
     const daysElapsed = today.getDate();
 
     const parsed = withParsed(rows);
-    const exp = parsed.filter(r => r['AI Category'] !== 'Income' && r._amt < 0);
+    const exp = parsed.filter(r => r['AI Category'] !== 'Income' && r._amt < 0 && !exclude?.(r));
     const spent = {}, projected = {};
     for (const cat of variableCats) {
         spent[cat] = round2(Math.abs(exp.filter(r => r['AI Category'] === cat).reduce((a, r) => a + r._amt, 0)));
         projected[cat] = round2(spent[cat] / daysElapsed * daysInMonth);
     }
-    const hist = masterRows ? historicalAverages(masterRows, variableCats, today) : { avgs: {}, months: 0 };
+    const hist = masterRows ? historicalAverages(masterRows, variableCats, today, exclude) : { avgs: {}, months: 0 };
 
-    const totalFixed = Object.values(fixed).reduce((a, b) => a + b, 0);
+    const totalFixed = fixedTotal ?? Object.values(fixed).reduce((a, b) => a + b, 0);
     const totalVariable = Object.values(projected).reduce((a, b) => a + b, 0);
     const totalProjected = totalFixed + totalVariable;
     return {
