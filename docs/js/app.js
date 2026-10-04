@@ -3,7 +3,6 @@ import { pingOllama, ollamaSettings, aiEnabled } from './ollama.js';
 import { esc } from './util.js';
 import { syncCategories } from './categories.js';
 import home from './views/home.js';
-import workflow from './views/workflow.js';
 import month from './views/month.js';
 import dashboard from './views/dashboard.js';
 import edit from './views/edit.js';
@@ -12,7 +11,7 @@ import utilities from './views/utilities.js';
 import loans from './views/loans.js';
 import savings from './views/savings.js';
 
-const VIEWS = { home, workflow, month, dashboard, utilities, loans, savings, edit, config };
+const VIEWS = { home, month, dashboard, utilities, loans, savings, edit, config };
 const viewEl = document.getElementById('view');
 let current = null;
 let currentName = null;

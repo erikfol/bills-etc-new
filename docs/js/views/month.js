@@ -10,7 +10,7 @@ async function loadProjection() {
     const cfg = await loadConfig();
     if (!cfg) return { error: 'config.json not found — create it on the <a href="#config">Config</a> page.' };
     const processed = await readTable(PATHS.processed);
-    if (!processed) return { error: 'No processed current month yet — run step 3 on the <a href="#workflow">Workflow</a> page.' };
+    if (!processed) return { error: 'No processed current month yet — add this month’s bank export on the <a href="#home">Setup</a> page.' };
     const master = await readTable(PATHS.master);
     // If the file is for a month that has already ended, show that month as complete instead of
     // scaling its full spending by today's day-of-month.
@@ -48,7 +48,7 @@ export default {
                 <button id="reload">Refresh</button>
             </div>
             <p class="lead">${p.ended ? 'Completed month: totals are actual, not projected.' : `Day ${p.daysElapsed} of ${p.daysInMonth} · ${p.pctMonth}% through the month`}</p>
-            ${p.ended ? `<div class="banner">This file is for ${esc(label)}, which has ended. Add this month's bank export on <a href="#home">Setup</a> to see a live projection, or close ${esc(label)} with <a href="#workflow">Workflow → step 4</a>.</div>` : ''}
+            ${p.ended ? `<div class="banner">This file is for ${esc(label)}, which has ended. Add this month's bank export on <a href="#home">Setup</a> to see a live projection, or close ${esc(label)} with <strong>Close month</strong> on <a href="#home">Setup</a>.</div>` : ''}
 
             <div class="cards">
                 <div class="card"><div class="label">Expected Income</div><div class="value" style="color:#2980b9">${money(p.income)}</div><div class="sub">per month, from config</div></div>

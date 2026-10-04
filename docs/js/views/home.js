@@ -3,12 +3,13 @@ import { ollamaSettings, pingOllama, aiEnabled, setAiEnabled } from '../ollama.j
 import { PATHS, readTable, readBankCsv, keyOf } from '../data.js';
 import { parseCSV } from '../csv.js';
 import { parseDate, yearMonth, monthLabel } from '../dates.js';
-import { backfill, processCurrentMonth } from '../workflow.js';
-import { esc, toast } from '../util.js';
+import { backfill, processCurrentMonth, planClose, closeMonth } from '../workflow.js';
+import { esc, money, toast } from '../util.js';
 import { refreshStatus } from '../app.js';
 import { dataTable, closeFilterMenu } from '../datatable.js';
 
 let busy = false;
+let running = null; // AbortController of the active load
 
 const monthsOf = rows => [...new Set(rows.map(r => parseDate(r.Date)).filter(Boolean).map(yearMonth))].sort();
 const rangeLabel = yms => !yms.length ? '—' : yms.length === 1 ? monthLabel(yms[0]) : `${monthLabel(yms[0])} – ${monthLabel(yms.at(-1))}`;
@@ -51,8 +52,11 @@ function statusHtml(st) {
                 <div class="value" style="font-size:1.2em">${cur ? esc(rangeLabel(cur.months)) : 'None'}</div>
                 <div class="sub">${cur ? esc(cur.name) : 'add this month’s export to see a projection'}</div></div>
         </div>
-        ${cur && cur.months.length && cur.months.at(-1) < thisYm ? `<div class="banner">The current-month file is for ${esc(rangeLabel(cur.months))}, which has ended. When you've finished fixing its categories, close it with <a href="#workflow">Workflow → step 4</a>.</div>` : ''}
+        ${cur && cur.months.length && cur.months.at(-1) < thisYm ? `<div class="banner">The current-month file is for ${esc(rangeLabel(cur.months))}, which has ended. When you've finished fixing its categories, ${st.processed ? 'close it with <strong>Close month</strong> below' : 'click Refresh, then close it with <strong>Close month</strong>'}.</div>` : ''}
         ${st.current.length > 1 ? `<div class="banner bad">There are ${st.current.length} files in <code>${PATHS.currentMonth}/</code>; keep only one.</div>` : ''}
+        ${st.processed ? `<div class="row" style="margin:0 0 12px"><button id="close-month"${cur && cur.months.length && cur.months.at(-1) < thisYm ? ' class="primary"' : ''}>Close month…</button>
+            <span class="muted" style="font-size:0.85em">Adds the finished month to your history, archives its files and clears <code>${PATHS.currentMonth}/</code>.</span></div>
+            <div id="close-plan"></div>` : ''}
         ${st.config ? '' : `<div class="banner">No <code>config.json</code> yet, so This Month can't project. Create it on the <a href="#config">Config</a> page.</div>`}
         <details${pending.length ? ' open' : ''}>
             <summary style="cursor:pointer;color:#555;font-size:0.9em">Bank files in <code>${PATHS.pastMonths}/</code> (${st.past.length})</summary>
@@ -115,6 +119,8 @@ const home = {
                     <div class="row">
                         <button class="primary" id="add-files">Add bank files…</button>
                         <button id="refresh">Refresh</button>
+                        ${ai ? '<label class="check"><input type="checkbox" id="use-ai" checked> Use AI for new merchants</label>' : ''}
+                        <button class="small danger" id="cancel" hidden>Cancel</button>
                         <span class="muted" style="font-size:0.85em">Add exports from CitizensBank.com, or click Refresh after copying files into the folder yourself.</span>
                     </div>
                     <div id="result" style="margin-top:12px"></div>
@@ -166,6 +172,8 @@ const home = {
             try {
                 const st = await folderStatus();
                 el.querySelector('#folder-status').innerHTML = statusHtml(st);
+                const closeBtn = el.querySelector('#close-month');
+                if (closeBtn) { closeBtn.disabled = busy; closeBtn.onclick = reviewClose; }
                 dataTable(el.querySelector('#t-files'), {
                     columns: [
                         { id: 'name', label: 'File', value: f => f.name, cell: f => `<code>${esc(f.name)}</code>` },
@@ -183,33 +191,98 @@ const home = {
         };
 
         /** Load pending past-month rows (and the current month, if asked), then show a summary. */
-        const load = async ({ current = false, skipped = [] } = {}) => {
+        const load = async ({ current = false, skipped = [] } = {}, useAI = !!el.querySelector('#use-ai')?.checked) => {
             busy = true;
-            el.querySelectorAll('#add-files, #refresh').forEach(b => { b.disabled = true; });
-            result('<p class="muted">Loading…</p>');
+            running = new AbortController();
+            const signal = running.signal;
+            el.querySelectorAll('#add-files, #refresh, #close-month').forEach(b => { b.disabled = true; });
+            el.querySelector('#cancel').hidden = false;
+            result(`<p class="muted">Loading…${useAI ? ' New merchants go to the AI, which can take a few seconds each.' : ''}</p>`);
             try {
-                const t = await backfill({ useAI: false, log, signal: new AbortController().signal });
+                if (useAI) {
+                    const st = await pingOllama();
+                    if (!(st.ok && st.hasModel)) {
+                        log(st.ok ? `Model ${ollamaSettings.model} isn't installed in Ollama.` : `Ollama ${st.error}.`, 'err');
+                        result(`<div class="banner bad"><strong>Didn't load: AI isn't available</strong> (${st.ok ? `model <code>${esc(ollamaSettings.model)}</code> isn't installed` : esc(st.error)}). See Local AI below.
+                            You can also load without AI: merchants you've categorized before use your history, and new ones get keyword rules.
+                            <div class="row" style="margin-top:10px"><button class="primary" id="no-ai">Load without AI</button></div></div>`);
+                        el.querySelector('#no-ai').onclick = () => load({ current, skipped }, false);
+                        return;
+                    }
+                }
+                const t = await backfill({ useAI, log, signal });
                 let html = '';
                 if (t.added) {
                     html += `<div class="banner ok"><strong>Loaded ${t.added} new transaction${t.added === 1 ? '' : 's'}</strong> from ${t.files.map(esc).join(', ')}.
-                        ${t.history} matched merchants from your history${t.rules ? `; <strong>${t.rules} are new merchants</strong> categorized by keyword rules (mostly “Miscellaneous”). Check them in <a href="#edit">Finance Table</a> → Master history, filtering Category to Miscellaneous` : ''}.</div>`;
+                        ${t.history} matched merchants from your history${t.ai ? `; ${t.ai} new merchant${t.ai === 1 ? ' was' : 's were'} categorized by the AI` : ''}${t.rules ? `; <strong>${t.rules} new merchant${t.rules === 1 ? ' was' : 's were'}</strong> categorized by keyword rules (mostly “Miscellaneous”). Check them in <a href="#edit">Finance Table</a> → Master history, filtering Category to Miscellaneous` : ''}.</div>`;
                 }
                 if (current) {
-                    const p = await processCurrentMonth({ useAI: false, log, signal: new AbortController().signal });
+                    const p = await processCurrentMonth({ useAI, log, signal });
                     if (p) html += `<div class="banner ok"><strong>Current month updated.</strong> See <a href="#month">This Month</a>.</div>`;
                     else html += `<div class="banner bad">Couldn't process the current month; see Details below.</div>`;
                 }
                 if (skipped.length) html += `<div class="banner bad">Skipped ${skipped.map(esc).join(', ')}: not a bank export (needs Date, Description and Amount columns).</div>`;
                 result(html || '<div class="banner ok">Everything is already loaded. Nothing new found.</div>');
             } catch (e) {
+                if (e.name === 'AbortError') {
+                    log('Cancelled. Finished rows were saved.', 'err');
+                    result('<div class="banner">Cancelled. Rows that finished were saved; click Refresh to load the rest.</div>');
+                    return;
+                }
                 console.error(e);
                 log(`Error: ${e.message}`, 'err');
                 result(`<div class="banner bad">${e.name === 'NotAllowedError' ? 'Lost access to your folder. Click Reconnect above.' : `Something went wrong: ${esc(e.message)}`}</div>`);
             } finally {
                 busy = false;
+                running = null;
                 el.querySelectorAll('#add-files, #refresh').forEach(b => { b.disabled = false; });
+                el.querySelector('#cancel').hidden = true;
                 showFolder();
             }
+        };
+        el.querySelector('#cancel').onclick = () => running?.abort();
+
+        /** Close month: show what will happen, then do it on confirm. */
+        const reviewClose = async () => {
+            const box = el.querySelector('#close-plan');
+            const plan = await planClose();
+            if (plan.error) { box.innerHTML = `<div class="banner bad">${esc(plan.error)}</div>`; return; }
+            box.innerHTML = `
+                <div class="banner" style="margin-bottom:12px">
+                    <strong>Close ${esc(plan.label)}?</strong>
+                    ${plan.skipped ? `<br>${plan.skipped} row(s) are already in the history and will be skipped.` : ''}
+                    <div class="table-wrap" style="margin:10px 0">
+                    ${plan.newRows.length ? `
+                        <table class="summary-table">
+                            <thead><tr><th>Category</th><th class="num">Txns</th><th class="num">Total</th></tr></thead>
+                            <tbody>${plan.summary.map(([c, v]) => `<tr><td>${esc(c)}</td><td class="num">${v.count}</td><td class="num">${money(v.total, true)}</td></tr>`).join('')}
+                            <tr class="total-row"><td><strong>Net</strong></td><td></td><td class="num"><strong>${money(plan.net, true)}</strong></td></tr></tbody>
+                        </table>` : '<p>All transactions are already in the history. Nothing new to add.</p>'}
+                    </div>
+                    This will:
+                    <ul style="margin:6px 0 10px 20px">
+                        ${plan.newRows.length ? `<li>Add ${plan.newRows.length} transaction(s) to the history</li>` : ''}
+                        ${plan.bankFiles.map(f => `<li>Archive <code>${esc(f)}</code> → <code>${esc(plan.archiveCsv)}</code></li>`).join('')}
+                        <li>Archive the processed file → <code>${esc(plan.archiveProcessed)}</code></li>
+                        <li>Clear <code>${PATHS.currentMonth}/</code></li>
+                    </ul>
+                    <div class="row"><button class="primary" id="confirm-close">Close ${esc(plan.label)}</button><button id="cancel-close">Cancel</button></div>
+                </div>`;
+            box.querySelector('#cancel-close').onclick = () => { box.innerHTML = ''; };
+            box.querySelector('#confirm-close').onclick = async () => {
+                box.querySelectorAll('button').forEach(b => { b.disabled = true; });
+                logEl.textContent = '';
+                try {
+                    await closeMonth(plan, log);
+                    result(`<div class="banner ok"><strong>${esc(plan.label)} closed.</strong> Add next month's bank export when it's ready.</div>`);
+                    toast(`${plan.label} closed`, 'ok');
+                } catch (e) {
+                    console.error(e);
+                    log(`Error: ${e.message}`, 'err');
+                    result(`<div class="banner bad">Couldn't close ${esc(plan.label)}: ${esc(e.message)}. See Details below.</div>`);
+                }
+                showFolder();
+            };
         };
 
         el.querySelector('#refresh').onclick = async () => {
@@ -285,7 +358,7 @@ const home = {
 
     canLeave(unloading) {
         if (!busy) return true;
-        return unloading ? false : confirm('Files are still loading. Leave anyway?');
+        return unloading ? false : confirm('Files are still loading. Leave and cancel? Rows that finished are saved.') && (running?.abort(), true);
     },
 };
 

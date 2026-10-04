@@ -41,7 +41,7 @@ export default {
                 <span id="total" class="muted" style="font-size:0.9em"></span>
                 <button class="primary" id="save">${isNew ? 'Create config.json' : 'Save'}</button>
             </div>
-            <p class="lead">Expected income and bills that step 3 uses for the projection. Saved to <code>config.json</code>; notes (keys starting with <code>_</code>) are kept.</p>
+            <p class="lead">Expected income and bills that This Month uses for the projection. Saved to <code>config.json</code>; notes (keys starting with <code>_</code>) are kept.</p>
             ${isNew ? '<div class="banner">No config.json found. Fill this in and click <strong>Create config.json</strong>.</div>' : ''}
             <div class="grid-2">
                 <section>

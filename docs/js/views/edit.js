@@ -44,7 +44,7 @@ export default {
                 <span class="spacer"></span>
                 <select id="file">${Object.entries(FILES).map(([k, f]) => `<option value="${k}"${k === file ? ' selected' : ''}>${esc(f.label)}</option>`).join('')}</select>
             </div>
-            <p class="lead">All your transactions in one table. Press Edit to fix categories, merchant names and notes, then Save. Use the ▾ on each column to sort or filter, like Excel. Edits in the current month are kept when you re-run step 3.</p>
+            <p class="lead">All your transactions in one table. Press Edit to fix categories, merchant names and notes, then Save. Use the ▾ on each column to sort or filter, like Excel. Edits in the current month are kept when you add a newer export of it on Setup.</p>
             <div id="body"><p class="muted">Loading…</p></div>`;
 
         el.querySelector('#file').onchange = e => {
@@ -56,7 +56,7 @@ export default {
         const body = el.querySelector('#body');
         const table = await readTable(FILES[file].path);
         if (!table) {
-            body.innerHTML = `<div class="banner">${esc(FILES[file].path)} doesn't exist yet. ${file === 'processed' ? 'Run step 3' : 'Run step 1'} on the <a href="#workflow">Workflow</a> page.</div>`;
+            body.innerHTML = `<div class="banner">${esc(FILES[file].path)} doesn't exist yet. ${file === 'processed' ? 'Add this month’s bank export' : 'Add bank files'} on the <a href="#home">Setup</a> page.</div>`;
             state = null;
             return;
         }

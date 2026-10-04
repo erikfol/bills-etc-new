@@ -1,4 +1,4 @@
-// The four workflow steps, ported from the Python scripts. Each takes a `log(text, kind)` callback.
+// The workflow steps (load, categorize, close the month), ported from the Python scripts; run from the Setup page. Each takes a `log(text, kind)` callback.
 import * as fs from './fs.js';
 import { PATHS, MASTER_COLS, CACHE_COLS, readTable, writeTable, readBankCsv, keyOf, loadConfig, parseConfig } from './data.js';
 import { aiCategorize } from './ollama.js';
@@ -189,7 +189,7 @@ export async function processCurrentMonth({ useAI, log, signal }) {
 /** Work out what closing would do, without changing anything. */
 export async function planClose() {
     const processed = await readTable(PATHS.processed);
-    if (!processed) return { error: `${PATHS.processed} not found. Run step 3 first.` };
+    if (!processed) return { error: `${PATHS.processed} not found. Add this month’s bank export on Setup first.` };
     if (!processed.rows.length) return { error: 'processed_current_month.csv is empty. Nothing to close.' };
 
     const yms = processed.rows.map(r => parseDate(r.Date)).filter(Boolean).map(yearMonth);

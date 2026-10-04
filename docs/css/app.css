@@ -213,15 +213,6 @@ th.filtered .fbtn::before { content: '⧩ '; font-size: 0.9em; }
 .progress-fill { height: 100%; border-radius: 10px; background: linear-gradient(90deg, #4a90d9, #5ba3e8); }
 .progress-label { display: flex; justify-content: space-between; font-size: 0.82em; color: #777; }
 
-/* ── Workflow steps ──────────────────────────────────────────────────── */
-.step { display: grid; grid-template-columns: 40px 1fr; gap: 14px; }
-.step-num {
-    width: 34px; height: 34px; border-radius: 50%; background: var(--navy-2); color: #fff;
-    display: flex; align-items: center; justify-content: center; font-weight: 700;
-}
-.step h3 { font-size: 1.05em; margin-bottom: 4px; }
-.step p { font-size: 0.9em; color: #555; margin-bottom: 10px; }
-.step .file-status { font-size: 0.85em; color: var(--muted); margin-bottom: 10px; }
 .log {
     background: #1a1a2e; color: #d6dbe6; font-family: Consolas, 'SF Mono', monospace; font-size: 0.82em;
     border-radius: 8px; padding: 12px 14px; max-height: 360px; overflow: auto; white-space: pre-wrap;
