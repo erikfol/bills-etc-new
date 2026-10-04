@@ -192,7 +192,7 @@ export default {
                 categoryColumn('cat', 'Category', s => s.category),
                 { id: 'day', label: 'Usual day', num: true, value: s => s.day, text: ordinal },
                 { ...moneyColumn('amt', 'Usual amount', s => s.amount), cell: s => `${s.varies ? '≈ ' : ''}${esc(money(s.amount))}` },
-                { id: 'n', label: 'Months (of 12)', num: true, value: s => s.months },
+                { id: 'n', label: 'Months seen', num: true, value: s => s.months, cell: s => `${s.months} <span class="muted">of last 12</span>` },
                 { id: 'why', label: 'Why', value: s => s.reason, tdClass: () => 'muted' },
                 { id: 'act', label: '', value: () => '', cell: (s) => `<span class="nowrap"><button class="small primary" data-add="${esc(s.merchant)}">Add</button> <button class="small" data-ignore="${esc(s.merchant)}" title="Stop suggesting this">Not a bill</button></span>` },
             ],

@@ -167,10 +167,10 @@ export function suggestBills(rows, bills, ignored = []) {
     const out = rows.filter(r => r._amt < 0 && r['AI Category'] !== 'Income' && String(r['Cleaned Merchant'] ?? '').trim());
     if (!out.length) return [];
     const end = out.reduce((a, r) => (r._date > a ? r._date : a), out[0]._date);
-    const from = new Date(end.getFullYear() - 1, end.getMonth(), end.getDate() + 1);
+    const from = new Date(end.getFullYear(), end.getMonth() - 11, 1); // the last 12 calendar months
     const groups = new Map();
     for (const r of out) {
-        if (r._date < from) continue;
+        if (r._date < from || r._date > end) continue;
         const k = merchantNameKey(r['Cleaned Merchant']);
         if (!k || taken.has(k) || skip.has(k)) continue;
         if (!groups.has(k)) groups.set(k, []);
