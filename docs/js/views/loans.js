@@ -2,9 +2,10 @@
 import {
     loadAccounts, addAccount, updateAccount, removeAccount, moveAccount, loadPayments, loadActivity, ledger, saveLedger, estimatePayoff,
     interestModel, simulate, paymentFor, minimumOf, nextPaymentDate, plusMonths,
-    ACCOUNT_TYPES, ACTIVITY_TYPES, LOANS_DIR, cleanUrl,
+    ACCOUNT_TYPES, ACTIVITY_TYPES, LOANS_DIR, cleanUrl, isLoan, LOAN_KINDS, loanTerms, amortize, scheduledBalance, nextDueDate,
 } from '../loans.js';
 import { drawBars, drawLines } from '../charts.js';
+import { parseBillDate, sheetDate } from '../sheet.js';
 import { esc, money, sum, toast } from '../util.js';
 import { requireFolder } from '../app.js';
 import { dataTable, closeFilterMenu } from '../datatable.js';
@@ -20,8 +21,8 @@ const TABS = [
         lead: 'Your credit cards. Each card has a payments table and an activity table (charges, interest, fees, credits); together with the opening balance they work out the balance.',
         titleHint: 'e.g. Chase Freedom', empty: 'No credit cards yet. Press <strong>+ Add credit card</strong> to set up your first one.' },
     { id: 'loans', label: 'Loans', type: 'Loan', one: 'loan', has: a => a.type !== 'Credit card',
-        lead: 'Your loans: car, student, personal, mortgage. Set the opening balance to what you owe (or the original amount), the APR, and add payments as you make them; interest goes in the activity table.',
-        titleHint: 'e.g. Car loan (Ally)', empty: 'No loans yet. Press <strong>+ Add loan</strong> to set one up: the amount you owe as the opening balance, the APR, and your monthly payment in the payoff planner.' },
+        lead: 'Your loans: mortgage, car, personal, student, timeshare. Enter the loan\'s terms and the balance from your latest statement; each payment you add is split into interest and principal for you.',
+        titleHint: 'e.g. Car loan (Ally)', empty: 'No loans yet. Press <strong>+ Add loan</strong> to set one up with its terms (amount, rate, length, monthly payment).' },
 ]; // account ids being edited with unsaved changes possible
 const shortDate = d => `${MON[d.getMonth()]} ${d.getDate()} ’${String(d.getFullYear()).slice(2)}`;
 /** 'yyyy-m-d|12.34' for an entry with a date and amount, else null. */
@@ -52,6 +53,105 @@ const maskNumber = n => { const digits = String(n).replace(/\s+/g, ''); return d
 /** What a payment that isn't made yet will take: the planned payment, or else the minimum. */
 const amountDue = p => (Number.isFinite(p.payment) ? p.payment : p.minPayment);
 
+/** The loan setup fields, filled from `a` (an account, or {} for a new loan). Used by Add and Edit. */
+function loanFields(a = {}, tab = TABS[1]) {
+    const v = (k, f = x => x) => (Number(a[k]) > 0 ? f(Number(a[k])) : '');
+    const years = Number(a.termMonths) > 0 && a.termMonths % 12 === 0;
+    const dateVal = x => { const d = parseBillDate(x); return d ? isoDate(d) : ''; };
+    return `
+        <h4 class="form-sub">The loan</h4>
+        <div class="add-grid">
+            <label class="field">Title<input type="text" name="title" required value="${esc(a.title || '')}" placeholder="${tab.titleHint}"></label>
+            <label class="field">Lender<input type="text" name="lender" value="${esc(a.lender || '')}" placeholder="e.g. Ally Bank"></label>
+            <label class="field">Loan type<select name="kind">${LOAN_KINDS.map(k => `<option${k === (a.loanKind || 'Other') ? ' selected' : ''}>${k}</option>`).join('')}</select></label>
+        </div>
+        <h4 class="form-sub">Terms <span class="muted">from your loan papers; used for the payment, schedule and payoff</span></h4>
+        <div class="add-grid">
+            <label class="field">Original amount ($)<input type="number" step="0.01" min="0" name="originalAmount" value="${v('originalAmount')}" placeholder="what you borrowed"></label>
+            <label class="field">First payment date<input type="date" name="firstPayment" value="${dateVal(a.firstPayment)}"></label>
+            <label class="field">Length<span class="row" style="gap:6px;flex-wrap:nowrap"><input type="number" min="1" step="1" name="term" style="width:90px" value="${years ? a.termMonths / 12 : v('termMonths')}"><select name="termUnit"><option value="12"${years || !a.termMonths ? ' selected' : ''}>years</option><option value="1"${a.termMonths && !years ? ' selected' : ''}>months</option></select></span></label>
+        </div>
+        <div class="add-grid">
+            <label class="field">Interest rate (APR %)<input type="number" step="0.001" min="0" name="apr" value="${v('apr')}"></label>
+            <label class="field">Monthly payment ($)<input type="number" step="0.01" min="0" name="payment" value="${v('payment')}" placeholder="principal + interest">
+                <span class="muted calc-pay" style="font-size:0.8em"></span></label>
+            <label class="field">Escrow ($ / month)<input type="number" step="0.01" min="0" name="escrow" value="${v('escrow')}" placeholder="optional: taxes, insurance">
+                <span class="muted" style="font-size:0.8em">Part of each payment that isn't the loan (mortgages)</span></label>
+        </div>
+        <h4 class="form-sub">Where it stands <span class="muted">from your latest statement</span></h4>
+        <div class="add-grid">
+            <label class="field">Balance owed ($)<input type="number" step="0.01" min="0" name="openingBalance" value="${Number(a.openingBalance) > 0 ? a.openingBalance : ''}" placeholder="leave blank to estimate">
+                <span class="muted est-bal" style="font-size:0.8em"></span></label>
+            <label class="field">As of<input type="date" name="openingDate" value="${dateVal(a.openingDate)}"></label>
+            <label class="field">Payment due day<input type="number" min="1" max="31" step="1" name="dueDay" value="${v('dueDay')}" placeholder="day of the month"></label>
+        </div>
+        <h4 class="form-sub">Other</h4>
+        <div class="add-grid">
+            <label class="field">Payment website<input type="text" inputmode="url" name="url" value="${esc(a.url || '')}" placeholder="optional: https://…"></label>
+            <label class="field">Account number<input type="text" name="accountNumber" autocomplete="off" value="${esc(a.accountNumber || '')}" placeholder="optional: the last 4 digits are enough"></label>
+            <span></span>
+        </div>
+        <div class="add-grid">
+            <label class="field" style="grid-column:1/-1">Notes<input type="text" name="description" value="${esc(a.description || '')}" placeholder="optional"></label>
+        </div>`;
+}
+
+/** Read the loan fields in `root`. Returns { title, description, url, accountNumber, apr, openingBalance, openingDate, loan }. */
+function readLoanFields(root) {
+    const f = n => root.querySelector(`[name=${n}]`);
+    const term = numOf(f('term').value) * (+f('termUnit').value || 1);
+    return {
+        title: f('title').value.trim(), description: f('description').value, url: f('url').value, accountNumber: f('accountNumber').value,
+        apr: numOf(f('apr').value), openingBalance: numOf(f('openingBalance').value), openingDate: dateOf(f('openingDate').value),
+        loan: {
+            lender: f('lender').value, kind: f('kind').value, originalAmount: numOf(f('originalAmount').value),
+            firstPayment: dateOf(f('firstPayment').value), termMonths: term, payment: numOf(f('payment').value),
+            escrow: numOf(f('escrow').value), dueDay: numOf(f('dueDay').value),
+        },
+    };
+}
+
+/**
+ * Live hints in the loan form: the monthly payment the terms work out to, and the balance the schedule expects
+ * today (used when you leave the balance blank). Returns a function giving that estimate {balance, date} or null.
+ */
+function bindLoanHints(root) {
+    const draft = () => {
+        const r = readLoanFields(root), l = r.loan;
+        return { type: 'Loan', apr: r.apr, originalAmount: l.originalAmount, termMonths: l.termMonths, payment: l.payment, firstPayment: l.firstPayment ? sheetDate(l.firstPayment, false) : '' };
+    };
+    const estimate = () => {
+        const S = scheduledBalance(draft(), new Date());
+        if (!S) return null;
+        const last = S.paymentsDue ? S.rows[S.paymentsDue - 1].date : null;
+        return { balance: S.balance, date: last, paymentsDue: S.paymentsDue, endDate: S.endDate };
+    };
+    const show = () => {
+        const T = loanTerms({ ...draft(), payment: NaN, planPayment: NaN });
+        const typed = numOf(root.querySelector('[name=payment]').value);
+        root.querySelector('.calc-pay').textContent = Number.isFinite(T.payment)
+            ? (Number.isFinite(typed) && Math.abs(typed - T.payment) >= 0.01 ? `the terms work out to ${money(T.payment)}` : `works out to ${money(T.payment)}${Number.isFinite(typed) ? ' ✓' : ' (used if blank)'}`)
+            : 'or fill in amount, rate and length to work it out';
+        const e = estimate();
+        root.querySelector('.est-bal').textContent = e ? `If blank: about ${money(e.balance)} by the schedule (${e.paymentsDue} payment${e.paymentsDue === 1 ? '' : 's'} made${e.endDate ? `, paid off ${MON_LONG(e.endDate)}` : ''})` : 'From your statement (or fill in the terms to estimate it)';
+    };
+    root.addEventListener('input', show);
+    root.addEventListener('change', show);
+    show();
+    return estimate;
+}
+
+/** Account values to save from the loan form; a blank balance is estimated from the schedule. */
+function loanSaveValues(root, estimate) {
+    const r = readLoanFields(root);
+    let openingBalance = r.openingBalance, openingDate = r.openingDate;
+    if (!Number.isFinite(openingBalance)) {
+        const e = estimate();
+        if (e) { openingBalance = e.balance; openingDate = e.date || (r.loan.firstPayment ? plusMonths(r.loan.firstPayment, -1) : new Date()); }
+    }
+    return { ...r, openingBalance: Number.isFinite(openingBalance) ? openingBalance : 0, openingDate: openingDate || new Date() };
+}
+
 export default {
     async render(el) {
         if (!requireFolder(el)) return;
@@ -75,6 +175,12 @@ export default {
             <p class="lead">${tab.lead}</p>
             <form id="acct-form" class="add-bill" hidden style="margin-bottom:18px">
                 <h3>Add a ${tab.one}</h3>
+                ${tab.id === 'loans' ? loanFields({}, tab) + `
+                <div class="row">
+                    <button type="submit" class="primary">Add loan</button>
+                    <button type="button" id="acct-cancel">Cancel</button>
+                    <span class="muted" style="font-size:0.85em">Saved in ${esc(LOANS_DIR)}/ in your bills-etc folder.</span>
+                </div>` : `
                 <div class="add-grid">
                     <label class="field">Title<input type="text" name="title" required placeholder="${tab.titleHint}"></label>
                     <label class="field">Type<select name="type">${ACCOUNT_TYPES.map(t => `<option${t === tab.type ? ' selected' : ''}>${t}</option>`).join('')}</select></label>
@@ -100,7 +206,7 @@ export default {
                     <button type="submit" class="primary">Add account</button>
                     <button type="button" id="acct-cancel">Cancel</button>
                     <span class="muted" style="font-size:0.85em">Saved in ${esc(LOANS_DIR)}/ in your bills-etc folder.</span>
-                </div>
+                </div>`}
             </form>
             <div id="due"></div>
             <section id="totals" hidden></section>
@@ -109,10 +215,25 @@ export default {
 
         // ── Add an account ──
         const acctForm = $('#acct-form');
-        $('#acct-open').onclick = () => { acctForm.hidden = false; $('#acct-open').hidden = true; acctForm.title.focus(); };
+        const loanEstimate = tab.id === 'loans' ? bindLoanHints(acctForm) : null;
+        $('#acct-open').onclick = () => { acctForm.hidden = false; $('#acct-open').hidden = true; acctForm.querySelector('[name=title]').focus(); };
         $('#acct-cancel').onclick = () => { acctForm.reset(); acctForm.hidden = true; $('#acct-open').hidden = false; };
         acctForm.onsubmit = async e => {
             e.preventDefault();
+            if (loanEstimate) {
+                const v = loanSaveValues(acctForm, loanEstimate);
+                if (!v.title) return;
+                if (v.url.trim() && !cleanUrl(v.url)) { toast('The payment website should start with https://', 'bad'); return; }
+                if (!(v.openingBalance > 0)) { toast('Enter the balance you owe, or the original amount, rate, length and first payment so it can be estimated', 'bad'); return; }
+                try {
+                    await addAccount({ ...v, type: 'Loan' });
+                    toast(`Added ${v.title}`, 'ok');
+                    this.render(el);
+                } catch (err) {
+                    toast(`Couldn't add it: ${err.message}`, 'bad');
+                }
+                return;
+            }
             const title = acctForm.title.value.trim();
             if (!title) return;
             if (acctForm.url.value.trim() && !cleanUrl(acctForm.url.value)) { toast('The payment website should start with https://', 'bad'); return; }
@@ -181,7 +302,8 @@ function renderTotals(el, all, tab) {
         const P = estimatePayoff(account, L);
         const limit = Number(account.creditLimit) > 0 ? Number(account.creditLimit) : NaN;
         const paid = sum(L.payments.filter(p => p.made && Number.isFinite(p.payment)).map(p => p.payment));
-        return { account, L, P, balance: L.balanceNow, limit, paid, apr: Number(account.apr) > 0 ? Number(account.apr) : NaN };
+        const start = isLoan(account) && Number(account.originalAmount) > 0 ? Number(account.originalAmount) : L.opening;
+        return { account, L, P, balance: L.balanceNow, limit, paid, start, apr: Number(account.apr) > 0 ? Number(account.apr) : NaN };
     });
     if (!rows.length) { el.hidden = true; return; }
     const owing = rows.filter(r => r.balance > 0.005);
@@ -228,14 +350,14 @@ function renderTotals(el, all, tab) {
                 <td class="nowrap">${r.P.status === 'ok' ? esc(MON_LONG(r.P.date)) : r.P.status === 'paid' ? '<span class="delta-good">paid off</span>' : r.P.status === 'never' ? '<span class="delta-bad">not at this rate</span>' : '<span class="muted">–</span>'}</td>
                 <td class="amt">${r.P.status === 'ok' && r.P.interest > 0.5 ? esc(money(r.P.interest)) : '<span class="muted">–</span>'}</td>
                 <td class="amt">${tab.id === 'loans'
-                    ? (r.L.opening > 0 ? `${Math.max(0, Math.round((r.L.opening - r.balance) / r.L.opening * 100))}%` : '<span class="muted">–</span>')
+                    ? (r.start > 0 ? `${Math.max(0, Math.round((r.start - r.balance) / r.start * 100))}%` : '<span class="muted">–</span>')
                     : Number.isFinite(r.limit) ? esc(money(r.limit - r.balance)) : '<span class="muted">–</span>'}</td>
             </tr>`).join('')}</tbody>
             <tfoot><tr class="total-row"><td><strong>Total</strong></td><td class="amt"><strong>${esc(money(balance))}</strong></td><td></td>
                 <td class="amt"><strong>${esc(money(monthly))}</strong></td><td></td>
                 <td class="amt"><strong>${interestLeft > 0.5 ? esc(money(interestLeft)) : ''}</strong></td>
                 <td class="amt"><strong>${tab.id === 'loans'
-                    ? (() => { const o = sum(rows.map(r => r.L.opening).filter(v => v > 0)); return o > 0 ? `${Math.max(0, Math.round((o - balance) / o * 100))}%` : ''; })()
+                    ? (() => { const o = sum(rows.map(r => r.start).filter(v => v > 0)); return o > 0 ? `${Math.max(0, Math.round((o - balance) / o * 100))}%` : ''; })()
                     : limit > 0 ? esc(money(available)) : ''}</strong></td></tr></tfoot>
         </table></div>
         ${tips.length ? `<ul class="insight-list" style="margin-top:12px">${tips.map(t => `<li>${t}</li>`).join('')}</ul>` : ''}`;
@@ -270,14 +392,34 @@ function renderAccount(sec, account, rawPayments, rawActivity, { first, last, re
             + `${P.interest > 0.5 ? ` · about ${esc(money(P.interest))} interest` : ''}</span>`);
     const limit = Number(account.creditLimit);
     const used = limit > 0 ? Math.max(0, L.balanceNow) / limit : NaN;
-    const isLoan = account.type !== 'Credit card';
-    const paidOff = Number.isFinite(L.opening) && L.opening > 0 ? (L.opening - L.balanceNow) / L.opening : NaN;
-    const loanCard = !isLoan || !Number.isFinite(paidOff) ? '' : card('Paid off', `${Math.max(0, Math.round(paidOff * 100))}%`,
+    const notCard = account.type !== 'Credit card';
+    const loan = isLoan(account), T = loan ? loanTerms(account) : null;
+    // A loan's progress counts from the original amount when you entered it, else from the opening balance.
+    const startAmount = loan && Number.isFinite(T.original) ? T.original : L.opening;
+    const paidOff = Number.isFinite(startAmount) && startAmount > 0 ? (startAmount - L.balanceNow) / startAmount : NaN;
+    const loanCard = !notCard || !Number.isFinite(paidOff) ? '' : card('Paid off', `${Math.max(0, Math.round(paidOff * 100))}%`,
         `<div class="progress-bar"><div class="progress-fill" style="width:${Math.min(100, Math.max(0, paidOff * 100)).toFixed(1)}%"></div></div>`
-        + `<span class="muted">${esc(money(Math.max(0, L.opening - L.balanceNow)))} of ${esc(money(L.opening))}</span>`, 'var(--green)');
-    const creditCard = isLoan ? loanCard : !(limit > 0) ? '' : card('Available credit', money(limit - L.balanceNow),
+        + `<span class="muted">${esc(money(Math.max(0, startAmount - L.balanceNow)))} of ${esc(money(startAmount))}${loan && Number.isFinite(T.original) ? ' borrowed' : ''}</span>`, 'var(--green)');
+    const creditCard = notCard ? loanCard : !(limit > 0) ? '' : card('Available credit', money(limit - L.balanceNow),
         `<span class="muted">of ${esc(money(limit))} limit · </span><span class="${used >= 0.7 ? 'delta-bad' : used >= 0.3 ? 'badge-warn' : 'delta-good'}">${Math.round(used * 100)}% used</span>`,
         limit - L.balanceNow < 0 ? 'var(--red)' : 'var(--green)');
+    const monthlyDue = loan && Number.isFinite(T.payment) ? Math.round((T.payment + T.escrow) * 100) / 100 : NaN;
+    const nextDue = loan ? (next?.date || nextPaymentDate(L, today(), account)) : null;
+    const nextAmount = loan ? (next && Number.isFinite(next.payment) ? next.payment : monthlyDue) : NaN;
+    const interestPaid = loan ? sum(made.map(p => p.interest).filter(Number.isFinite)) : 0;
+    const sched = loan ? scheduledBalance(account, today()) : null;
+    const loanCards = !loan ? '' : [
+        card('Monthly payment', Number.isFinite(monthlyDue) ? money(monthlyDue) : '–',
+            `<span class="muted">${Number.isFinite(T.payment) ? `${esc(money(T.payment))} principal &amp; interest${T.escrow ? ` + ${esc(money(T.escrow))} escrow` : ''}${T.computedPayment ? ' (from the terms)' : ''}` : 'add it in Edit'}`
+            + `<br>${T.apr ? `${esc(String(T.apr))}% APR` : 'rate not set'}${Number.isFinite(T.term) ? ` · ${esc(duration(T.term))}` : ''}${account.loanKind ? ` · ${esc(account.loanKind)}` : ''}</span>`),
+        card('Next payment', Number.isFinite(nextAmount) ? money(nextAmount) : '–',
+            `<span class="muted">${nextDue ? `${next && next.date < today() ? 'was due' : 'due'} ${esc(dLong(nextDue))}` : 'set the due day in Edit'}${next ? '' : ' · not added yet'}</span>`),
+        card('Interest', money(interestPaid),
+            `<span class="muted">paid so far (${made.length} payment${made.length === 1 ? '' : 's'})${P.status === 'ok' && P.interest > 0.5 ? `<br>about <strong>${esc(money(P.interest))}</strong> still to pay` : ''}</span>`),
+        sched ? card('Original schedule', sched.endDate ? MON_LONG(sched.endDate) : '–',
+            `<span class="muted">by now the balance should be ${esc(money(sched.balance))}<br></span>${(d => (Math.abs(d) < 1 ? '<span class="muted">you\'re right on schedule</span>'
+                : `<span class="${d > 0 ? 'delta-good' : 'delta-bad'}">${esc(money(Math.abs(d)))} ${d > 0 ? 'ahead of' : 'behind'} schedule</span>`))(sched.balance - L.balanceNow)}`) : '',
+    ].join('');
     const save = async (p, a) => {
         // Accounts set up before opening balances: keep the balance they started from before Before/After are stripped.
         if (!Number.isFinite(account.openingBalance)) {
@@ -288,7 +430,12 @@ function renderAccount(sec, account, rawPayments, rawActivity, { first, last, re
         await saveLedger(account, p, a);
         rerender();
     };
-    const strip = list => list.map(({ before, after, signed, balance, ...rest }) => rest); // drop worked-out fields before saving
+    // Drop worked-out fields before saving. A loan payment keeps its interest / escrow only if you typed them in.
+    const strip = list => list.map(({ before, after, signed, balance, principal, projected, interestTyped, escrowTyped, ...rest }) => ({
+        ...rest,
+        ...(interestTyped === false ? { interest: NaN } : {}),
+        ...(escrowTyped === false ? { escrow: NaN } : {}),
+    }));
 
     sec.innerHTML = `
         <h2 class="loan-head" title="Click to ${expanded.has(account.id) ? 'collapse' : 'expand'}">
@@ -302,44 +449,50 @@ function renderAccount(sec, account, rawPayments, rawActivity, { first, last, re
             <button type="button" class="small" data-edit>✎ Edit</button></h2>
         <div class="loan-summary">
             <span>Balance <strong>${esc(money(L.balanceNow))}</strong></span>
-            ${next && Number.isFinite(amountDue(next)) ? `<span>Next <strong>${esc(money(amountDue(next)))}</strong>${next.date ? ` ${next.date < today() ? 'was due' : 'due'} ${esc(dLong(next.date))}` : ''}</span>` : ''}
+            ${loan ? (Number.isFinite(nextAmount) && nextDue ? `<span>Next <strong>${esc(money(nextAmount))}</strong> ${next && next.date < today() ? 'was due' : 'due'} ${esc(dLong(nextDue))}</span>` : '')
+                : next && Number.isFinite(amountDue(next)) ? `<span>Next <strong>${esc(money(amountDue(next)))}</strong>${next.date ? ` ${next.date < today() ? 'was due' : 'due'} ${esc(dLong(next.date))}` : ''}</span>` : ''}
             ${P.status === 'ok' ? `<span>Payoff <strong>${esc(MON_LONG(P.date))}</strong></span>` : P.status === 'paid' ? '<span class="delta-good">Paid off ✓</span>' : ''}
             ${Number(account.creditLimit) > 0 ? `<span>Available <strong>${esc(money(account.creditLimit - L.balanceNow))}</strong></span>` : ''}
         </div>
         <div class="loan-body"${expanded.has(account.id) ? '' : ' hidden'}>
+        ${loan && account.lender ? `<p class="lead" style="margin:-4px 0 6px">${esc(account.loanKind && account.loanKind !== 'Other' ? `${account.loanKind} loan` : 'Loan')} from <strong>${esc(account.lender)}</strong></p>` : ''}
         ${account.description ? `<p class="lead" style="margin:-4px 0 14px">${esc(account.description)}</p>` : ''}
         <div class="view-mode">
             <div class="cards kpis">
                 ${card('Balance now', money(L.balanceNow),
                     `<span class="muted">opening ${esc(money(L.opening))}${L.openingDate ? ` (${esc(dLong(L.openingDate))})` : ''}<br>+ ${esc(money(added))} activity${credits ? ` − ${esc(money(credits))} credits` : ''} − ${esc(money(paid))} paid</span>`, 'var(--red)')}
-                ${card('Next payment', next && Number.isFinite(amountDue(next)) ? money(amountDue(next)) : '–',
+                ${loan ? loanCards : card('Next payment', next && Number.isFinite(amountDue(next)) ? money(amountDue(next)) : '–',
                     next ? `<span class="muted">${next.date ? `${next.date < today() ? 'was due' : 'due'} ${esc(dLong(next.date))}` : 'no date'}`
                         + `${Number.isFinite(next.minPayment) ? ` · minimum ${esc(money(next.minPayment))}` : ''}</span>` : '<span class="muted">every payment is made</span>')}
-                ${card('Paid so far', money(paid), `<span class="muted">${made.length} of ${payments.length} payment${payments.length === 1 ? '' : 's'} made</span>`, 'var(--green)')}
+                ${card('Paid so far', money(paid), `<span class="muted">${made.length} of ${payments.length} payment${payments.length === 1 ? '' : 's'} made${loan && made.length ? `<br>${esc(money(sum(made.map(p => p.principal).filter(Number.isFinite))))} to principal` : ''}</span>`, 'var(--green)')}
                 ${creditCard}
                 ${payoffCard}
-                ${card('Interest &amp; fees', money(interestFees),
+                ${loan ? '' : card('Interest &amp; fees', money(interestFees),
                     `<span class="muted">${Number(account.apr) > 0 ? `<strong>${esc(String(account.apr))}% APR</strong>` : 'APR not set: add it in Edit'}<br>`
                     + `${activity.length} activity entr${activity.length === 1 ? 'y' : 'ies'}</span>`)}
             </div>
             ${L.points.length > 1 ? '<h3 class="chart-title">Balance over time</h3><canvas class="c-bal" style="display:block;width:100%;height:200px;margin-bottom:14px"></canvas>' : ''}
             <div class="insights"></div>
             <details class="planner"${plannerOpen.has(account.id) ? ' open' : ''}>
-                <summary>📉 Payoff planner and burn-down</summary>
+                <summary>📉 ${loan ? 'What if I pay extra?' : 'Payoff planner and burn-down'}</summary>
                 <div class="planner-body"></div>
             </details>
+            ${loan ? `<details class="planner schedule"><summary>📅 Payment schedule from here</summary><div class="schedule-body"></div></details>` : ''}
             <div class="loan-tables">
                 <div>
                     <h3 class="chart-title">Payments</h3>
                     <div class="t-pay short-table"></div>
-                    ${payments.some(p => p.projected) ? `<p class="note" style="margin-top:6px">Planned payments show the balance as if each one before it is made, with a month's interest each: ${esc(P.model?.text || interestModel(account, L).text)}.</p>` : ''}
+                    ${loan ? `<p class="note" style="margin-top:6px">Each payment pays the month's interest${T.escrow ? ' and escrow' : ''} first; the rest lowers the balance. Interest marked ~ is estimated (balance × ${esc(String(T.apr || 0))}% ÷ 12): type the amount from your statement in Edit to make it exact.</p>`
+                        : payments.some(p => p.projected) ? `<p class="note" style="margin-top:6px">Planned payments show the balance as if each one before it is made, with a month's interest each: ${esc(P.model?.text || interestModel(account, L).text)}.</p>` : ''}
                     <div class="row" style="margin-top:10px"><button type="button" class="primary small" data-pay-open>+ Add payment</button></div>
                     <form class="add-bill pay-form" hidden>
                         <h3>Add a payment</h3>
                         <div class="add-grid">
                             <label class="field">Date<input type="date" name="date" required></label>
-                            <label class="field">Min payment ($)<input type="number" name="minPayment" step="0.01" placeholder="optional"></label>
-                            <label class="field">Payment ($)<input type="number" name="payment" step="0.01"></label>
+                            ${loan ? `<label class="field">Payment ($)<input type="number" name="payment" step="0.01" min="0" required></label>
+                            <label class="field">Interest ($)<input type="number" name="interest" step="0.01" min="0" placeholder="optional: from your statement"></label>`
+                            : `<label class="field">Min payment ($)<input type="number" name="minPayment" step="0.01" placeholder="optional"></label>
+                            <label class="field">Payment ($)<input type="number" name="payment" step="0.01"></label>`}
                         </div>
                         <div class="add-grid">
                             <label class="field">Payment made?<select name="made"><option value="N">N — not yet</option><option value="Y">Y — made</option></select></label>
@@ -350,14 +503,14 @@ function renderAccount(sec, account, rawPayments, rawActivity, { first, last, re
                     </form>
                 </div>
                 <div>
-                    <h3 class="chart-title">Activity <span class="muted" style="font-weight:400">charges, interest, fees, credits</span></h3>
+                    <h3 class="chart-title">${loan ? 'Fees &amp; adjustments <span class="muted" style="font-weight:400">late fees, credits, other changes to the balance</span>' : 'Activity <span class="muted" style="font-weight:400">charges, interest, fees, credits</span>'}</h3>
                     <div class="t-act short-table"></div>
                     <div class="row" style="margin-top:10px"><button type="button" class="primary small" data-act-open>+ Add activity</button></div>
                     <form class="add-bill act-form" hidden>
                         <h3>Add activity</h3>
                         <div class="add-grid">
                             <label class="field">Date<input type="date" name="date" required></label>
-                            <label class="field">Type<select name="type">${ACTIVITY_TYPES.map(t => `<option>${t.type}</option>`).join('')}</select></label>
+                            <label class="field">Type<select name="type">${ACTIVITY_TYPES.filter(t => !loan || t.type !== 'Interest').map(t => `<option${loan && t.type === 'Fee' ? ' selected' : ''}>${t.type}</option>`).join('')}</select></label>
                             <label class="field">Amount ($)<input type="number" name="amount" step="0.01" min="0" required></label>
                         </div>
                         <div class="add-grid">
@@ -388,7 +541,24 @@ function renderAccount(sec, account, rawPayments, rawActivity, { first, last, re
     });
 
     // ── Read-only tables ──
-    dataTable($('.t-pay'), {
+    const hasEscrow = loan && payments.some(p => p.escrow > 0.005);
+    if (loan) dataTable($('.t-pay'), {
+        columns: [
+            dateCol('date', 'Date', p => p.date),
+            moneyCol('payment', 'Payment', p => p.payment),
+            { ...moneyCol('interest', 'Interest', p => p.interest), cell: p => (Number.isFinite(p.interest) ? `${p.interestTyped ? '' : '<span class="muted" title="Estimated: balance × APR ÷ 12">~</span>'}${esc(money(p.interest))}` : '') },
+            moneyCol('principal', 'Principal', p => p.principal),
+            ...(hasEscrow ? [moneyCol('escrow', 'Escrow', p => p.escrow)] : []),
+            { ...moneyCol('after', 'Balance after', p => p.after), tdClass: p => `nowrap${p.made ? '' : ' muted'}` },
+            { id: 'made', label: 'Status', value: statusOf, cell: statusBadge },
+            { id: 'notes', label: 'Notes', value: p => p.notes, tdClass: () => 'note-text' },
+        ],
+        rows: payments,
+        sort: { col: 'date', dir: 'desc' },
+        rowClass: p => (statusOf(p) === 'Planned' ? 'planned-row' : ''),
+        empty: 'No payments yet',
+    });
+    else dataTable($('.t-pay'), {
         columns: [
             dateCol('date', 'Date', p => p.date),
             moneyCol('min', 'Min', p => p.minPayment),
@@ -434,6 +604,14 @@ function renderAccount(sec, account, rawPayments, rawActivity, { first, last, re
     // ── Add a payment: a month after the last one, same amounts ──
     const pf = $('.pay-form'), prev = payments.filter(p => p.date).at(-1) || null;
     const payPreview = () => {
+        if (loan) {
+            const d = dateOf(pf.date.value), pay = numOf(pf.payment.value), int = numOf(pf.interest.value);
+            if (!d || !Number.isFinite(pay)) { $('.pay-preview').textContent = ''; return; }
+            const trial = ledger(account, [...rawPayments, { date: d, payment: pay, interest: int, made: pf.made.value === 'Y', _new: true }], rawActivity);
+            const x = trial.payments.find(q => q._new);
+            $('.pay-preview').textContent = x ? `${x.interestTyped ? '' : 'about '}${money(x.interest)} interest${x.escrow > 0.005 ? ` · ${money(x.escrow)} escrow` : ''} · ${money(x.principal)} principal → balance ${money(x.after)}${pf.made.value === 'Y' ? '' : ' (once made)'}` : '';
+            return;
+        }
         const d = dateOf(pf.date.value), pay = numOf(pf.payment.value), min = numOf(pf.minPayment.value);
         if (!d) { $('.pay-preview').textContent = ''; return; }
         const trial = ledger(account, [...rawPayments, { date: d, payment: pay, minPayment: min, made: pf.made.value === 'Y' }], rawActivity);
@@ -442,18 +620,36 @@ function renderAccount(sec, account, rawPayments, rawActivity, { first, last, re
     };
     $('[data-pay-open]').onclick = () => {
         pf.reset();
-        pf.date.value = isoDate(prev?.date ? addMonths(prev.date, 1) : new Date());
-        if (Number.isFinite(prev?.minPayment)) pf.minPayment.value = prev.minPayment;
-        if (Number.isFinite(prev?.payment)) pf.payment.value = prev.payment;
+        if (loan) {
+            pf.date.value = isoDate(prev?.date ? (account.dueDay ? nextDueDate(account, prev.date) : addMonths(prev.date, 1)) : nextDue || new Date());
+            const amount = Number.isFinite(prev?.payment) ? prev.payment : monthlyDue;
+            if (Number.isFinite(amount)) pf.payment.value = amount.toFixed(2);
+        } else {
+            pf.date.value = isoDate(prev?.date ? addMonths(prev.date, 1) : new Date());
+            if (Number.isFinite(prev?.minPayment)) pf.minPayment.value = prev.minPayment;
+            if (Number.isFinite(prev?.payment)) pf.payment.value = prev.payment;
+        }
         pf.hidden = false;
         $('[data-pay-open]').hidden = true;
         payPreview();
-        pf.minPayment.focus();
+        (loan ? pf.payment : pf.minPayment).focus();
     };
     $('[data-pay-cancel]').onclick = () => { pf.hidden = true; $('[data-pay-open]').hidden = false; };
     pf.oninput = payPreview;
     pf.onsubmit = async e => {
         e.preventDefault();
+        if (loan) {
+            const date = dateOf(pf.date.value), payment = numOf(pf.payment.value), interest = numOf(pf.interest.value);
+            if (!date || !Number.isFinite(payment)) { toast('Enter the date and the payment', 'bad'); return; }
+            if (rawPayments.some(p => sameDay(p.date, date) && sameAmount(p.payment, payment))) { toast(dupText(date, payment, 'a payment on'), 'bad'); return; }
+            try {
+                await save([...strip(rawPayments), { date, payment, interest, made: pf.made.value === 'Y', notes: pf.notes.value }], strip(rawActivity));
+                toast(`Added a ${money(payment)} payment to ${account.title}`, 'ok');
+            } catch (err) {
+                toast(`Save failed: ${err.message}. Is the file open in Excel?`, 'bad');
+            }
+            return;
+        }
         const date = dateOf(pf.date.value), payment = numOf(pf.payment.value), minPayment = numOf(pf.minPayment.value);
         if (!date || !(Number.isFinite(payment) || Number.isFinite(minPayment))) { toast('Enter the date and the payment or the minimum', 'bad'); return; }
         const amt = Number.isFinite(payment) ? payment : minPayment;
@@ -489,6 +685,30 @@ function renderAccount(sec, account, rawPayments, rawActivity, { first, last, re
         }
     };
 
+    // ── Payment schedule from here (loans): your monthly payment, month by month, until it's paid off ──
+    if (loan) {
+        const body = $('.schedule-body');
+        const pay = P.status === 'ok' ? P.payment : T.payment;
+        const rows = Number.isFinite(pay) && L.balanceNow > 0.005 && nextDue ? amortize(L.balanceNow, pay, T.rate, nextDue) : [];
+        body.innerHTML = !rows.length
+            ? `<p class="muted">${L.balanceNow > 0.005 ? 'Add the monthly payment and rate in Edit to see the schedule.' : 'Paid off: nothing left to schedule.'}</p>`
+            : `<p class="note" style="margin:6px 0 10px">${rows.length} payment${rows.length === 1 ? '' : 's'} of ${esc(money(pay))}${T.escrow ? ` (plus ${esc(money(T.escrow))} escrow)` : ''} from ${esc(dLong(rows[0].date))} to ${esc(dLong(rows.at(-1).date))}:
+                ${esc(money(sum(rows.map(r => r.interest))))} interest and ${esc(money(sum(rows.map(r => r.principal))))} principal. Planned payments in the table above aren't included.</p>
+                <div class="t-sched short-table"></div>`;
+        if (rows.length) dataTable(body.querySelector('.t-sched'), {
+            columns: [
+                { id: 'n', label: '#', num: true, value: r => r.n, text: String },
+                dateCol('date', 'Date', r => r.date),
+                moneyCol('payment', 'Payment', r => r.payment),
+                moneyCol('interest', 'Interest', r => r.interest),
+                moneyCol('principal', 'Principal', r => r.principal),
+                moneyCol('balance', 'Balance after', r => r.balance),
+            ],
+            rows,
+            sort: { col: 'n', dir: 'asc' },
+        });
+    }
+
     // ── Insights and the payoff planner ──
     const drawPlanner = renderPlanner(sec, account, L, P, rerender, { rawPayments, rawActivity, save, strip });
 
@@ -507,7 +727,15 @@ function renderAccount(sec, account, rawPayments, rawActivity, { first, last, re
 
     // ── Edit mode: account details, opening balance, and every payment and activity row ──
     const ed = $('.edit-mode');
-    const payRow = (p = {}) => `<tr>
+    const payRow = (p = {}) => loan ? `<tr>
+        <td><input type="date" data-k="date" value="${p.date ? isoDate(p.date) : ''}"></td>
+        <td><input type="number" step="0.01" data-k="payment" value="${Number.isFinite(p.payment) ? p.payment : ''}"></td>
+        <td><input type="number" step="0.01" data-k="interest" value="${Number.isFinite(p.interest) ? p.interest : ''}" placeholder="estimate"></td>
+        <td><input type="number" step="0.01" data-k="escrow" value="${Number.isFinite(p.escrow) ? p.escrow : ''}" placeholder="${T.escrow ? T.escrow.toFixed(2) : ''}"></td>
+        <td><select data-k="made"><option${p.made ? '' : ' selected'}>N</option><option${p.made ? ' selected' : ''}>Y</option></select></td>
+        <td><input type="text" data-k="notes" value="${esc(p.notes || '')}"></td>
+        <td><button type="button" class="small danger" data-del title="Remove this row">✕</button></td>
+    </tr>` : `<tr>
         <td><input type="date" data-k="date" value="${p.date ? isoDate(p.date) : ''}"></td>
         <td><input type="number" step="0.01" data-k="minPayment" value="${Number.isFinite(p.minPayment) ? p.minPayment : ''}"></td>
         <td><input type="number" step="0.01" data-k="payment" value="${Number.isFinite(p.payment) ? p.payment : ''}"></td>
@@ -529,7 +757,8 @@ function renderAccount(sec, account, rawPayments, rawActivity, { first, last, re
         sec.querySelector('.view-mode').hidden = true;
         $('[data-edit]').hidden = true;
         ed.hidden = false;
-        ed.innerHTML = `
+        ed.innerHTML = `${loan ? `<div class="loan-fields">${loanFields({ ...account, openingBalance: L.opening, openingDate: L.openingDate ? sheetDate(L.openingDate, false) : account.openingDate })}</div>
+            <p class="note">To move this to Credit Cards, change its type: <select name="type">${ACCOUNT_TYPES.map(t => `<option${t === account.type ? ' selected' : ''}>${t}</option>`).join('')}</select></p>` : `
             <div class="add-grid">
                 <label class="field">Title<input type="text" name="title" value="${esc(account.title)}"></label>
                 <label class="field">Type<select name="type">${ACCOUNT_TYPES.map(t => `<option${t === account.type ? ' selected' : ''}>${t}</option>`).join('')}</select></label>
@@ -552,14 +781,14 @@ function renderAccount(sec, account, rawPayments, rawActivity, { first, last, re
                 <label class="field">Account number<input type="text" name="accountNumber" autocomplete="off" value="${esc(account.accountNumber || '')}" placeholder="optional: the last 4 digits are enough"></label>
                 <label class="field">Credit limit ($)<input type="number" step="0.01" min="0" name="creditLimit" value="${Number(account.creditLimit) > 0 ? account.creditLimit : ''}" placeholder="optional"></label>
                 <span class="muted" style="align-self:end;font-size:0.85em;padding-bottom:8px">Available credit = credit limit − balance now.</span>
-            </div>
-            <h3 class="chart-title">Payments <span class="muted" style="font-weight:400">Before and After are worked out from the balance</span></h3>
+            </div>`}
+            <h3 class="chart-title">Payments <span class="muted" style="font-weight:400">${loan ? 'Interest and escrow from your statement are optional; blank interest is estimated' : 'Before and After are worked out from the balance'}</span></h3>
             <div class="table-wrap loan-grid"><table class="sheet-table pay-grid">
-                <thead><tr><th>Date</th><th>Min payment</th><th>Payment</th><th>Made</th><th>Notes</th><th></th></tr></thead>
+                <thead><tr>${loan ? '<th>Date</th><th>Payment</th><th>Interest</th><th>Escrow</th><th>Made</th><th>Notes</th><th></th>' : '<th>Date</th><th>Min payment</th><th>Payment</th><th>Made</th><th>Notes</th><th></th>'}</tr></thead>
                 <tbody>${rawPayments.map(payRow).join('')}</tbody>
             </table></div>
             <div class="row" style="margin:8px 0 16px"><button type="button" class="small" data-add-pay-row>+ Add payment row</button></div>
-            <h3 class="chart-title">Activity</h3>
+            <h3 class="chart-title">${loan ? 'Fees &amp; adjustments' : 'Activity'}</h3>
             <div class="table-wrap loan-grid"><table class="sheet-table act-grid">
                 <thead><tr><th>Date</th><th>Description</th><th>Type</th><th>Amount</th><th>Notes</th><th></th></tr></thead>
                 <tbody>${rawActivity.map(actRow).join('')}</tbody>
@@ -575,12 +804,16 @@ function renderAccount(sec, account, rawPayments, rawActivity, { first, last, re
                 <span class="muted" style="font-size:0.85em">Saves to ${esc(account.file)} and ${esc(account.activityFile)}. Close them in Excel first.</span>
             </div>`;
     };
+    let editEstimate = null;
+    $('[data-edit]').addEventListener('click', () => { if (loan) editEstimate = bindLoanHints(ed.querySelector('.loan-fields')); });
     ed.addEventListener('click', async e => {
         if (e.target.closest('[data-add-pay-row]')) {
             const lastRow = [...ed.querySelectorAll('.pay-grid tbody tr')].at(-1);
             const v = k => lastRow?.querySelector(`[data-k="${k}"]`)?.value ?? '';
             const d = dateOf(v('date'));
-            ed.querySelector('.pay-grid tbody').insertAdjacentHTML('beforeend', payRow({ date: d ? addMonths(d, 1) : new Date(), minPayment: numOf(v('minPayment')), payment: numOf(v('payment')) }));
+            ed.querySelector('.pay-grid tbody').insertAdjacentHTML('beforeend', payRow(loan
+                ? { date: d ? (account.dueDay ? nextDueDate(account, d) : addMonths(d, 1)) : nextDue || new Date(), payment: numOf(v('payment')) || monthlyDue }
+                : { date: d ? addMonths(d, 1) : new Date(), minPayment: numOf(v('minPayment')), payment: numOf(v('payment')) }));
         } else if (e.target.closest('[data-add-act-row]')) {
             ed.querySelector('.act-grid tbody').insertAdjacentHTML('beforeend', actRow({ date: new Date(), type: 'Charge' }));
         } else if (e.target.closest('[data-del]')) {
@@ -596,7 +829,10 @@ function renderAccount(sec, account, rawPayments, rawActivity, { first, last, re
             rerender();
         } else if (e.target.closest('[data-save]')) {
             const cells = (tr, k) => tr.querySelector(`[data-k="${k}"]`).value;
-            const pays = [...ed.querySelectorAll('.pay-grid tbody tr')].map(tr => ({
+            const pays = [...ed.querySelectorAll('.pay-grid tbody tr')].map(tr => (loan ? {
+                date: dateOf(cells(tr, 'date')), payment: numOf(cells(tr, 'payment')), interest: numOf(cells(tr, 'interest')),
+                escrow: numOf(cells(tr, 'escrow')), made: cells(tr, 'made') === 'Y', notes: cells(tr, 'notes'),
+            } : {
                 date: dateOf(cells(tr, 'date')), minPayment: numOf(cells(tr, 'minPayment')), payment: numOf(cells(tr, 'payment')),
                 made: cells(tr, 'made') === 'Y', notes: cells(tr, 'notes'),
             })).filter(p => p.date || Number.isFinite(p.payment) || Number.isFinite(p.minPayment) || p.notes);
@@ -618,6 +854,20 @@ function renderAccount(sec, account, rawPayments, rawActivity, { first, last, re
             if (dup) { toast(dup, 'bad'); return; }
             const url = ed.querySelector('[name=url]').value;
             if (url.trim() && !cleanUrl(url)) { toast('The payment website should start with https://', 'bad'); return; }
+            if (loan) {
+                const v = loanSaveValues(ed.querySelector('.loan-fields'), editEstimate || (() => null));
+                try {
+                    await updateAccount(account.id, { ...v, type: ed.querySelector('[name=type]').value, planPayment: account.planPayment });
+                    const updated = (await loadAccounts()).find(x => x.id === account.id);
+                    await saveLedger(updated, pays, acts);
+                    editing.delete(account.id);
+                    toast(`Saved ${v.title}`, 'ok');
+                    rerender();
+                } catch (err) {
+                    toast(`Save failed: ${err.message}. Is the file open in Excel?`, 'bad');
+                }
+                return;
+            }
             const openingBalance = numOf(ed.querySelector('[name=openingBalance]').value);
             const openingDate = dateOf(ed.querySelector('[name=openingDate]').value);
             try {
@@ -675,6 +925,11 @@ function renderPlanner(sec, account, L, P, rerender, { rawPayments, rawActivity,
             tips.push(m.status === 'ok'
                 ? `Paying only the ${esc(money(minimum))} minimum would take ${duration(m.months)}${m.interest > 0.5 ? ` and cost about ${esc(money(m.interest))} in interest` : ''}.`
                 : `Paying only the ${esc(money(minimum))} minimum wouldn't pay it off at this interest.`);
+        }
+        const S = isLoan(account) ? scheduledBalance(account, today()) : null;
+        if (S?.endDate && P.status === 'ok') {
+            const diff = (S.endDate.getFullYear() * 12 + S.endDate.getMonth()) - (P.date.getFullYear() * 12 + P.date.getMonth());
+            tips.push(`The loan's original term ends <strong>${esc(MON_LONG(S.endDate))}</strong>${Math.abs(diff) < 1 ? ', and that\'s when you\'re on track to finish.' : `; you're on track to finish <strong>${duration(Math.abs(diff))} ${diff > 0 ? 'early' : 'late'}</strong>.`}`);
         }
         const firstInterest = model.rate ? balance * model.rate : model.flat;
         if (firstInterest > 0.005 && P.payment > 0) tips.push(`About ${esc(money(firstInterest))} of your next payment goes to interest (${Math.round(firstInterest / P.payment * 100)}%).`);
@@ -799,7 +1054,8 @@ function renderPlanner(sec, account, L, P, rerender, { rawPayments, rawActivity,
             const r2 = n => Math.round(n * 100) / 100; // same rounding as the Payments table
             const owed = r2(bal + (model.rate ? r2(bal * model.rate) : model.flat));
             const amount = k === s.months - 1 ? Math.round(owed * 100) / 100 : pay;
-            rows.push({ date, minPayment: future[k]?.minPayment ?? minimum, payment: Math.min(pay, amount), made: false, notes: future[k]?.notes || '' });
+            const escrow = isLoan(account) ? loanTerms(account).escrow : 0; // a loan payment also carries its escrow
+            rows.push({ date, minPayment: future[k]?.minPayment ?? minimum, payment: Math.round((Math.min(pay, amount) + escrow) * 100) / 100, made: false, notes: future[k]?.notes || '' });
             bal = owed - Math.min(pay, amount);
         }
         return {

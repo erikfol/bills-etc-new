@@ -5,6 +5,9 @@
 //   activity  <id>-activity.csv  Date, Description, Type, Amount, Notes   (charges, interest, fees, credits)
 // The balance is a running ledger: opening balance + activity − payments made, in date order. Before / After are
 // worked out from it (and written to the payments CSV so Excel shows them too).
+// Loans (type 'Loan') also keep their terms (original amount, first payment, term, rate, monthly payment, escrow,
+// due day) and their payments CSV has Interest / Escrow / Principal columns: each payment pays the month's interest
+// (from your statement if you type it in, else balance × APR ÷ 12) and any escrow first; the rest is principal.
 import * as fs from './fs.js';
 import { parseCSV, toCSV } from './csv.js';
 import { parseBillDate, parseMoney, sheetDate } from './sheet.js';
@@ -13,7 +16,12 @@ export const LOANS_DIR = 'inputs/loans_cc';
 const INDEX = `${LOANS_DIR}/accounts.json`;
 export const PAYMENT_COLS = ['Date', 'Min Payment', 'Payment', 'Before', 'After', 'Payment Made', 'Notes'];
 export const ACTIVITY_COLS = ['Date', 'Description', 'Type', 'Amount', 'Notes'];
+export const LOAN_PAYMENT_COLS = ['Date', 'Payment', 'Interest', 'Escrow', 'Principal', 'Before', 'After', 'Payment Made', 'Notes'];
 export const ACCOUNT_TYPES = ['Loan', 'Credit card', 'Other'];
+export const LOAN_KINDS = ['Mortgage', 'Auto', 'Personal', 'Student', 'Timeshare', 'Solar / energy', 'Home equity', 'Other'];
+export const isLoan = a => a?.type === 'Loan';
+// Loan details kept in accounts.json (numbers > 0, or null).
+const LOAN_NUMBERS = ['originalAmount', 'termMonths', 'payment', 'escrow', 'dueDay'];
 /** Activity types; `sign` is how each one moves the balance. */
 export const ACTIVITY_TYPES = [
     { type: 'Charge', sign: 1 },
@@ -60,7 +68,7 @@ export function cleanUrl(url) {
 }
 
 /** Add an account and create its empty payments and activity files. Returns the new account. */
-export async function addAccount({ title, description, type, url, openingBalance, openingDate, apr, accountNumber, creditLimit }) {
+export async function addAccount({ title, description, type, url, openingBalance, openingDate, apr, accountNumber, creditLimit, loan = null }) {
     const accounts = await loadAccounts();
     const id = slug(title, new Set(accounts.map(a => a.id)));
     const account = {
@@ -72,11 +80,21 @@ export async function addAccount({ title, description, type, url, openingBalance
         creditLimit: Number.isFinite(creditLimit) && creditLimit > 0 ? round2(creditLimit) : null,
         file: `${LOANS_DIR}/${id}.csv`, activityFile: `${LOANS_DIR}/${id}-activity.csv`,
     };
-    if ((await fs.readText(account.file)) == null) await fs.writeText(account.file, toCSV(PAYMENT_COLS, []));
+    if (loan) Object.assign(account, cleanLoan(loan));
+    if ((await fs.readText(account.file)) == null) await fs.writeText(account.file, toCSV(isLoan(account) ? LOAN_PAYMENT_COLS : PAYMENT_COLS, []));
     if ((await fs.readText(account.activityFile)) == null) await fs.writeText(account.activityFile, toCSV(ACTIVITY_COLS, []));
     accounts.push(account);
     await saveAccounts(accounts);
     return account;
+}
+
+/** Loan details from a form: {lender, kind, originalAmount, firstPayment (Date), termMonths, payment, escrow, dueDay}. */
+function cleanLoan(l) {
+    const out = { lender: String(l.lender || '').trim(), loanKind: LOAN_KINDS.includes(l.kind) ? l.kind : 'Other' };
+    for (const k of LOAN_NUMBERS) out[k] = Number.isFinite(l[k]) && l[k] > 0 ? (k === 'termMonths' || k === 'dueDay' ? Math.round(l[k]) : round2(l[k])) : null;
+    if (out.dueDay) out.dueDay = Math.min(31, out.dueDay);
+    out.firstPayment = l.firstPayment ? sheetDate(l.firstPayment, false) : '';
+    return out;
 }
 
 /** Change an account's title / description / type / url / opening balance (its files stay the same). */
@@ -90,6 +108,7 @@ export async function updateAccount(id, changes) {
     if ('openingDate' in changes) a.openingDate = changes.openingDate ? sheetDate(changes.openingDate, false) : '';
     for (const k of ['apr', 'planPayment', 'creditLimit']) if (k in changes) a[k] = Number.isFinite(changes[k]) && changes[k] > 0 ? changes[k] : null;
     if (changes.accountNumber != null) a.accountNumber = String(changes.accountNumber).trim();
+    if (changes.loan) Object.assign(a, cleanLoan(changes.loan));
     await saveAccounts(accounts);
 }
 
@@ -125,6 +144,9 @@ export async function loadPayments(account) {
         after: parseMoney(get('After')),
         made: /^y/i.test(String(get('Payment Made')).trim()),
         notes: String(get('Notes')).trim(),
+        // Loans: interest / escrow you typed in from the statement (blank = worked out).
+        interest: parseMoney(get('Interest')),
+        escrow: parseMoney(get('Escrow')),
     })).sort(byDate);
 }
 
@@ -146,6 +168,7 @@ export async function loadActivity(account) {
  * activity (with balance), points [{date, balance, what}], balanceNow }.
  */
 export function ledger(account, payments, activity) {
+    if (isLoan(account)) return loanLedger(account, payments, activity);
     let opening = Number.isFinite(account.openingBalance) ? account.openingBalance : NaN;
     let openingDate = parseBillDate(account.openingDate);
     if (!Number.isFinite(opening)) {
@@ -200,6 +223,21 @@ export function ledger(account, payments, activity) {
 
 /** Write an account's whole payments table, oldest first. Before / After come from ledger(). */
 export async function savePayments(account, payments) {
+    if (isLoan(account)) {
+        const rows = [...payments].sort(byDate).map(p => ({
+            Date: p.date ? sheetDate(p.date, false) : '',
+            Payment: moneyCell(p.payment),
+            Interest: p.interestTyped ? moneyCell(p.interest) : '',
+            Escrow: p.escrowTyped ? moneyCell(p.escrow) : '',
+            Principal: moneyCell(p.principal),
+            Before: moneyCell(p.before),
+            After: moneyCell(p.after),
+            'Payment Made': p.made ? 'Y' : 'N',
+            Notes: String(p.notes || '').replace(/[\r\n]+/g, ' ').trim(),
+        }));
+        await fs.writeText(account.file, toCSV(LOAN_PAYMENT_COLS, rows));
+        return;
+    }
     const rows = [...payments].sort(byDate).map(p => ({
         Date: p.date ? sheetDate(p.date, false) : '',
         'Min Payment': moneyCell(p.minPayment),
@@ -266,6 +304,7 @@ export function simulate(balance, payment, { rate = 0, flat = 0 } = {}, maxMonth
         if (payment <= i + 0.005 || balances.length >= maxMonths) return { status: 'never', months: Infinity, interest: Infinity, balances, monthlyInterest: i };
         interest += i;
         bal = Math.max(0, bal + i - payment);
+        if (bal < 1) bal = 0; // a few cents of rounding go with the last payment
         balances.push(Math.round(bal * 100) / 100);
     }
     return { status: 'ok', months: balances.length, interest, balances };
@@ -285,11 +324,23 @@ export function minimumOf(L) {
 }
 
 /** Month of the next payment: the next unmade one, else a month after the last, else next month. */
-export function nextPaymentDate(L, now = new Date()) {
+export function nextPaymentDate(L, now = new Date(), account = null) {
     const next = L.payments.find(p => !p.made && p.date);
     if (next) return next.date;
     const lastDate = L.payments.filter(p => p.date).at(-1)?.date;
+    if (isLoan(account) && (Number(account.dueDay) > 0 || parseBillDate(account.firstPayment))) return nextDueDate(account, lastDate || now);
     return lastDate ? plusMonths(lastDate, 1) : plusMonths(now, 1);
+}
+
+/** The first due date after `after`: on the loan's due day, else the day of its first payment. */
+export function nextDueDate(account, after) {
+    const day = Number(account.dueDay) || parseBillDate(account.firstPayment)?.getDate() || after.getDate();
+    for (let k = 0; k < 3; k++) {
+        const y = after.getFullYear(), m = after.getMonth() + k;
+        const d = new Date(y, m, Math.min(day, new Date(y, m + 1, 0).getDate()));
+        if (d > after) return d;
+    }
+    return plusMonths(after, 1);
 }
 export { plusMonths };
 
@@ -305,15 +356,121 @@ export function estimatePayoff(account, L, now = new Date()) {
     const made = L.payments.filter(p => p.made && Number.isFinite(p.payment) && p.payment > 0);
     const nextUnmade = unmade.find(p => Number.isFinite(p.payment) || Number.isFinite(p.minPayment)) || null;
     let payment = Number(account.planPayment), basis;
+    const loanPay = isLoan(account) ? loanTerms(account).payment : NaN; // principal & interest, without escrow
     if (payment > 0) basis = 'your planned monthly payment';
+    else if (loanPay > 0) { payment = loanPay; basis = 'your monthly payment'; }
     else if (nextUnmade) { payment = Number.isFinite(nextUnmade.payment) ? nextUnmade.payment : nextUnmade.minPayment; basis = Number.isFinite(nextUnmade.payment) ? 'your next payment' : 'the minimum payment'; }
-    else if (made.length) { const last = made.slice(-3); payment = last.reduce((a, p) => a + p.payment, 0) / last.length; basis = `your last ${last.length === 1 ? 'payment' : `${last.length} payments' average`}`; }
+    else if (made.length) { const last = made.slice(-3); payment = last.reduce((a, p) => a + (isLoan(account) ? p.payment - (p.escrow || 0) : p.payment), 0) / last.length; basis = `your last ${last.length === 1 ? 'payment' : `${last.length} payments' average`}`; }
     if (!(payment > 0)) return { status: 'unknown', reason: 'Add a payment (or a planned monthly payment in Edit) to estimate a payoff date.' };
     const model = interestModel(account, L, now);
     const sim = simulate(balance, payment, model);
     if (sim.status === 'never') return { status: 'never', payment, basis, monthlyInterest: sim.monthlyInterest, model };
     return {
         status: 'ok', months: sim.months, payment, basis, interest: sim.interest, model,
-        date: plusMonths(nextPaymentDate(L, now), sim.months - 1), rateText: model.text,
+        date: plusMonths(nextPaymentDate(L, now, account), sim.months - 1), rateText: model.text,
     };
+}
+
+// ── Loans ────────────────────────────────────────────────────────────────────
+
+/** A loan's terms with defaults: { rate (monthly), apr, payment (principal & interest), escrow, original, first, term, dueDay }. */
+export function loanTerms(account) {
+    const apr = Number(account.apr) > 0 ? Number(account.apr) : 0;
+    const original = Number(account.originalAmount) > 0 ? Number(account.originalAmount) : NaN;
+    const term = Number(account.termMonths) > 0 ? Number(account.termMonths) : NaN;
+    const rate = apr / 100 / 12;
+    let payment = Number(account.payment) > 0 ? Number(account.payment) : Number(account.planPayment) > 0 ? Number(account.planPayment) : NaN;
+    let computedPayment = false;
+    if (!Number.isFinite(payment) && Number.isFinite(original) && Number.isFinite(term)) { payment = round2(paymentFor(original, term, { rate })); computedPayment = true; }
+    return {
+        apr, rate, payment, original, term,
+        escrow: Number(account.escrow) > 0 ? Number(account.escrow) : 0,
+        first: parseBillDate(account.firstPayment),
+        dueDay: Number(account.dueDay) > 0 ? Number(account.dueDay) : null,
+        computedPayment,
+    };
+}
+
+/**
+ * Loan version of ledger(). Each payment (in date order, fees/credits from the activity table in between) pays the
+ * month's interest — what you typed from the statement, else balance × APR ÷ 12 — and the escrow, and the rest is
+ * principal. Payments not made yet are projected the same way. Starting point: the opening balance (what you owed on
+ * its date), or else the original amount a month before the first payment.
+ */
+function loanLedger(account, payments, activity) {
+    const T = loanTerms(account);
+    let opening = Number.isFinite(account.openingBalance) && account.openingBalance > 0 ? account.openingBalance : NaN;
+    let openingDate = parseBillDate(account.openingDate);
+    if (!Number.isFinite(opening) && Number.isFinite(T.original)) {
+        opening = T.original;
+        openingDate = T.first ? plusMonths(T.first, -1) : openingDate;
+    }
+    if (!Number.isFinite(opening)) opening = 0;
+    const events = [
+        ...activity.map(a => ({ kind: 'activity', date: a.date, item: a })),
+        ...payments.map(p => ({ kind: 'payment', date: p.date, item: p })),
+    ].sort((x, y) => byDate(x, y) || (x.kind === y.kind ? 0 : x.kind === 'activity' ? -1 : 1));
+    let bal = opening, planned = 0;
+    const firstDate = events.find(e => e.date)?.date;
+    const openAt = openingDate && firstDate ? (firstDate < openingDate ? firstDate : openingDate) : openingDate || firstDate;
+    const points = openAt ? [{ date: openAt, balance: round2(bal), what: 'Opening balance' }] : [];
+    const outPayments = [], outActivity = [];
+    for (const e of events) {
+        if (e.kind === 'activity') {
+            const a = e.item, amt = Number.isFinite(a.amount) ? a.amount * signOf(a.type) : 0;
+            bal = round2(bal + amt);
+            outActivity.push({ ...a, signed: amt, balance: bal });
+            if (a.date) points.push({ date: a.date, balance: bal, what: `${a.type}: ${a.description || ''}`.trim() });
+            continue;
+        }
+        const p = e.item;
+        const start = Math.max(0, p.made ? bal : bal + planned);
+        const interestTyped = Number.isFinite(p.interest), escrowTyped = Number.isFinite(p.escrow);
+        const interest = interestTyped ? p.interest : start > 0.005 ? round2(start * T.rate) : 0;
+        const pay = Number.isFinite(p.payment) ? p.payment : 0;
+        const escrow = escrowTyped ? p.escrow : Math.min(T.escrow, pay);
+        const principal = round2(pay - escrow - interest);
+        const before = round2(start), after = round2(start - principal);
+        const row = { ...p, interest, escrow, principal, before, after, interestTyped, escrowTyped };
+        if (p.made) {
+            bal = after;
+            if (p.date) points.push({ date: p.date, balance: bal, what: 'Payment' });
+        } else {
+            planned = round2(planned - principal);
+            row.projected = true;
+        }
+        outPayments.push(row);
+    }
+    return { opening, openingDate, payments: outPayments.sort(byDate), activity: outActivity.sort(byDate), points, balanceNow: bal, terms: T };
+}
+
+/**
+ * Month-by-month schedule from `balance`, paying `payment` (principal & interest) a month starting on `from`:
+ * [{ n, date, payment, interest, principal, balance }] until paid off (max 600).
+ */
+export function amortize(balance, payment, rate, from) {
+    const rows = [];
+    let bal = balance;
+    for (let n = 1; bal > 0.005 && n <= 600; n++) {
+        const interest = round2(bal * rate);
+        if (payment <= interest) break;
+        // The last payment is whatever is left (a few cents of rounding are folded into it).
+        const pay = bal - (payment - interest) < 1 ? round2(bal + interest) : payment;
+        const principal = round2(pay - interest);
+        bal = round2(bal - principal);
+        rows.push({ n, date: plusMonths(from, n - 1), payment: pay, interest, principal, balance: Math.max(0, bal) });
+    }
+    return rows;
+}
+
+/**
+ * Where the original schedule says the balance should be after the payments due by `date` (original amount, first
+ * payment, term, rate). null without the original terms. { balance, paymentsDue, endDate }.
+ */
+export function scheduledBalance(account, date = new Date()) {
+    const T = loanTerms(account);
+    if (!Number.isFinite(T.original) || !T.first || !Number.isFinite(T.payment)) return null;
+    const rows = amortize(T.original, T.payment, T.rate, T.first);
+    const due = rows.filter(r => r.date <= date);
+    return { balance: due.length ? due.at(-1).balance : T.original, paymentsDue: due.length, endDate: rows.at(-1)?.date || null, rows };
 }

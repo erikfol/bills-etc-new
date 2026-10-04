@@ -439,3 +439,8 @@ section.unit h2 .badge { text-transform: none; letter-spacing: 0; font-size: 0.7
 .bill-grid td, .bill-grid th { white-space: nowrap; font-size: 0.88em; }
 .sched-tag { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 0.8em; background: #e8f0fe; color: var(--blue-text); white-space: nowrap; }
 .sched-tag.unsched { background: #f0f0f0; color: #888; }
+
+/* Loan form */
+.form-sub { font-size: 0.85em; text-transform: uppercase; letter-spacing: 0.4px; color: var(--muted); margin: 14px 0 8px; font-weight: 600; }
+.form-sub:first-of-type { margin-top: 4px; }
+.form-sub .muted { text-transform: none; letter-spacing: 0; font-weight: 400; }
