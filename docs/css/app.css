@@ -107,6 +107,10 @@ pre.cmd {
 }
 .banner.bad { background: #fdecea; color: #a8322a; border-color: #f5c6c0; }
 .banner.ok { background: #e8f8ef; color: #1e7a46; border-color: #bfe8cf; }
+.banner.updated-fresh { background: #e8f8ef; color: #1e7a46; border-color: #bfe8cf; }
+.banner.updated-aging { background: #fffbe0; color: #7a6400; border-color: #f0e08a; }
+.banner.updated-old { background: #fff0e0; color: #a0520a; border-color: #f5c99a; }
+.banner.updated-stale { background: #fdecea; color: #a8322a; border-color: #f5c6c0; }
 
 /* ── Controls ────────────────────────────────────────────────────────── */
 button, .btn {

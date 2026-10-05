@@ -76,6 +76,17 @@ export async function readText(path) {
     }
 }
 
+/** When the file was last written, or null if it doesn't exist. */
+export async function modifiedAt(path) {
+    const [d, name] = split(path);
+    try {
+        return new Date((await (await (await dir(d)).getFileHandle(name)).getFile()).lastModified);
+    } catch (e) {
+        if (e.name === 'NotFoundError' || e.name === 'TypeMismatchError') return null;
+        throw e;
+    }
+}
+
 export async function writeText(path, text) {
     const [d, name] = split(path);
     const fh = await (await dir(d, true)).getFileHandle(name, { create: true });

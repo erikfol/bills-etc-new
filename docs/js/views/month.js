@@ -1,3 +1,4 @@
+import * as fs from '../fs.js';
 import { PATHS, readTable, loadConfig, parseConfig, keyOf } from '../data.js';
 import { computeProjection, statusBadge } from '../finance.js';
 import { parseBills, hasBills, billMatcher, schedColumn, paymentsByMonth, billMonth, firstPaid, allTransactions, STATUS } from '../bills.js';
@@ -40,7 +41,10 @@ async function loadProjection() {
     }
     const proj = computeProjection({ config: parseConfig(cfg), rows: processed.rows, masterRows: master?.rows, today, exclude, fixedTotal });
     const plan = bills ? leftToSpend({ cfg, rows: all, ym: yearMonth(today), bills, match, dataThrough: latest, today: now, ended }) : null;
-    return { ...proj, ended, bills, match, plan, dataThrough: latest };
+    // Last update = when this month's bank export was added on Setup (edits in Finance Table don't count).
+    const [bankFile] = await fs.listFiles(PATHS.currentMonth);
+    const updated = (bankFile && await fs.modifiedAt(`${PATHS.currentMonth}/${bankFile}`)) || await fs.modifiedAt(PATHS.processed);
+    return { ...proj, ended, bills, match, plan, dataThrough: latest, updated };
 }
 
 const SOURCE_TAGS = {
@@ -70,6 +74,18 @@ function billsSummary(p) {
         open.length ? `${money(open.reduce((a, x) => a + x.expected, 0))} still due` : 'nothing left to pay',
         trouble.length ? `<span style="color:var(--red)">needs a look: ${esc(trouble.map(x => x.bill.name).join(', '))}</span>` : '',
     ].filter(Boolean).join(' · ');
+}
+
+/** Green 0–3 days old, yellow 4–10, orange 11–20, red 21+. */
+function updatedBanner(p) {
+    if (!p.updated) return '';
+    const day = d => new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    const age = Math.max(0, Math.round((day(new Date()) - day(p.updated)) / 86400000));
+    const level = age <= 3 ? 'fresh' : age <= 10 ? 'aging' : age <= 20 ? 'old' : 'stale';
+    const ago = age === 0 ? 'today' : age === 1 ? 'yesterday' : `${age} days ago`;
+    const when = p.updated.toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
+    return `<div class="banner updated-${level}"><strong>Last updated ${ago}</strong> · ${esc(when)}${p.dataThrough ? ` · bank data through ${esc(shortDay(p.dataThrough))}` : ''}
+        ${age > 3 ? ' · <a href="#home">Add a new bank export on Setup</a>' : ''}</div>`;
 }
 
 const shortDay = d => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
@@ -177,6 +193,7 @@ export default {
         const hasSources = lastSources.size > 0;
 
         el.innerHTML = `
+            ${updatedBanner(p)}
             <div class="row" style="margin-bottom:6px">
                 <h1 class="page">Current Month Projection: ${esc(label)}</h1>
                 <span class="spacer"></span>
