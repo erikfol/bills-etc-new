@@ -1,5 +1,5 @@
-// Bills page: scheduled bills (config.json `scheduled_bills`), this month's status, a 12-month
-// payment grid and suggestions from your history.
+// Bills page: scheduled bills (config.json `scheduled_bills`), a 12-month payment grid and
+// suggestions from your history. This month's bill status is on the This Month page.
 import { loadConfig } from '../data.js';
 import { parseBills, hasBills, billMonth, paymentsByMonth, firstPaid, suggestBills, saveBills, allTransactions, addMonths, STATUS, EVERY } from '../bills.js';
 import { merchantNameKey } from '../merchants.js';
@@ -13,7 +13,6 @@ let formOpen = false;  // an add/edit form with possible unsaved input
 
 const fmtDay = d => `${MONTH_NAMES[d.getMonth()].slice(0, 3)} ${d.getDate()}`;
 const ordinal = n => n + (n % 10 === 1 && n !== 11 ? 'st' : n % 10 === 2 && n !== 12 ? 'nd' : n % 10 === 3 && n !== 13 ? 'rd' : 'th');
-const badge = st => `<span class="badge ${STATUS[st][0]}">${STATUS[st][1]}</span>`;
 
 export default {
     async render(el) {
@@ -54,18 +53,11 @@ export default {
                     <button id="next" title="Next month" aria-label="Next month">▶</button>
                 </div>
             </div>
-            <p class="lead">Scheduled bills leave on about the same day every month (or every few months). Everything else is unscheduled.
+            <p class="lead">Scheduled bills leave on about the same day every month (or every few months). Everything else is unscheduled. This month's bills (paid, still due, late) are on <a href="#month">This Month</a>.
                 ${dataThrough ? `Bank data is loaded through <strong>${esc(dataThrough.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }))}</strong>.` : ''}</p>
             ${bills.length ? '' : `<div class="banner"><strong>No scheduled bills yet.</strong> Add them from <strong>Suggested from your history</strong> below, or with <strong>+ Add a bill</strong>.
                 ${!hasBills(cfg) && legacy.length ? `Until you add one, This Month keeps using the ${legacy.length} fixed expenses from Config:
                 ${legacy.map(([k, v]) => `${esc(k.replace(/_/g, ' '))} ${esc(money(v))}`).join(' · ')}. Once you add a bill, your bills replace that list (a copy is kept in config.json).` : ''}</div>`}
-
-            <div class="cards kpis" id="kpis"${bills.length ? '' : ' hidden'}></div>
-
-            <section id="month-sec"${bills.length ? '' : ' hidden'}>
-                <h2 id="month-title">This month</h2>
-                <div id="t-month"></div>
-            </section>
 
             <section>
                 <h2>Your bills <span class="sub">${bills.length} bill${bills.length === 1 ? '' : 's'}</span><span class="spacer"></span><button class="small" id="add">+ Add a bill</button></h2>
@@ -75,7 +67,7 @@ export default {
             </section>
 
             <section id="grid-sec"${bills.length ? '' : ' hidden'}>
-                <h2>Last 12 months <span class="sub">day paid and amount · <span class="late-cell">orange</span> = late or a different amount · ✕ = missed</span></h2>
+                <h2 id="grid-title">Last 12 months <span class="sub">day paid and amount · <span class="late-cell">orange</span> = late or a different amount · ✕ = missed</span></h2>
                 <div id="grid"></div>
             </section>
 
@@ -214,51 +206,13 @@ export default {
             $('#unignore').onclick = () => save(bills, 'Suggestions reset', { bill_suggestions_ignored: [] });
         }
 
-        // ── One month ──
-        const monthTable = dataTable($('#t-month'), {
-            columns: [
-                { id: 'name', label: 'Bill', value: x => x.bill.name, cell: x => `<strong>${esc(x.bill.name)}</strong>` },
-                { id: 'due', label: 'Due', value: x => x.dueOn.getTime(), text: v => fmtDay(new Date(v)), num: true, sortLabels: ['Earliest → Latest', 'Latest → Earliest'],
-                    cell: x => (x.due ? esc(fmtDay(x.dueOn)) : '<span class="muted">not due</span>') },
-                { ...moneyColumn('exp', 'Expected', x => (x.due ? x.expected : NaN)), cell: x => (x.due ? `${x.bill.varies ? '≈ ' : ''}${esc(money(x.expected))}` : '') },
-                { id: 'status', label: 'Status', value: x => STATUS[x.status][1], cell: x => badge(x.status) },
-                { id: 'on', label: 'Paid on', value: x => x.payments.map(r => fmtDay(r._date)).join(', ') },
-                { ...moneyColumn('paid', 'Paid', x => (x.payments.length ? x.paid : NaN)), tdClass: x => (x.changed ? 'late-cell' : '') },
-                { id: 'note', label: 'Note', value: x => [
-                    x.status === 'late-paid' ? `${x.lateDays} days late` : '',
-                    x.changed ? `${money(x.paid - x.expected, true)} vs usual` : '',
-                    x.status === 'unknown' ? 'due date passed; bank data not loaded that far' : '',
-                    x.payments.length > 1 ? `${x.payments.length} payments` : '',
-                ].filter(Boolean).join(' · '), tdClass: () => 'muted' },
-            ],
-            rows: [],
-            sort: { col: 'due', dir: 'asc' },
-            empty: 'No bills due this month',
-            footer: list => `<tr class="total-row"><td colspan="2"><strong>Total</strong></td><td class="amt"><strong>${esc(money(list.reduce((a, x) => a + (x.due ? x.expected : 0), 0)))}</strong></td><td></td><td></td><td class="amt"><strong>${esc(money(list.reduce((a, x) => a + x.paid, 0)))}</strong></td><td></td></tr>`,
-        });
-
+        // ── Month picker: the 12-month grid ends at the selected month ──
         const show = next => {
             ym = remembered = next;
             const i = yms.indexOf(ym);
             $('#month').value = ym;
             $('#prev').disabled = i <= 0;
             $('#next').disabled = i >= yms.length - 1;
-            $('#month-title').innerHTML = ym === thisYm ? `This month <span class="sub">${esc(longMonthLabel(ym))}</span>` : esc(longMonthLabel(ym));
-
-            const list = bills.map(b => billMonth(b, ym, pays.get(b.name).get(ym), { dataThrough, today, since: firstPaid(pays.get(b.name)) }))
-                .filter(x => x.due || x.payments.length);
-            monthTable.setRows(list);
-            const sumOf = (l, f) => l.reduce((a, x) => a + f(x), 0);
-            const paid = list.filter(x => x.payments.length);
-            const open = list.filter(x => !x.payments.length && ['due', 'late', 'unknown'].includes(x.status));
-            const trouble = list.filter(x => ['late', 'missed', 'late-paid'].includes(x.status) || x.changed);
-            const card = (label, value, sub, color = '') => `<div class="card"><div class="label">${label}</div><div class="value"${color ? ` style="color:${color}"` : ''}>${esc(value)}</div><div class="sub cmp"><span class="muted">${sub}</span></div></div>`;
-            $('#kpis').innerHTML = [
-                card('Scheduled', money(sumOf(list, x => (x.due ? x.expected : 0))), `${list.filter(x => x.due).length} bills expected`),
-                card('Paid', money(sumOf(paid, x => x.paid)), `${paid.length} bill${paid.length === 1 ? '' : 's'}`, 'var(--green)'),
-                card('Still to pay', money(sumOf(open, x => x.expected)), open.length ? `${open.length} bill${open.length === 1 ? '' : 's'}${open.some(x => x.status === 'unknown') ? ', some past due date but not in the bank data yet' : ''}` : 'nothing left', open.length ? 'var(--orange)' : ''),
-                card('Needs a look', String(trouble.length), trouble.length ? esc(trouble.map(x => x.bill.name).join(', ')) : 'nothing late, missed or changed', trouble.length ? 'var(--red)' : ''),
-            ].join('');
             drawGrid();
         };
 

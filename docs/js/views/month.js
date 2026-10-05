@@ -1,12 +1,14 @@
 import { PATHS, readTable, loadConfig, parseConfig, keyOf } from '../data.js';
-import { computeProjection, statusBadge, withParsed } from '../finance.js';
-import { parseBills, hasBills, billMatcher, schedColumn, paymentsByMonth, billMonth, allTransactions, STATUS } from '../bills.js';
+import { computeProjection, statusBadge } from '../finance.js';
+import { parseBills, hasBills, billMatcher, schedColumn, paymentsByMonth, billMonth, firstPaid, allTransactions, STATUS } from '../bills.js';
 import { leftToSpend, savePlan } from '../plan.js';
 import { lastSources } from '../workflow.js';
 import { MONTH_NAMES, parseDate, yearMonth } from '../dates.js';
 import { esc, money, toast } from '../util.js';
 import { requireFolder } from '../app.js';
 import { dataTable, dateColumn, moneyColumn, categoryColumn, closeFilterMenu } from '../datatable.js';
+
+const fmtDay = d => `${MONTH_NAMES[d.getMonth()].slice(0, 3)} ${d.getDate()}`;
 
 async function loadProjection() {
     const cfg = await loadConfig();
@@ -22,20 +24,22 @@ async function loadProjection() {
     const today = ended ? new Date(latest.getFullYear(), latest.getMonth() + 1, 0) : now;
 
     // Scheduled bills: what's been paid this month, plus what's still due; their payments aren't day-scaled.
+    // Payments come from all history, so a bill paid a few days early (late last month) counts for this month.
     let bills = null, exclude = null, fixedTotal = null, match = null;
+    const all = await allTransactions();
     if (hasBills(cfg)) {
         const list = parseBills(cfg);
         match = billMatcher(list);
         exclude = r => !!match(r);
         const ym = yearMonth(today);
-        const pays = paymentsByMonth(list, withParsed(processed.rows).filter(r => r._date));
-        bills = list.map(b => billMonth(b, ym, pays.get(b.name).get(ym), { dataThrough: latest, today: now }))
+        const pays = paymentsByMonth(list, all);
+        bills = list.map(b => billMonth(b, ym, pays.get(b.name).get(ym), { dataThrough: latest, today: now, since: firstPaid(pays.get(b.name)) }))
             .filter(x => x.due || x.payments.length)
             .map(x => ({ ...x, counted: x.payments.length ? x.paid : x.due && !ended ? x.expected : 0 }));
         fixedTotal = bills.reduce((a, x) => a + x.counted, 0);
     }
     const proj = computeProjection({ config: parseConfig(cfg), rows: processed.rows, masterRows: master?.rows, today, exclude, fixedTotal });
-    const plan = bills ? leftToSpend({ cfg, rows: await allTransactions(), ym: yearMonth(today), bills, match, dataThrough: latest, today: now, ended }) : null;
+    const plan = bills ? leftToSpend({ cfg, rows: all, ym: yearMonth(today), bills, match, dataThrough: latest, today: now, ended }) : null;
     return { ...proj, ended, bills, match, plan, dataThrough: latest };
 }
 
@@ -47,6 +51,26 @@ const SOURCE_TAGS = {
     merchant: '<span class="source-tag source-history">merchant rule</span>',
     rules: '<span class="source-tag source-rules">rules</span>',
 };
+
+/** Why a bill needs a look: late, a different amount, not loaded yet, several payments. */
+const billNote = x => [
+    x.status === 'late-paid' ? `${x.lateDays} days late` : '',
+    x.changed ? `${money(x.paid - x.expected, true)} vs usual` : '',
+    x.status === 'unknown' ? 'due date passed; bank data not loaded that far' : '',
+    x.payments.length > 1 ? `${x.payments.length} payments` : '',
+].filter(Boolean).join(' · ');
+
+/** "3 of 14 paid · $3,051.52 still due · needs a look: Capital One" */
+function billsSummary(p) {
+    const due = p.bills.filter(x => x.due), paid = p.bills.filter(x => x.payments.length);
+    const open = p.bills.filter(x => !x.payments.length && ['due', 'late', 'unknown'].includes(x.status));
+    const trouble = p.bills.filter(x => ['late', 'missed', 'late-paid'].includes(x.status) || x.changed);
+    return [
+        `${paid.length} of ${due.length} paid`,
+        open.length ? `${money(open.reduce((a, x) => a + x.expected, 0))} still due` : 'nothing left to pay',
+        trouble.length ? `<span style="color:var(--red)">needs a look: ${esc(trouble.map(x => x.bill.name).join(', '))}</span>` : '',
+    ].filter(Boolean).join(' · ');
+}
 
 const shortDay = d => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 
@@ -177,7 +201,7 @@ export default {
             </section>
 
             <section>
-                ${p.bills ? `<h2>Scheduled Bills <span class="sub">paid, or still due this month</span><span class="spacer"></span><a href="#bills" style="font-size:0.85em;text-transform:none;letter-spacing:0">Manage bills →</a></h2>`
+                ${p.bills ? `<h2>Scheduled Bills <span class="sub">${billsSummary(p)}</span><span class="spacer"></span><a href="#bills" style="font-size:0.85em;text-transform:none;letter-spacing:0">Manage bills →</a></h2>`
                     : `<h2>Fixed Expenses <span class="sub">(from config)</span></h2>`}
                 <div id="t-fixed"></div>
                 ${p.bills ? '' : '<p class="note">Set up your scheduled bills on the <a href="#bills">Bills</a> page to see which are paid and which are still due.</p>'}
@@ -197,15 +221,21 @@ export default {
 
         if (p.bills) dataTable(el.querySelector('#t-fixed'), {
             columns: [
-                { id: 'name', label: 'Bill', value: x => x.bill.name },
-                dateColumn('due', 'Due', x => (x.due ? x.dueOn.toLocaleDateString('en-US') : '')),
+                { id: 'name', label: 'Bill', value: x => x.bill.name, cell: x => `<strong>${esc(x.bill.name)}</strong>` },
+                { id: 'due', label: 'Due', value: x => x.dueOn.getTime(), text: v => fmtDay(new Date(v)), num: true, sortLabels: ['Earliest → Latest', 'Latest → Earliest'],
+                    cell: x => (x.due ? esc(fmtDay(x.dueOn)) : '<span class="muted">not due</span>') },
+                { ...moneyColumn('exp', 'Expected', x => (x.due ? x.expected : NaN)), cell: x => (x.due ? `${x.bill.varies ? '≈ ' : ''}${esc(money(x.expected))}` : '') },
                 { id: 'status', label: 'Status', value: x => STATUS[x.status][1], cell: x => `<span class="badge ${STATUS[x.status][0]}">${STATUS[x.status][1]}</span>` },
+                { id: 'on', label: 'Paid on', value: x => x.payments.map(r => fmtDay(r._date)).join(', ') },
                 { ...moneyColumn('paid', 'Paid', x => (x.payments.length ? x.paid : NaN)), tdClass: x => (x.changed ? 'late-cell' : '') },
-                moneyColumn('counted', p.ended ? 'Counted' : 'Counted in projection', x => x.counted, { bold: true }),
+                moneyColumn('counted', p.ended ? 'Counted' : 'Counted in left to spend', x => x.counted, { bold: true }),
+                { id: 'note', label: 'Note', value: billNote, tdClass: () => 'muted' },
             ],
             rows: p.bills,
             sort: { col: 'due', dir: 'asc' },
-            footer: (rows, filtered) => `<tr class="total-row"><td colspan="3"><strong>Total scheduled${filtered ? ' (filtered)' : ''}</strong></td><td class="amt">${money(sumOf(rows, x => x.paid))}</td><td class="amt"><strong>${money(sumOf(rows, x => x.counted))}</strong></td></tr>`,
+            footer: (rows, filtered) => `<tr class="total-row"><td colspan="2"><strong>Total${filtered ? ' (filtered)' : ''}</strong></td>
+                <td class="amt"><strong>${money(sumOf(rows, x => (x.due ? x.expected : 0)))}</strong></td><td></td><td></td>
+                <td class="amt"><strong>${money(sumOf(rows, x => x.paid))}</strong></td><td class="amt"><strong>${money(sumOf(rows, x => x.counted))}</strong></td><td></td></tr>`,
             empty: 'No scheduled bills this month',
         });
         else dataTable(el.querySelector('#t-fixed'), {
