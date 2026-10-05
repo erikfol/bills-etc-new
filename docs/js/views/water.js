@@ -57,6 +57,7 @@ export default async function renderWater(el) {
 
     el.innerHTML = `
         <div id="catchup"></div>
+        <div id="details-soon"></div>
         <div id="unpaid"></div>
         <div class="row dash-head">
             <h2 class="page-sub">Water</h2>
@@ -369,6 +370,13 @@ export default async function renderWater(el) {
             <span>📬 <strong>There's a new water statement to add (${esc(nqText)}).</strong> Your last bill (${esc(qLong(last))}) was due ${esc(dLong(lastDue))}, so the next one was due around ${esc(dLong(nextDue))}.</span>
             <span class="spacer"></span><button class="primary small" id="catchup-add">Add it now</button></div>`
         : `<div class="banner ok">✓ <strong>All water statements are caught up.</strong> The next one (${esc(nqText)}) is due around ${esc(dLong(nextDue))}.</div>`;
+    // About a month before the next due date the quarter's details can be looked up.
+    // Green while waiting; yellow from that day on (something to do); gone once the statement is due.
+    const detailsOn = addMonths(nextDue, -1);
+    $('#details-soon').innerHTML = today() >= nextDue ? ''
+        : today() >= detailsOn
+            ? `<div class="banner">🔎 <strong>Around ${esc(dLong(detailsOn))} you should be able to get the details of this quarter (${esc(nqText)}).</strong> ${portalLink}</div>`
+            : `<div class="banner ok">🗓️ <strong>Around ${esc(dLong(detailsOn))} you should be able to get the details of this quarter (${esc(nqText)}).</strong></div>`;
     const unpaid = bills.filter(b => !b.isPaid);
     $('#unpaid').innerHTML = unpaid.length
         ? `<div class="banner bad unpaid-list"><strong>Not paid yet:</strong> ${unpaid.map(b => `<span class="nowrap">${esc(qLong(b))} (${esc(money(b.total))}${b.due ? `, due ${esc(dLong(b.due))}` : ''}) ${markBtn(b, true, 'Mark paid', 'primary')}</span>`).join(' ')}</div>` : '';
