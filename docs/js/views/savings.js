@@ -139,9 +139,15 @@ export default {
         }, msg);
 
         // ── Status ──
+        // Up to date = no bucket is missing a paycheck deposit. Green 0 behind, yellow 1–2, orange 3–4, red 5+.
+        const most = Math.max(0, ...allDue.map(x => x.n));
+        const level = most === 0 ? 'fresh' : most <= 2 ? 'aging' : most <= 4 ? 'old' : 'stale';
+        const depositBanner = `<div class="banner updated-${level}">${most === 0
+            ? '<strong>Deposits up to date</strong> · every bucket has its paycheck deposits'
+            : `<strong>${most} deposit${most === 1 ? '' : 's'} behind</strong> · ${[...allDue].sort((a, b) => b.n - a.n).map(x => `${esc(x.b.name)} ${x.n}×`).join(', ')}`}</div>`;
         const age = available?.updated ? daysAgo(available.updated) : null;
-        $('#status').innerHTML = age == null ? ''
-            : `<div class="banner${age > 45 ? '' : ' ok'}">${age > 45 ? '⏰' : '✓'} <strong>Balances last updated ${esc(dLong(available.updated))}</strong> (${age} day${age === 1 ? '' : 's'} ago).${age > 45 ? ' Time to check the account and press Update balances.' : ''}</div>`;
+        $('#status').innerHTML = depositBanner + (age == null ? ''
+            : `<div class="banner${age > 45 ? '' : ' ok'}">${age > 45 ? '⏰' : '✓'} <strong>Balances last updated ${esc(dLong(available.updated))}</strong> (${age} day${age === 1 ? '' : 's'} ago).${age > 45 ? ' Time to check the account and press Update balances.' : ''}</div>`);
         if (due.length) {
             const total = sum(due.map(x => x.b.perCheck * x.n));
             $('#status').insertAdjacentHTML('beforeend', `<div class="banner row"><span>💵 <strong>${due.length} bucket${due.length === 1 ? ' has' : 's have'} paycheck deposits due</strong> (${esc(money(total))} in all): ${due.map(x => `${esc(x.b.name)} ${x.n}×`).join(', ')}.</span>
