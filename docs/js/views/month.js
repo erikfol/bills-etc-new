@@ -1,9 +1,10 @@
 import { PATHS, readTable, loadConfig, parseConfig, keyOf } from '../data.js';
 import { computeProjection, statusBadge, withParsed } from '../finance.js';
-import { parseBills, hasBills, billMatcher, schedColumn, paymentsByMonth, billMonth, STATUS } from '../bills.js';
+import { parseBills, hasBills, billMatcher, schedColumn, paymentsByMonth, billMonth, allTransactions, STATUS } from '../bills.js';
+import { leftToSpend, savePlan } from '../plan.js';
 import { lastSources } from '../workflow.js';
 import { MONTH_NAMES, parseDate, yearMonth } from '../dates.js';
-import { esc, money } from '../util.js';
+import { esc, money, toast } from '../util.js';
 import { requireFolder } from '../app.js';
 import { dataTable, dateColumn, moneyColumn, categoryColumn, closeFilterMenu } from '../datatable.js';
 
@@ -33,7 +34,9 @@ async function loadProjection() {
             .map(x => ({ ...x, counted: x.payments.length ? x.paid : x.due && !ended ? x.expected : 0 }));
         fixedTotal = bills.reduce((a, x) => a + x.counted, 0);
     }
-    return { ...computeProjection({ config: parseConfig(cfg), rows: processed.rows, masterRows: master?.rows, today, exclude, fixedTotal }), ended, bills, match };
+    const proj = computeProjection({ config: parseConfig(cfg), rows: processed.rows, masterRows: master?.rows, today, exclude, fixedTotal });
+    const plan = bills ? leftToSpend({ cfg, rows: await allTransactions(), ym: yearMonth(today), bills, match, dataThrough: latest, today: now, ended }) : null;
+    return { ...proj, ended, bills, match, plan, dataThrough: latest };
 }
 
 const SOURCE_TAGS = {
@@ -44,6 +47,98 @@ const SOURCE_TAGS = {
     merchant: '<span class="source-tag source-history">merchant rule</span>',
     rules: '<span class="source-tag source-rules">rules</span>',
 };
+
+const shortDay = d => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+
+/** Left to spend: cards, where the money goes, and this month's paychecks with their savings transfers. */
+function planHtml(p) {
+    const L = p.plan, month = MONTH_NAMES[p.today.getMonth()];
+    const coming = L.checks.filter(c => !c.received);
+    const leftColor = L.left >= 0 ? 'var(--green)' : 'var(--red)';
+    const leftLabel = p.ended ? 'Left over' : 'Left to spend';
+    const line = (label, amt, sub, sign) => `<tr><td>${label}${sub ? `<div class="ledger-sub">${sub}</div>` : ''}</td>
+        <td class="amt${sign > 0 ? ' income-amt' : ''}">${amt ? (sign > 0 ? '+' : '−') + money(amt) : money(0)}</td></tr>`;
+    const byCat = {};
+    for (const r of L.spentRows) { const c = r['AI Category'] || 'Uncategorized'; byCat[c] = (byCat[c] || 0) - r._amt; }
+    const catList = Object.entries(byCat).sort((a, b) => b[1] - a[1]).map(([c, v]) => `${esc(c)} ${money(v)}`).join(' · ');
+    const inList = L.inRows.map(r => `${esc(shortDay(r._date))} ${esc(r['Cleaned Merchant'] || r.Description)} ${money(r._amt)}`).join(' · ');
+    const untied = -L.otherSaved.reduce((a, r) => a + r._amt, 0);
+    const checkStatus = c => c.saved && !c.toMove ? '<span class="badge badge-ok">Moved</span>'
+        : c.saved ? `<span class="badge badge-warn">${money(c.toMove)} to go</span>`
+        : p.ended ? '<span class="badge badge-neutral">None</span>' : '<span class="badge badge-neutral">To move</span>';
+
+    return `
+        <div class="cards">
+            <div class="card"><div class="label">${leftLabel}</div><div class="value" style="color:${leftColor}">${money(L.left)}</div>
+                <div class="sub">${L.perDay != null ? `about <strong>${money(L.perDay)}</strong> a day for the ${L.daysLeft} day${L.daysLeft === 1 ? '' : 's'} left` : `paychecks minus everything out in ${month}`}</div></div>
+            <div class="card"><div class="label">Paychecks in ${month}</div><div class="value" style="color:#2980b9">${money(L.income)}</div>
+                <div class="sub">${L.checks.length - coming.length} of ${L.checks.length} received${coming.length ? ` · next ${esc(shortDay(coming[0].date))}` : ''}</div></div>
+            ${p.ended ? '' : `<div class="card"><div class="label">If the rest of ${month} is typical</div><div class="value" style="color:${L.typicalEnd >= 0 ? 'var(--green)' : 'var(--red)'}">${money(L.typicalEnd)}</div>
+                <div class="sub">left at month end if you spend another ${money(L.typicalRest)} (${L.daysLeft} days of your typical ${money(L.typicalMonth)} a month: the median of your last ${L.typicalMonths} months, bills and savings left out)</div></div>`}
+        </div>
+
+        <section>
+            <h2>${leftLabel} <span class="sub">${esc(month)}</span></h2>
+            <div class="table-wrap"><table class="ledger"><tbody>
+                ${line(`Paychecks (${esc(L.merchant || 'none found')})`, L.income, L.checks.length ? `received ${money(L.received)}${L.still ? ` · still coming ${money(L.still)}` : ''}` : 'no paychecks this month', 1)}
+                ${L.otherIn ? line('Other money in', L.otherIn, inList, 1) : ''}
+                ${line('Scheduled bills <a href="#bills" class="ledger-link">Bills →</a>', L.billsTotal, `paid ${money(L.billsPaid)}${L.billsDue ? ` · still due ${money(L.billsDue)}` : ''}`, -1)}
+                ${line('Savings transfers <a href="#savings" class="ledger-link">Savings →</a>', L.savedSoFar + L.toMove,
+                    `moved ${money(L.savedSoFar)}${untied ? ` (${money(untied)} of it not tied to a paycheck)` : ''}${L.toMove ? ` · still to move ${money(L.toMove)}` : ''}`, -1)}
+                ${line('Spent so far (everything else)', L.spent, catList, -1)}
+                <tr class="total-row"><td><strong>= ${leftLabel}</strong></td><td class="amt"><strong style="color:${leftColor}">${money(L.left)}</strong></td></tr>
+            </tbody></table></div>
+            ${L.still && !p.ended ? `<p class="note">${money(L.still)} of this hasn't arrived yet: it comes with your paycheck${coming.length > 1 ? 's' : ''} on ${coming.map(c => esc(shortDay(c.date))).join(' and ')}.</p>` : ''}
+        </section>
+
+        <section>
+            <h2>Paychecks &amp; savings <span class="sub">each paycheck's savings transfer goes the Monday after</span><span class="spacer"></span><button class="small" id="plan-edit">Edit</button></h2>
+            <div class="table-wrap"><table>
+                <thead><tr><th>Payday</th><th class="num">Paycheck</th><th>Status</th><th>Savings on</th><th class="num">To savings</th><th>Status</th></tr></thead>
+                <tbody>${L.checks.map(c => `<tr>
+                    <td>${esc(shortDay(c.date))}</td>
+                    <td class="amt">${money(c.amount)}</td>
+                    <td>${c.received ? '<span class="badge badge-ok">Received</span>' : '<span class="badge badge-neutral">Expected</span>'}</td>
+                    <td>${esc(shortDay(c.savedRows[0]?._date || c.moveOn))}</td>
+                    <td class="amt">${money(c.saved + c.toMove)}</td>
+                    <td>${checkStatus(c)}</td>
+                </tr>`).join('') || '<tr><td colspan="6" class="muted">No paychecks found this month.</td></tr>'}</tbody>
+            </table></div>
+            <div id="plan-form"></div>
+            <p class="note">Paycheck: ${money(L.paycheck)} every ${L.every} days from ${esc(L.merchant || '—')} (${L.plan.paycheck != null ? 'your setting' : L.paycheckDetected ? `your latest, ${esc(shortDay(L.paycheckDetected.date))}` : 'none found'}).
+                To savings per paycheck: ${money(L.perCheck)} (${L.plan.savings != null ? 'your setting' : L.savingsFrom ? `what moved after your ${esc(shortDay(L.savingsFrom.date))} paycheck` : 'none found'}).
+                Savings transfers are the money-out rows in the ${esc(L.savingsCategory)} category.</p>
+        </section>`;
+}
+
+function wirePlan(el, L, rerender) {
+    el.querySelector('#plan-edit').onclick = () => {
+        const box = el.querySelector('#plan-form');
+        if (box.innerHTML) { box.innerHTML = ''; return; }
+        box.innerHTML = `<div class="add-bill">
+            <h3>Paycheck and savings <span class="muted" style="font-weight:400">(leave blank to use your history)</span></h3>
+            <div class="add-grid">
+                <label class="field">Paycheck merchant<select name="merchant">
+                    <option value="">From history (${esc(L.merchants[0] || 'none')})</option>
+                    ${L.merchants.map(m => `<option${m === L.plan.merchant ? ' selected' : ''}>${esc(m)}</option>`).join('')}</select></label>
+                <label class="field">Paycheck amount<input type="number" name="paycheck" step="0.01" min="0" value="${L.plan.paycheck ?? ''}" placeholder="${L.paycheckDetected ? L.paycheckDetected.amount.toFixed(2) : ''}"></label>
+                <label class="field">To savings per paycheck<input type="number" name="savings" step="0.01" min="0" value="${L.plan.savings ?? ''}" placeholder="${L.detectedSavings.toFixed(2)}"></label>
+            </div>
+            <div class="row"><button class="primary" id="plan-save">Save</button><button id="plan-cancel">Cancel</button></div>
+        </div>`;
+        const get = n => box.querySelector(`[name=${n}]`).value.trim();
+        box.querySelector('#plan-cancel').onclick = () => { box.innerHTML = ''; };
+        box.querySelector('#plan-save').onclick = async () => {
+            if ([get('paycheck'), get('savings')].some(v => v !== '' && !Number.isFinite(+v))) { toast('Amounts must be numbers', 'bad'); return; }
+            const num = v => (v === '' ? null : Math.abs(+v));
+            try {
+                await savePlan({ merchant: get('merchant') || null, paycheck: num(get('paycheck')), savings: num(get('savings')) });
+                toast('Saved', 'ok');
+                rerender();
+            } catch (e) { toast(`Save failed: ${e.message}`, 'bad'); }
+        };
+    };
+}
 
 export default {
     async render(el) {
@@ -63,10 +158,12 @@ export default {
                 <span class="spacer"></span>
                 <button id="reload">Refresh</button>
             </div>
-            <p class="lead">${p.ended ? 'Completed month: totals are actual, not projected.' : `Day ${p.daysElapsed} of ${p.daysInMonth} · ${p.pctMonth}% through the month`}</p>
+            <p class="lead">${p.ended ? 'Completed month: totals are actual, not projected.' : `Day ${p.daysElapsed} of ${p.daysInMonth} · ${p.pctMonth}% through the month`}${p.dataThrough ? ` · bank data through ${esc(shortDay(p.dataThrough))}` : ''}</p>
             ${p.ended ? `<div class="banner">This file is for ${esc(label)}, which has ended. Add this month's bank export on <a href="#home">Setup</a> to see a live projection, or close ${esc(label)} with <strong>Close month</strong> on <a href="#home">Setup</a>.</div>` : ''}
 
-            <div class="cards">
+            ${p.plan ? planHtml(p) : `<div class="banner">Set up your scheduled bills on the <a href="#bills">Bills</a> page to see how much you have left to spend this month.</div>`}
+
+            <div class="cards"${p.plan ? ' hidden' : ''}>
                 <div class="card"><div class="label">Expected Income</div><div class="value" style="color:#2980b9">${money(p.income)}</div><div class="sub">per month, from config</div></div>
                 <div class="card"><div class="label">Total Projected Spend</div><div class="value" style="color:var(--red)">${money(p.totalProjected)}</div><div class="sub">${p.bills ? 'scheduled bills + unscheduled projection' : 'fixed + variable projection'}</div></div>
                 <div class="card"><div class="label">${p.surplus >= 0 ? 'Projected Surplus' : 'Projected Deficit'}</div><div class="value" style="color:${sdColor}">${money(p.surplus, true)}</div><div class="sub">end-of-month estimate</div></div>
@@ -157,6 +254,7 @@ export default {
         });
 
         el.querySelector('#reload').onclick = () => this.render(el);
+        if (p.plan) wirePlan(el, p.plan, () => this.render(el));
     },
 
     destroy() {
