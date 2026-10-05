@@ -72,6 +72,7 @@ export default async function renderTaxes(el) {
 
     el.innerHTML = `
         <div id="catchup"></div>
+        <div id="details-soon"></div>
         <div class="row dash-head">
             <h2 class="page-sub">Property Taxes <span class="muted" style="font-weight:400;font-size:0.8em">Enfield, NH · billed twice a year</span></h2>
             <span class="spacer"></span>
@@ -300,6 +301,13 @@ export default async function renderTaxes(el) {
             <span>📬 <strong>There's a new property tax bill to add (${esc(nextText)}).</strong> Your last bill (${esc(billLabel(last))}) was billed ${esc(dLong(lastBilled))}, so the next one was billed around ${esc(dLong(expected))}.</span>
             <span class="spacer"></span><button class="primary small" id="catchup-add">Add it now</button></div>`
         : `<div class="banner ok">✓ <strong>All property tax bills are caught up.</strong> The next one (${esc(nextText)}) is billed around ${esc(dLong(expected))}.</div>`;
+    // About a month before the next bill the details can be looked up.
+    // Green while waiting; yellow from that day on (something to do); gone once the bill is expected.
+    const detailsOn = expected ? addMonths(expected, -1) : null;
+    $('#details-soon').innerHTML = !expected || today() >= expected ? ''
+        : today() >= detailsOn
+            ? `<div class="banner">🔎 <strong>Around ${esc(dLong(detailsOn))} you should be able to get the details of this half (${esc(nextText)}).</strong> ${portalLink}</div>`
+            : `<div class="banner ok">🗓️ <strong>Around ${esc(dLong(detailsOn))} you should be able to get the details of this half (${esc(nextText)}).</strong></div>`;
 
     // ── Add a bill: the next half, prefilled from the latest bill of the same half and the latest assessment ──
     const form = $('#add-form');
