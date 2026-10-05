@@ -1,4 +1,4 @@
-// Editable Merchant / Category / Notes cells, shared by Finance Table and Checking Activity.
+// Editable Merchant / Category / Notes cells, shared by Finance Table and Checking History.
 import { getCategories } from './rules.js';
 import { addCategory } from './categories.js';
 import { esc, toast } from './util.js';

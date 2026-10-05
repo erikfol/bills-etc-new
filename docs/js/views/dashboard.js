@@ -63,7 +63,7 @@ export default {
 
         el.innerHTML = `
             <div class="row dash-head">
-                <h1 class="page">Checking Activity</h1>
+                <h1 class="page">Checking History</h1>
                 <span class="spacer"></span>
                 <div class="month-nav">
                     <button id="prev" title="Previous month" aria-label="Previous month">◀</button>
