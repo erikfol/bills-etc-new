@@ -12,6 +12,7 @@ import {
 } from './utilcommon.js';
 import renderWater from './water.js';
 import renderHeating from './heating.js';
+import renderPropane from './propane.js';
 import renderTaxes from './taxes.js';
 import renderEquipment from './equipment.js';
 import { editableSheet, hasUnsavedEdits, resetUnsaved } from './sheeteditor.js';
@@ -24,6 +25,7 @@ const SUBPAGES = [
     { id: 'electric', label: 'Electric', render: renderElectricArea },
     { id: 'water', label: 'Water', render: renderWater },
     { id: 'heating', label: 'Home Heating', render: renderHeating },
+    { id: 'propane', label: 'Propane', render: renderPropane },
     { id: 'taxes', label: 'Property Taxes', render: renderTaxes },
 ];
 
