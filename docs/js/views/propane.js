@@ -5,7 +5,7 @@ import { esc, money, sum, toast } from '../util.js';
 import { dataTable } from '../datatable.js';
 import { editableSheet } from './sheeteditor.js';
 import {
-    MON, dLong, today, axisMoney, isoDate, dateOf, numOf,
+    MON, dLong, addMonths, today, axisMoney, isoDate, dateOf, numOf,
     card, vsEarlier, dateCol, moneyCol, numCol, setResize, sameDay, sameAmount, dupText,
 } from './utilcommon.js';
 
@@ -39,6 +39,7 @@ export default async function renderPropane(el) {
 
     el.innerHTML = `
         <div id="status"></div>
+        <div id="details-soon"></div>
         <div class="row dash-head">
             <h2 class="page-sub">Propane <span class="muted" style="font-weight:400;font-size:0.8em">oven</span></h2>
             <span class="spacer"></span>
@@ -214,6 +215,17 @@ export default async function renderPropane(el) {
     const avgGap = gaps.length ? sum(gaps) / gaps.length : NaN;
     $('#status').innerHTML = `<div class="banner ok">🔥 <strong>Last fill-up ${esc(dLong(last.date))}</strong> (${esc(gal(last.gallons))}, ${esc(money(last.total))}), ${esc(months(since))} ago.`
         + (Number.isFinite(avgGap) ? ` You've filled up about every ${esc(months(avgGap))} on average.` : '') + '</div>';
+
+    // About a month before the next fill-up is expected (last one + the average time between fill-ups), it's time to
+    // check the tank and line up the next delivery. Green while waiting; yellow from that day on, until a new fill-up is added.
+    if (Number.isFinite(avgGap)) {
+        const nextFill = new Date(last.date.getTime() + Math.round(avgGap) * 864e5);
+        const detailsOn = addMonths(nextFill, -1);
+        const text = `Around ${esc(dLong(detailsOn))} you should be able to get the details of the next fill-up.</strong> It's expected around ${esc(dLong(nextFill))}, about ${esc(months(Math.round(avgGap)))} after the last one.`;
+        $('#details-soon').innerHTML = today() >= detailsOn
+            ? `<div class="banner">🔎 <strong>${text}</div>`
+            : `<div class="banner ok">🗓️ <strong>${text}</div>`;
+    }
 
     // ── Add a fill-up ──
     const form = $('#add-form');

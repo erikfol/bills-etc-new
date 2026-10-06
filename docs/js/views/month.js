@@ -7,6 +7,7 @@ import { lastSources } from '../workflow.js';
 import { MONTH_NAMES, parseDate, yearMonth } from '../dates.js';
 import { esc, money, toast } from '../util.js';
 import { requireFolder } from '../app.js';
+import { notesText } from '../celledit.js';
 import { dataTable, dateColumn, moneyColumn, categoryColumn, closeFilterMenu } from '../datatable.js';
 
 const fmtDay = d => `${MONTH_NAMES[d.getMonth()].slice(0, 3)} ${d.getDate()}`;
@@ -294,6 +295,7 @@ export default {
                 moneyColumn('amt', 'Amount', r => r._amt, { signed: true }),
                 categoryColumn('cat', 'Category', r => r['AI Category']),
                 ...(p.match ? [schedColumn(p.match)] : []),
+                { id: 'notes', label: 'Notes', value: r => String(r.Notes ?? '').trim(), cell: r => notesText(r.Notes) },
                 ...(hasSources ? [{ id: 'src', label: 'Source', value: r => lastSources.get(keyOf(r)) || '', cell: r => SOURCE_TAGS[lastSources.get(keyOf(r))] || '' }] : []),
             ],
             rows: p.rows,
