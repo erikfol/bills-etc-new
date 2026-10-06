@@ -214,7 +214,7 @@ export default {
                 <h2>Month Progress</h2>
                 <div class="progress-label"><span>Day ${p.daysElapsed} of ${p.daysInMonth}</span><span>${p.pctMonth}% elapsed</span></div>
                 <div class="progress-bar"><div class="progress-fill" style="width:${p.pctMonth}%"></div></div>
-                <p class="note">Variable spending is projected by scaling your current pace to the full month: (spent ÷ ${p.daysElapsed} days) × ${p.daysInMonth} days.</p>
+                <p class="note">Projected = spent so far + the ${p.daysInMonth - p.daysElapsed} days left at a daily rate that mixes this month's pace (${p.pctMonth}%) with your average (${100 - p.pctMonth}%). Early in the month it leans on your average; by month end it's all this month's pace. Categories with no history use this month's pace alone.</p>
             </section>
 
             <section>

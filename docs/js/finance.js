@@ -99,12 +99,18 @@ export function computeProjection({ config, rows, masterRows, today = new Date()
 
     const parsed = withParsed(rows);
     const exp = parsed.filter(r => r['AI Category'] !== 'Income' && r._amt < 0 && !exclude?.(r));
+    const hist = masterRows ? historicalAverages(masterRows, variableCats, today, exclude) : { avgs: {}, months: 0 };
+    // Spent so far + the days left at a daily rate blended from this month's pace and your average:
+    // early in the month it leans on the average, by month end it's all this month's pace.
+    // A category with no history uses this month's pace alone.
+    const weight = daysElapsed / daysInMonth, daysLeft = daysInMonth - daysElapsed;
     const spent = {}, projected = {};
     for (const cat of variableCats) {
         spent[cat] = round2(Math.abs(exp.filter(r => r['AI Category'] === cat).reduce((a, r) => a + r._amt, 0)));
-        projected[cat] = round2(spent[cat] / daysElapsed * daysInMonth);
+        const pace = spent[cat] / daysElapsed, avg = hist.avgs[cat];
+        const rate = avg ? weight * pace + (1 - weight) * avg / daysInMonth : pace;
+        projected[cat] = round2(spent[cat] + rate * daysLeft);
     }
-    const hist = masterRows ? historicalAverages(masterRows, variableCats, today, exclude) : { avgs: {}, months: 0 };
 
     const totalFixed = fixedTotal ?? Object.values(fixed).reduce((a, b) => a + b, 0);
     const totalVariable = Object.values(projected).reduce((a, b) => a + b, 0);

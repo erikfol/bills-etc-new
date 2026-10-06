@@ -82,5 +82,5 @@ export const DEFAULT_CONFIG = {
         '_note: These categories are day-scaled from your partial month data to project the full month.',
         'Groceries', 'Dining Out', 'Entertainment', 'Shopping', 'Transport', 'Gas', 'Miscellaneous', 'Utilities',
     ],
-    _projection_note: 'Projection formula: projected_variable = (spent_so_far / days_elapsed) * days_in_month. Fixed expenses are added on top regardless of partial data.',
+    _projection_note: 'Projection formula (GUI): projected_variable = spent_so_far + days_left * (w * spent_so_far / days_elapsed + (1 - w) * historical_avg / days_in_month), w = days_elapsed / days_in_month (no history: pace alone). Fixed expenses are added on top regardless of partial data.',
 };
