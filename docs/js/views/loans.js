@@ -255,7 +255,8 @@ export default {
         const item = x => `<span class="nowrap">${esc(x.account.title)}: ${esc(money(amountDue(x.p)))}${Number.isFinite(x.p.payment) ? '' : ' minimum'} ${x.p.date < t0 ? 'was due' : 'due'} ${esc(dLong(x.p.date))}</span>`;
         $('#due').innerHTML = (late.length ? `<div class="banner bad"><strong>Not made yet:</strong> ${late.map(item).join(' · ')}</div>` : '')
             + (soon.length ? `<div class="banner"><strong>Coming up:</strong> ${soon.map(item).join(' · ')}</div>` : '')
-            + (!late.length && !soon.length && all.some(x => x.payments.length) ? '<div class="banner ok">✓ <strong>No payments due.</strong> Nothing is past due or due in the next two weeks.</div>' : '');
+            + (!late.length && !soon.length && all.some(x => x.payments.length) ? '<div class="banner ok">✓ <strong>No payments due.</strong> Nothing is past due or due in the next two weeks.</div>' : '')
+            + (tab.id === 'cards' ? staleActivityBanners(all, t0) : '');
 
         if (!all.length) {
             $('#accounts').innerHTML = `<section><p>${tab.empty}</p></section>`;
@@ -291,6 +292,28 @@ export default {
         closeFilterMenu();
     },
 };
+
+/** Days without a new activity entry before a card gets flagged (yellow), and before it turns red. */
+const STALE_DAYS = 30, VERY_STALE_DAYS = 60;
+
+/**
+ * Cards whose newest activity entry (or, with none yet, the opening date) is STALE_DAYS or more ago,
+ * so you know to check the statement and add the charges and interest.
+ */
+function staleActivityBanners(all, t0) {
+    const stale = all.map(({ account, rawActivity }) => {
+        const dates = rawActivity.map(a => a.date).filter(Boolean);
+        const last = dates.length ? new Date(Math.max(...dates)) : parseBillDate(account.openingDate);
+        return { account, last, hasAny: dates.length > 0, days: last ? Math.floor((t0 - last) / DAY) : Infinity };
+    }).filter(x => x.days >= STALE_DAYS).sort((a, b) => b.days - a.days);
+    const item = x => `<span class="nowrap">${esc(x.account.title)}: ${x.last
+        ? `${x.hasAny ? 'last entry' : 'no activity since opening'} ${esc(dLong(x.last))} (${x.days} days ago)`
+        : 'no activity yet'}</span>`;
+    const banner = (list, level, head) => (list.length
+        ? `<div class="banner updated-${level}"><strong>${head}</strong> ${list.map(item).join(' · ')}</div>` : '');
+    return banner(stale.filter(x => x.days >= VERY_STALE_DAYS), 'stale', `Activity not updated in ${VERY_STALE_DAYS}+ days:`)
+        + banner(stale.filter(x => x.days < VERY_STALE_DAYS), 'aging', `Activity not updated in ${STALE_DAYS}+ days:`);
+}
 
 /**
  * Totals across every account: balance, available credit, monthly payments, when all of it is paid off, paid so far,
