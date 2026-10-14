@@ -257,6 +257,18 @@ export default {
             + (soon.length ? `<div class="banner"><strong>Coming up:</strong> ${soon.map(item).join(' · ')}</div>` : '')
             + (!late.length && !soon.length && all.some(x => x.payments.length) ? '<div class="banner ok">✓ <strong>No payments due.</strong> Nothing is past due or due in the next two weeks.</div>' : '')
             + (tab.id === 'cards' ? staleActivityBanners(all, t0) : '');
+        el.querySelectorAll('[data-activity-checked]').forEach(b => b.onclick = async () => {
+            const account = accounts.find(a => a.id === b.dataset.activityChecked);
+            b.disabled = true;
+            try {
+                await updateAccount(account.id, { activityChecked: today() });
+                toast(`${account.title}: marked checked today`, 'ok');
+                this.render(el);
+            } catch (err) {
+                b.disabled = false;
+                toast(`Couldn't save it: ${err.message}`, 'bad');
+            }
+        });
 
         if (!all.length) {
             $('#accounts').innerHTML = `<section><p>${tab.empty}</p></section>`;
@@ -293,26 +305,33 @@ export default {
     },
 };
 
-/** Days without a new activity entry before a card gets flagged (yellow), and before it turns red. */
-const STALE_DAYS = 30, VERY_STALE_DAYS = 60;
+/** Days without a new activity entry (or a "checked") before a card gets flagged (yellow), and before it turns red. */
+const STALE_DAYS = 20, VERY_STALE_DAYS = 40;
 
 /**
- * Cards whose newest activity entry (or, with none yet, the opening date) is STALE_DAYS or more ago,
- * so you know to check the statement and add the charges and interest.
+ * Cards whose newest activity entry, or the last time you marked them checked (with neither, the opening date),
+ * is STALE_DAYS or more ago, so you know to look at the statement. Each has a button to mark it checked today.
  */
 function staleActivityBanners(all, t0) {
     const stale = all.map(({ account, rawActivity }) => {
         const dates = rawActivity.map(a => a.date).filter(Boolean);
-        const last = dates.length ? new Date(Math.max(...dates)) : parseBillDate(account.openingDate);
-        return { account, last, hasAny: dates.length > 0, days: last ? Math.floor((t0 - last) / DAY) : Infinity };
+        const lastEntry = dates.length ? new Date(Math.max(...dates)) : null;
+        const checked = parseBillDate(account.activityChecked);
+        const last = [lastEntry, checked].filter(Boolean).sort((a, b) => b - a)[0] || parseBillDate(account.openingDate);
+        return { account, lastEntry, checked, days: last ? Math.floor((t0 - last) / DAY) : Infinity };
     }).filter(x => x.days >= STALE_DAYS).sort((a, b) => b.days - a.days);
-    const item = x => `<span class="nowrap">${esc(x.account.title)}: ${x.last
-        ? `${x.hasAny ? 'last entry' : 'no activity since opening'} ${esc(dLong(x.last))} (${x.days} days ago)`
-        : 'no activity yet'}</span>`;
+    const ago = x => (Number.isFinite(x.days) ? ` <span class="muted">(${x.days} days)</span>` : '');
+    const item = x => `<div class="row" style="gap:8px;margin-top:4px">
+            <span><strong>${esc(x.account.title)}</strong>: ${[
+                x.lastEntry ? `last entry ${esc(dLong(x.lastEntry))}` : 'no activity yet',
+                x.checked ? `checked ${esc(dLong(x.checked))}` : '',
+            ].filter(Boolean).join(', ')}${ago(x)}</span>
+            <button type="button" class="small" data-activity-checked="${esc(x.account.id)}" title="You looked at the statement and there's nothing new to add. Saves today's date on the card; no activity row is added.">✓ Checked – no new activity</button>
+        </div>`;
     const banner = (list, level, head) => (list.length
-        ? `<div class="banner updated-${level}"><strong>${head}</strong> ${list.map(item).join(' · ')}</div>` : '');
-    return banner(stale.filter(x => x.days >= VERY_STALE_DAYS), 'stale', `Activity not updated in ${VERY_STALE_DAYS}+ days:`)
-        + banner(stale.filter(x => x.days < VERY_STALE_DAYS), 'aging', `Activity not updated in ${STALE_DAYS}+ days:`);
+        ? `<div class="banner updated-${level}"><strong>${head}</strong>${list.map(item).join('')}</div>` : '');
+    return banner(stale.filter(x => x.days >= VERY_STALE_DAYS), 'stale', `Activity not updated in ${VERY_STALE_DAYS}+ days`)
+        + banner(stale.filter(x => x.days < VERY_STALE_DAYS), 'aging', `Activity not updated in ${STALE_DAYS}+ days`);
 }
 
 /**

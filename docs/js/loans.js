@@ -108,6 +108,8 @@ export async function updateAccount(id, changes) {
     if ('openingDate' in changes) a.openingDate = changes.openingDate ? sheetDate(changes.openingDate, false) : '';
     for (const k of ['apr', 'planPayment', 'creditLimit']) if (k in changes) a[k] = Number.isFinite(changes[k]) && changes[k] > 0 ? changes[k] : null;
     if (changes.accountNumber != null) a.accountNumber = String(changes.accountNumber).trim();
+    // the day you looked at the statement and found nothing new to add (resets the "activity not updated" banner)
+    if ('activityChecked' in changes) a.activityChecked = changes.activityChecked ? sheetDate(changes.activityChecked, false) : '';
     if (changes.loan) Object.assign(a, cleanLoan(changes.loan));
     await saveAccounts(accounts);
 }
