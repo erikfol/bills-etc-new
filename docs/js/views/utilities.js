@@ -19,7 +19,7 @@ import { editableSheet, hasUnsavedEdits, resetUnsaved } from './sheeteditor.js';
 
 // The electric company's customer portal, where statements are downloaded.
 const ELECTRIC_PORTAL = 'https://myaccount.libertyenergyandwater.com/portal/#/login?LUNH';
-const portalLink = `<a class="ext-link" href="${ELECTRIC_PORTAL}" target="_blank" rel="noopener">Liberty account ↗</a>`;
+export const portalLink = `<a class="ext-link" href="${ELECTRIC_PORTAL}" target="_blank" rel="noopener">Liberty account ↗</a>`;
 
 const SUBPAGES = [
     { id: 'electric', label: 'Electric', render: renderElectricArea },

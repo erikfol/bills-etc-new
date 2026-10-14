@@ -14,7 +14,7 @@ let chartYears = null; // years shown in the charts (null = all)
 
 // The town's online bill kiosk (same one as the water bills).
 const TOWN_PORTAL = 'https://nhtaxkiosk.com/?KIOSKID=ENFIELD';
-const portalLink = `<a class="ext-link" href="${TOWN_PORTAL}" target="_blank" rel="noopener">Enfield tax bills ↗</a>`;
+export const portalLink = `<a class="ext-link" href="${TOWN_PORTAL}" target="_blank" rel="noopener">Enfield tax bills ↗</a>`;
 
 const RATE_PARTS = [
     { id: 'school', label: 'School', color: '#4a90d9' },

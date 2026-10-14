@@ -7,6 +7,7 @@ import { backfill, processCurrentMonth, planClose, closeMonth } from '../workflo
 import { esc, money, toast } from '../util.js';
 import { refreshStatus } from '../app.js';
 import { dataTable, closeFilterMenu } from '../datatable.js';
+import renderUpdates from './updates.js';
 
 let busy = false;
 let running = null; // AbortController of the active load
@@ -133,6 +134,11 @@ const home = {
                 <input type="file" id="file-in" accept=".csv" multiple hidden>
             </section>
 
+            <section id="updates-wrap" hidden>
+                <h2>Things to update <span class="sub">due, or yellow/red, on Savings, Utilities and Credit Cards</span></h2>
+                <div id="updates"></div>
+            </section>
+
             <section>
                 <details${ai ? ' open' : ''}>
                     <summary style="cursor:pointer"><strong>Local AI (Ollama)</strong> <span class="muted" style="font-size:0.85em">— optional, ${ai ? 'on' : 'off'}</span></summary>
@@ -168,7 +174,9 @@ const home = {
             el.querySelector('#folder-tools').hidden = !root;
             el.querySelector('#pick').textContent = root ? 'Change folder…' : 'Choose folder…';
             el.querySelector('#pick').classList.toggle('primary', !root);
+            el.querySelector('#updates-wrap').hidden = !root;
             if (!root) return;
+            renderUpdates(el.querySelector('#updates'));
             try {
                 const st = await folderStatus();
                 el.querySelector('#folder-status').innerHTML = statusHtml(st);

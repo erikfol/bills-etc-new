@@ -17,13 +17,15 @@ const DAY = 864e5;
 const PAYCHECKS = 26, EVERY = 14;
 const plusDays = (d, n) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
 /** Deposits a bucket is behind: one for every two weeks since its last update. */
-const depositsDue = b => (b.group === 'active' && b.perCheck > 0 && b.updated ? Math.max(0, Math.floor((today() - b.updated) / DAY / EVERY)) : 0);
+export const depositsDue = b => (b.group === 'active' && b.perCheck > 0 && b.updated ? Math.max(0, Math.floor((today() - b.updated) / DAY / EVERY)) : 0);
 const GROUPS = [
     { id: 'active', title: 'Buckets', sub: 'filled from each paycheck' },
     { id: 'setup', title: 'Need to set up', sub: 'no money or deposit yet' },
     { id: 'other', title: 'Not in the paycheck total', sub: 'deposits listed but not counted in the per-paycheck total' },
     { id: 'past', title: 'One-time money', sub: 'stimulus, escrow, tax returns and other money that came and went' },
 ];
+/** Days after which "Available in account" needs checking again. */
+export const BALANCES_STALE_DAYS = 45;
 let editing = null; // 'buckets' | 'transfers' | 'balances' while a form has possible unsaved changes
 const daysAgo = d => Math.round((today() - d) / DAY);
 const amountText = v => (Number.isFinite(v) ? money(v) : '–');
@@ -147,7 +149,7 @@ export default {
             : `<strong>${most} deposit${most === 1 ? '' : 's'} behind</strong> · ${[...allDue].sort((a, b) => b.n - a.n).map(x => `${esc(x.b.name)} ${x.n}×`).join(', ')}`}</div>`;
         const age = available?.updated ? daysAgo(available.updated) : null;
         $('#status').innerHTML = depositBanner + (age == null ? ''
-            : `<div class="banner${age > 45 ? '' : ' ok'}">${age > 45 ? '⏰' : '✓'} <strong>Balances last updated ${esc(dLong(available.updated))}</strong> (${age} day${age === 1 ? '' : 's'} ago).${age > 45 ? ' Time to check the account and press Update balances.' : ''}</div>`);
+            : `<div class="banner${age > BALANCES_STALE_DAYS ? '' : ' ok'}">${age > BALANCES_STALE_DAYS ? '⏰' : '✓'} <strong>Balances last updated ${esc(dLong(available.updated))}</strong> (${age} day${age === 1 ? '' : 's'} ago).${age > BALANCES_STALE_DAYS ? ' Time to check the account and press Update balances.' : ''}</div>`);
         if (due.length) {
             const total = sum(due.map(x => x.b.perCheck * x.n));
             $('#status').insertAdjacentHTML('beforeend', `<div class="banner row"><span>💵 <strong>${due.length} bucket${due.length === 1 ? ' has' : 's have'} paycheck deposits due</strong> (${esc(money(total))} in all): ${due.map(x => `${esc(x.b.name)} ${x.n}×`).join(', ')}.</span>

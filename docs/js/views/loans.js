@@ -51,7 +51,7 @@ const DAY = 864e5;
 /** '1234 5678 9012 4421' → '•••• 4421' */
 const maskNumber = n => { const digits = String(n).replace(/\s+/g, ''); return digits.length > 4 ? `•••• ${digits.slice(-4)}` : digits; };
 /** What a payment that isn't made yet will take: the planned payment, or else the minimum. */
-const amountDue = p => (Number.isFinite(p.payment) ? p.payment : p.minPayment);
+export const amountDue = p => (Number.isFinite(p.payment) ? p.payment : p.minPayment);
 
 /** The loan setup fields, filled from `a` (an account, or {} for a new loan). Used by Add and Edit. */
 function loanFields(a = {}, tab = TABS[1]) {
@@ -306,20 +306,24 @@ export default {
 };
 
 /** Days without a new activity entry (or a "checked") before a card gets flagged (yellow), and before it turns red. */
-const STALE_DAYS = 20, VERY_STALE_DAYS = 40;
+export const STALE_DAYS = 20, VERY_STALE_DAYS = 40;
 
 /**
  * Cards whose newest activity entry, or the last time you marked them checked (with neither, the opening date),
  * is STALE_DAYS or more ago, so you know to look at the statement. Each has a button to mark it checked today.
  */
-function staleActivityBanners(all, t0) {
-    const stale = all.map(({ account, rawActivity }) => {
+export function staleCards(all, t0) {
+    return all.map(({ account, rawActivity }) => {
         const dates = rawActivity.map(a => a.date).filter(Boolean);
         const lastEntry = dates.length ? new Date(Math.max(...dates)) : null;
         const checked = parseBillDate(account.activityChecked);
         const last = [lastEntry, checked].filter(Boolean).sort((a, b) => b - a)[0] || parseBillDate(account.openingDate);
         return { account, lastEntry, checked, days: last ? Math.floor((t0 - last) / DAY) : Infinity };
     }).filter(x => x.days >= STALE_DAYS).sort((a, b) => b.days - a.days);
+}
+
+function staleActivityBanners(all, t0) {
+    const stale = staleCards(all, t0);
     const ago = x => (Number.isFinite(x.days) ? ` <span class="muted">(${x.days} days)</span>` : '');
     const item = x => `<div class="row" style="gap:8px;margin-top:4px">
             <span><strong>${esc(x.account.title)}</strong>: ${[

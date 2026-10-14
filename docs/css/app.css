@@ -452,3 +452,8 @@ section.unit h2 .badge { text-transform: none; letter-spacing: 0; font-size: 0.7
 .form-sub { font-size: 0.85em; text-transform: uppercase; letter-spacing: 0.4px; color: var(--muted); margin: 14px 0 8px; font-weight: 600; }
 .form-sub:first-of-type { margin-top: 4px; }
 .form-sub .muted { text-transform: none; letter-spacing: 0; font-weight: 400; }
+
+/* ── Setup: Things to update ─────────────────────────────────────────── */
+.due-list .banner { margin-bottom: 6px; padding: 8px 12px; }
+.due-list .banner.row > span:first-child { flex: 1 1 320px; }
+.due-where { display: inline-block; min-width: 110px; font-size: 0.8em; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; opacity: 0.8; }

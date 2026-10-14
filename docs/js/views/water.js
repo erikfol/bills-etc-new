@@ -23,7 +23,7 @@ const gal = n => Number.isFinite(n) ? `${Math.round(n).toLocaleString('en-US')} 
 const rateText = r => { if (!Number.isFinite(r)) return '–'; const t = r.toFixed(3); return '$' + (t.endsWith('0') ? r.toFixed(2) : t); };
 // The town's online bill payment kiosk for water.
 const WATER_PORTAL = 'https://nhtaxkiosk.com/?KIOSKID=ENFIELD';
-const portalLink = `<a class="ext-link" href="${WATER_PORTAL}" target="_blank" rel="noopener">Enfield water bills ↗</a>`;
+export const portalLink = `<a class="ext-link" href="${WATER_PORTAL}" target="_blank" rel="noopener">Enfield water bills ↗</a>`;
 /** Button that marks a quarter paid (or, with paid = false, not paid). */
 const markBtn = (b, paid, text, cls = '') => `<button type="button" class="small ${cls}" data-mark-paid="${paid ? 1 : 0}" data-q="${b.q}" data-year="${b.year}">${text}</button>`;
 // The four parts of a bill's calculated amount, in the order the chart shows them.
