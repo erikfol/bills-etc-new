@@ -11,7 +11,8 @@ Personal spending tracker. Exports Come Citizens Bank transaction CSV, categoriz
 
 `docs/` is served by GitHub Pages at **https://erikfol.github.io/bills-etc-new/**: a home page (`docs/index.html`) that links to each app.
 `docs/bills-etc/` holds a browser version of the whole bills workflow, at
-**https://erikfol.github.io/bills-etc-new/bills-etc/**. It's static HTML and JavaScript with no build step. Your data never leaves your computer:
+**https://erikfol.github.io/bills-etc-new/bills-etc/**.
+`docs/health/` is the Health app (General Health, Dental, Eye tables), which saves to `inputs/health/` in the same folder. It's static HTML and JavaScript with no build step. Your data never leaves your computer:
 
 - In **Chrome or Edge** you connect this folder on the Setup page. The app then reads and writes the same files as the scripts (`inputs/`, `output_master_data/`, `config.json`), so you can mix the GUI and the scripts.
 - AI calls go straight from the browser to your local Ollama. Allow the page's origin once, then restart Ollama:
