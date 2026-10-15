@@ -1,17 +1,17 @@
-"""Stamp docs/index.html with a new version and the list of the app's files.
+"""Stamp docs/bills-etc/index.html with a new version and the list of the app's files.
 
 GitHub Pages lets browsers cache files for up to 10 minutes, so right after an update a browser can get the new
 index.html but old JavaScript. index.html compares this version with the one the browser last ran; when it changed,
 it re-downloads every file listed here (bypassing the cache) before starting the app.
 
-Run before committing changes to docs/:  python tools/stamp_version.py
+Run before committing changes to docs/bills-etc/:  python tools/stamp_version.py
 """
 from datetime import datetime, timezone
 from pathlib import Path
 import json
 import re
 
-DOCS = Path(__file__).resolve().parent.parent / 'docs'
+DOCS = Path(__file__).resolve().parent.parent / 'docs' / 'bills-etc'
 INDEX = DOCS / 'index.html'
 
 files = sorted(p.relative_to(DOCS).as_posix() for p in list(DOCS.glob('js/**/*.js')) + list(DOCS.glob('css/*.css')))
