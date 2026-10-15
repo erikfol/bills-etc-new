@@ -59,7 +59,12 @@ export function dataTable(container, opts) {
         const visible = rows.filter(r => passes(r));
         if (sort) {
             const col = COL[sort.col], sign = sort.dir === 'asc' ? 1 : -1;
-            visible.sort((a, b) => sign * compare(col, col.value(a), col.value(b)));
+            visible.sort((a, b) => {
+                const x = col.value(a), y = col.value(b);
+                // Blanks stay at the bottom in both directions, like Excel.
+                if (!col.sortKey && (isBlank(x) || isBlank(y))) return compare(col, x, y);
+                return sign * compare(col, x, y);
+            });
         }
         const shown = rowLimit ? visible.slice(0, rowLimit) : visible;
         tbody.innerHTML = shown.length ? shown.map(r => `<tr${rowClass?.(r) ? ` class="${rowClass(r)}"` : ''}>${columns.map(c => {

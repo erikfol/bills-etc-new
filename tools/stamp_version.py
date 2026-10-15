@@ -15,7 +15,8 @@ DOCS = Path(__file__).resolve().parent.parent / 'docs'
 # app folder → (localStorage key, files from other apps it imports, relative to docs/)
 APPS = {
     'bills-etc': ('billsetc-version', []),
-    'health': ('health-version', ['bills-etc/css/app.css', 'bills-etc/js/csv.js', 'bills-etc/js/fs.js', 'bills-etc/js/util.js']),
+    'health': ('health-version', ['bills-etc/css/app.css', 'bills-etc/js/csv.js', 'bills-etc/js/datatable.js', 'bills-etc/js/dates.js',
+                                'bills-etc/js/filtermenu.js', 'bills-etc/js/fs.js', 'bills-etc/js/util.js']),
 }
 
 

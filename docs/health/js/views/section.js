@@ -1,6 +1,7 @@
 // One Health section (General Health, Dental, Eye): a table that's read-only until Edit is pressed.
 // While editing, every cell is an input; rows can be added and removed; Save writes the section's CSV.
 import { esc, toast } from '../../../bills-etc/js/util.js';
+import { dataTable, closeFilterMenu } from '../../../bills-etc/js/datatable.js';
 import { loadRecords, saveRecords, newestFirst, loadLocations, saveLocations } from '../records.js';
 
 const NEW_LOCATION = '__new__'; // a location can't be named this, so it can't clash
@@ -15,7 +16,7 @@ function showDate(v) {
 let state = null; // { section, rows, draft, original } — draft is set while editing
 
 export const hasUnsavedEdits = () => !!state?.draft && JSON.stringify(state.draft) !== state.original;
-export const forget = () => { state = null; };
+export const forget = () => { state = null; closeFilterMenu(); };
 
 export async function renderSection(el, section) {
     el.innerHTML = '<p class="muted">Loading…</p>';
@@ -26,7 +27,8 @@ export async function renderSection(el, section) {
         <p class="lead">Saved in <code>${esc(section.path)}</code> in your folder.</p>
         <section>
             <div class="row table-tools" id="tools"></div>
-            <div class="table-wrap"><table class="record-table" id="tbl"></table></div>
+            <div id="read" class="record-table"></div>
+            <div class="table-wrap" id="edit-wrap" hidden><table class="record-table editing" id="tbl"></table></div>
             <div class="row" id="edit-actions" style="margin-top:14px" hidden>
                 <button type="button" id="add">＋ Add entry</button>
                 <span class="spacer"></span>
@@ -35,28 +37,50 @@ export async function renderSection(el, section) {
             </div>
         </section>`;
     const tbl = el.querySelector('#tbl');
+    const readEl = el.querySelector('#read');
+    const editWrap = el.querySelector('#edit-wrap');
     const tools = el.querySelector('#tools');
     const actions = el.querySelector('#edit-actions');
     const cols = section.columns;
 
+    // Read-only view: Excel-style sort and filter on every column (the Finance Table's menu).
+    const ONGOING = 'ongoing';
+    const column = c => {
+        const get = r => r[c.name] ?? '';
+        if (c.kind === 'date') return {
+            id: c.name, label: c.name, value: get, text: showDate, tdClass: () => 'date',
+            sortLabels: ['Oldest → Newest', 'Newest → Oldest'],
+        };
+        if (c.kind === 'end') return { // blank = ongoing: its own filter value, sorted after every end date
+            id: c.name, label: c.name, value: r => get(r) || ONGOING,
+            text: v => (v === ONGOING ? 'ongoing' : showDate(v)),
+            cell: r => (get(r) ? showDate(get(r)) : '<span class="ongoing">ongoing</span>'),
+            sortKey: v => (v === ONGOING ? '9999' : v), tdClass: () => 'date',
+            sortLabels: ['Oldest → Newest (ongoing last)', 'Ongoing, then Newest → Oldest'],
+        };
+        if (c.kind === 'location') return {
+            id: c.name, label: c.name, value: get,
+            cell: r => (get(r) ? `<span class="cat-badge">${esc(get(r))}</span>` : ''),
+        };
+        return { id: c.name, label: c.name, value: get, tdClass: () => 'text' };
+    };
+    const firstDate = cols.find(c => c.kind === 'date');
+
     const showRead = () => {
         state.draft = null;
         actions.hidden = true;
-        tbl.classList.remove('editing');
+        editWrap.hidden = true;
+        tbl.innerHTML = '';
+        readEl.hidden = false;
         tools.innerHTML = `<button type="button" class="small" id="edit">✎ Edit</button>
-            <span class="muted edit-hint">Turn on editing to add, change or remove entries.</span>`;
+            <span class="muted edit-hint">Click a column name to sort, or ▾ to sort and filter. Turn on editing to add, change or remove entries.</span>`;
         tools.querySelector('#edit').onclick = startEdit;
-        const rows = [...state.rows].sort(newestFirst(section));
-        const cell = (c, v) => {
-            if (c.kind === 'date') return `<td class="date">${showDate(v)}</td>`;
-            if (c.kind === 'end') return `<td class="date">${v ? showDate(v) : '<span class="ongoing">ongoing</span>'}</td>`;
-            if (c.kind === 'location') return `<td>${v ? `<span class="cat-badge">${esc(v)}</span>` : ''}</td>`;
-            return `<td class="text">${esc(v)}</td>`;
-        };
-        tbl.innerHTML = `<thead><tr>${cols.map(c => `<th>${esc(c.name)}</th>`).join('')}</tr></thead>
-            <tbody>${rows.length
-                ? rows.map(r => `<tr>${cols.map(c => cell(c, r[c.name])).join('')}</tr>`).join('')
-                : `<tr><td colspan="${cols.length}" class="muted">No entries yet. Press Edit to add one.</td></tr>`}</tbody>`;
+        dataTable(readEl, {
+            columns: cols.map(column),
+            rows: state.rows,
+            sort: firstDate ? { col: firstDate.name, dir: 'desc' } : null,
+            empty: state.rows.length ? 'No entries match the filters' : 'No entries yet. Press Edit to add one.',
+        });
     };
 
     const locationOptions = v => {
@@ -92,7 +116,10 @@ export async function renderSection(el, section) {
     function startEdit() {
         state.draft = [...state.rows].map((r, i) => ({ ...r, _from: i })).sort(newestFirst(section));
         state.original = JSON.stringify(state.draft);
-        tbl.classList.add('editing');
+        closeFilterMenu();
+        readEl.hidden = true;
+        readEl.innerHTML = '';
+        editWrap.hidden = false;
         tools.innerHTML = `<span class="muted edit-hint">Editing — changed cells are highlighted. Nothing is written until you press Save.</span>`;
         actions.hidden = false;
         drawEdit();
