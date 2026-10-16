@@ -1,4 +1,4 @@
-/* Health: the Bills Etc stylesheet plus the editable record tables. */
+/* Record tables shared by the Home-page sections (Health, Vehicles); loaded after the Bills Etc stylesheet. */
 .record-table td { vertical-align: top; }
 .record-table td.date { white-space: nowrap; }
 .record-table td.text { white-space: pre-wrap; min-width: 160px; }
@@ -14,3 +14,5 @@
 .record-table .changed { background: #fffbea !important; border-color: #f5e1a4 !important; }
 .record-table td.remove { width: 1%; }
 .record-table td.remove button { padding: 3px 9px; }
+.record-table.editing input.num-input { width: 110px; text-align: right; }
+.record-table.editing input[list] { min-width: 150px; }

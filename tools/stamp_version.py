@@ -1,4 +1,4 @@
-"""Stamp each app's index.html (docs/bills-etc/, docs/health/) with a new version and the list of its files.
+"""Stamp each app's index.html (docs/bills-etc/, docs/health/, docs/vehicles/) with a new version and the list of its files.
 
 GitHub Pages lets browsers cache files for up to 10 minutes, so right after an update a browser can get the new
 index.html but old JavaScript. index.html compares this version with the one the browser last ran; when it changed,
@@ -13,10 +13,13 @@ import re
 
 DOCS = Path(__file__).resolve().parent.parent / 'docs'
 # app folder → (localStorage key, files from other apps it imports, relative to docs/)
+SHARED = ['bills-etc/css/app.css', 'bills-etc/js/csv.js', 'bills-etc/js/datatable.js', 'bills-etc/js/dates.js',
+          'bills-etc/js/filtermenu.js', 'bills-etc/js/fs.js', 'bills-etc/js/util.js', 'shared/css/records.css',
+          'shared/js/folder.js', 'shared/js/recordtable.js']
 APPS = {
     'bills-etc': ('billsetc-version', []),
-    'health': ('health-version', ['bills-etc/css/app.css', 'bills-etc/js/csv.js', 'bills-etc/js/datatable.js', 'bills-etc/js/dates.js',
-                                'bills-etc/js/filtermenu.js', 'bills-etc/js/fs.js', 'bills-etc/js/util.js']),
+    'health': ('health-version', SHARED),
+    'vehicles': ('vehicles-version', SHARED),
 }
 
 

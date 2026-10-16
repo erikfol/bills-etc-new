@@ -1,16 +1,17 @@
 // Health records: one CSV per section in inputs/health/ of the connected folder (kept out of git like all of inputs/).
 import * as fs from '../../bills-etc/js/fs.js';
 import { parseCSV, toCSV } from '../../bills-etc/js/csv.js';
+import { newestFirst } from '../../shared/js/recordtable.js';
 
 export const HEALTH_DIR = 'inputs/health';
 export const LOCATIONS_PATH = `${HEALTH_DIR}/locations.json`;
 const DEFAULT_LOCATIONS = ['Head', 'Lips', 'Stomach', 'Arm', 'Leg', 'Penis'];
 
-// Column kinds: 'date' (stored YYYY-MM-DD), 'end' (a date; blank = ongoing), 'location' (dropdown), 'text'.
+// Column kinds are the shared record table's (shared/js/recordtable.js).
 export const SECTIONS = [
     { id: 'general', label: 'General Health', path: `${HEALTH_DIR}/general_health.csv`, columns: [
         { name: 'Date', kind: 'date' },
-        { name: 'Location', kind: 'location' },
+        { name: 'Location', kind: 'choice' },
         { name: 'Description', kind: 'text' },
         { name: 'Additional Notes', kind: 'text' },
     ] },
@@ -37,20 +38,8 @@ export async function loadRecords(section) {
     return parseCSV(text).rows.map(r => Object.fromEntries(names(section).map(c => [c, r[c] ?? ''])));
 }
 
-/** Newest first by the section's date columns; entries without a date go last. */
-export const newestFirst = section => {
-    const dates = section.columns.filter(c => c.kind === 'date' || c.kind === 'end').map(c => c.name);
-    return (a, b) => {
-        for (const d of dates) {
-            const cmp = (b[d] || '').localeCompare(a[d] || '');
-            if (cmp) return cmp;
-        }
-        return 0;
-    };
-};
-
 export async function saveRecords(section, rows) {
-    await fs.writeText(section.path, toCSV(names(section), [...rows].sort(newestFirst(section))));
+    await fs.writeText(section.path, toCSV(names(section), [...rows].sort(newestFirst(section.columns))));
 }
 
 export async function loadLocations() {

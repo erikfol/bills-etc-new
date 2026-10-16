@@ -1,0 +1,17 @@
+/* Vehicles: the information box (the maintenance table uses shared/css/records.css). */
+.info-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 14px 24px; }
+.info-item dt { font-size: 0.78em; text-transform: uppercase; letter-spacing: 0.4px; color: var(--muted); margin-bottom: 3px; }
+.info-item dd { font-size: 0.98em; white-space: pre-wrap; overflow-wrap: anywhere; }
+.info-item dd.mono { font-family: Consolas, 'SF Mono', monospace; }
+.info-item.wide { grid-column: 1 / -1; }
+.info-name { max-width: 420px; margin-bottom: 14px; }
+.info-edit td { padding: 4px 6px; vertical-align: top; }
+.info-edit td:first-child { width: 30%; }
+.info-edit input, .info-edit textarea { width: 100%; }
+.info-edit textarea {
+    font: inherit; font-size: 0.9em; resize: vertical;
+    padding: 6px 10px; border: 1px solid var(--line-strong); border-radius: 6px; background: #f8faff;
+}
+.info-edit td.remove { width: 1%; }
+.info-edit td.remove button { padding: 3px 9px; }
+.new-vehicle { display: flex; flex-direction: column; gap: 12px; max-width: 420px; }
