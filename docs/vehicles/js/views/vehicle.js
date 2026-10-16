@@ -2,6 +2,7 @@
 // Also the "Add vehicle" page.
 import { esc, toast } from '../../../bills-etc/js/util.js';
 import { recordTable, closeFilterMenu } from '../../../shared/js/recordtable.js';
+import { renderPhotos, releasePhotos } from './photos.js';
 import {
     TYPES, VEHICLES_PATH, saveVehicles, newVehicle, maintenancePath, maintenanceColumns, loadMaintenance, saveMaintenance,
 } from '../vehicles.js';
@@ -10,7 +11,7 @@ let table = null;
 let infoDraft = null; // { json at start, read() } while the information is being edited
 
 export const hasUnsavedEdits = () => !!table?.hasUnsavedEdits() || (!!infoDraft && infoDraft.read() !== infoDraft.start);
-export const forget = () => { table = null; infoDraft = null; closeFilterMenu(); };
+export const forget = () => { table = null; infoDraft = null; closeFilterMenu(); releasePhotos(); };
 
 /** list: every vehicle (saved back whole); onListChanged(goTo) re-draws the menu and opens #goTo. */
 export async function renderVehicle(el, list, v, onListChanged) {
@@ -23,6 +24,10 @@ export async function renderVehicle(el, list, v, onListChanged) {
         <section>
             <h2>Vehicle information</h2>
             <div id="info"></div>
+        </section>
+        <section>
+            <h2>Photos</h2>
+            <div id="photos"></div>
         </section>
         <section>
             <h2>Maintenance</h2>
@@ -107,6 +112,9 @@ export async function renderVehicle(el, list, v, onListChanged) {
     };
 
     showInfo();
+    renderPhotos(el.querySelector('#photos'), v).catch(err => {
+        el.querySelector('#photos').innerHTML = `<div class="banner bad">Couldn't load photos: ${esc(err.message)}</div>`;
+    });
     table = recordTable(el.querySelector('#maint'), {
         columns: maintenanceColumns(v),
         rows,

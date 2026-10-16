@@ -76,6 +76,17 @@ export async function readText(path) {
     }
 }
 
+/** The file itself (a File, e.g. for showing a photo), or null if it doesn't exist. */
+export async function readFile(path) {
+    const [d, name] = split(path);
+    try {
+        return await (await (await dir(d)).getFileHandle(name)).getFile();
+    } catch (e) {
+        if (e.name === 'NotFoundError' || e.name === 'TypeMismatchError') return null;
+        throw e;
+    }
+}
+
 /** When the file was last written, or null if it doesn't exist. */
 export async function modifiedAt(path) {
     const [d, name] = split(path);
