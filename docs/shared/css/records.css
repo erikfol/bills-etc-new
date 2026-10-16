@@ -16,3 +16,15 @@
 .record-table td.remove button { padding: 3px 9px; }
 .record-table.editing input.num-input { width: 110px; text-align: right; }
 .record-table.editing input[list] { min-width: 150px; }
+
+/* 📱 Phone copy button (top bar) and its panel */
+.phone-btn { background: rgba(255,255,255,0.1); border: 0; color: #ccd3e0; font-size: 0.78em; padding: 3px 10px; border-radius: 12px; }
+.phone-btn:hover { background: rgba(255,255,255,0.2); color: #fff; }
+.phone-panel {
+    position: fixed; top: 56px; right: 16px; z-index: 50; width: min(420px, calc(100vw - 32px));
+    background: var(--surface); border: 1px solid var(--line-strong); border-radius: 10px; padding: 16px 18px;
+    box-shadow: 0 8px 28px rgba(0,0,0,0.18); font-size: 0.9em; display: flex; flex-direction: column; gap: 10px;
+}
+.phone-panel h3 { font-size: 1.05em; }
+.phone-panel p { line-height: 1.45; }
+.pc-folder { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }

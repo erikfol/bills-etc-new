@@ -4,6 +4,7 @@
 import * as fs from '../../bills-etc/js/fs.js';
 import { esc } from '../../bills-etc/js/util.js';
 import { refreshStatus, askForFolder } from '../../shared/js/folder.js';
+import { setupPhoneCopy } from '../../shared/js/phonecopy.js';
 import { loadVehicles } from './vehicles.js';
 import { renderVehicle, renderNewVehicle, hasUnsavedEdits, forget } from './views/vehicle.js';
 
@@ -55,6 +56,8 @@ window.addEventListener('hashchange', () => route());
 window.addEventListener('beforeunload', e => {
     if (hasUnsavedEdits()) { e.preventDefault(); e.returnValue = ''; }
 });
+
+setupPhoneCopy(document.getElementById('phone-copy'));
 
 (async () => {
     if (fs.isSupported()) await fs.rememberedFolder().catch(() => null);

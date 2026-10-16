@@ -45,6 +45,16 @@ export async function rememberedFolder() {
     return { handle, granted };
 }
 
+/** Remember another folder handle under `key` (e.g. where the phone copy goes). */
+export async function rememberHandle(key, handle) {
+    try { await idbOp('readwrite', s => s.put(handle, key)); } catch { /* not remembered; fine */ }
+}
+
+/** A folder handle remembered under `key`, or null. */
+export async function rememberedHandle(key) {
+    try { return (await idbOp('readonly', s => s.get(key))) || null; } catch { return null; }
+}
+
 /** Must be called from a user gesture. */
 export async function reconnect(handle) {
     if ((await handle.requestPermission({ mode: 'readwrite' })) !== 'granted') return false;

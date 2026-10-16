@@ -4,6 +4,7 @@ import * as fs from '../../bills-etc/js/fs.js';
 import { esc } from '../../bills-etc/js/util.js';
 import { SECTIONS } from './records.js';
 import { refreshStatus, askForFolder } from '../../shared/js/folder.js';
+import { setupPhoneCopy } from '../../shared/js/phonecopy.js';
 import { renderSection, hasUnsavedEdits, forget } from './views/section.js';
 
 const viewEl = document.getElementById('view');
@@ -34,6 +35,8 @@ window.addEventListener('hashchange', () => route());
 window.addEventListener('beforeunload', e => {
     if (hasUnsavedEdits()) { e.preventDefault(); e.returnValue = ''; }
 });
+
+setupPhoneCopy(document.getElementById('phone-copy'));
 
 (async () => {
     if (fs.isSupported()) await fs.rememberedFolder().catch(() => null);
