@@ -3,6 +3,7 @@
 import { esc, toast } from '../../../bills-etc/js/util.js';
 import { recordTable, closeFilterMenu } from '../../../shared/js/recordtable.js';
 import { renderPhotos, releasePhotos } from './photos.js';
+import { renderPlaces, placesUnsaved, forgetPlaces } from './places.js';
 import {
     TYPES, VEHICLES_PATH, saveVehicles, newVehicle, maintenancePath, maintenanceColumns, loadMaintenance, saveMaintenance,
 } from '../vehicles.js';
@@ -10,8 +11,8 @@ import {
 let table = null;
 let infoDraft = null; // { json at start, read() } while the information is being edited
 
-export const hasUnsavedEdits = () => !!table?.hasUnsavedEdits() || (!!infoDraft && infoDraft.read() !== infoDraft.start);
-export const forget = () => { table = null; infoDraft = null; closeFilterMenu(); releasePhotos(); };
+export const hasUnsavedEdits = () => !!table?.hasUnsavedEdits() || (!!infoDraft && infoDraft.read() !== infoDraft.start) || placesUnsaved();
+export const forget = () => { table = null; infoDraft = null; closeFilterMenu(); releasePhotos(); forgetPlaces(); };
 
 /** list: every vehicle (saved back whole); onListChanged(goTo) re-draws the menu and opens #goTo. */
 export async function renderVehicle(el, list, v, onListChanged) {
@@ -24,6 +25,10 @@ export async function renderVehicle(el, list, v, onListChanged) {
         <section>
             <h2>Vehicle information</h2>
             <div id="info"></div>
+        </section>
+        <section>
+            <h2>Service places</h2>
+            <div id="places"></div>
         </section>
         <section>
             <h2>Photos</h2>
@@ -112,6 +117,7 @@ export async function renderVehicle(el, list, v, onListChanged) {
     };
 
     showInfo();
+    renderPlaces(el.querySelector('#places'), list, v);
     renderPhotos(el.querySelector('#photos'), v).catch(err => {
         el.querySelector('#photos').innerHTML = `<div class="banner bad">Couldn't load photos: ${esc(err.message)}</div>`;
     });

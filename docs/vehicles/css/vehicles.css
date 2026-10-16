@@ -41,3 +41,24 @@
     .lightbox .lb-prev, .lightbox .lb-next { position: absolute; bottom: 16px; }
     .lightbox .lb-prev { left: 16px; } .lightbox .lb-next { right: 16px; }
 }
+
+/* Service places */
+.place-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; }
+.place { border: 1px solid var(--line-strong); border-radius: 8px; padding: 14px 16px; }
+.place h3 { font-size: 1.02em; margin-bottom: 4px; }
+.place p { font-size: 0.9em; margin: 4px 0; overflow-wrap: anywhere; }
+.place a { color: var(--blue-text); }
+.place-notes { color: var(--muted); font-style: italic; }
+.hours { width: auto; margin-top: 8px; font-size: 0.85em; }
+.hours td { padding: 2px 14px 2px 0; border: 0; }
+.hours tbody tr:hover td { background: none; }
+.hours tr.today td { font-weight: 600; color: var(--navy-2); }
+.today-tag { font-size: 0.75em; font-weight: 600; color: #fff; background: var(--blue); border-radius: 8px; padding: 1px 6px; margin-left: 4px; }
+.place-form { border: 1px solid var(--line-strong); border-radius: 8px; padding: 12px 14px; margin-bottom: 12px; }
+.place-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 14px; margin-top: 8px; }
+.place-form-grid .wide { grid-column: 1 / -1; }
+.place-form-grid textarea {
+    font: inherit; font-size: 0.9em; resize: vertical;
+    padding: 6px 10px; border: 1px solid var(--line-strong); border-radius: 6px; background: #f8faff;
+}
+@media (max-width: 640px) { .place-form-grid { grid-template-columns: 1fr; } }
