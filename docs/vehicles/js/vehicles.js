@@ -69,6 +69,7 @@ export const maintenanceColumns = v => [
     { name: v.meter || 'Mileage', kind: 'number' },
     { name: 'Action', kind: 'suggest', suggestions: TYPES[v.type]?.actions || [] },
     { name: 'Description', kind: 'text' },
+    { name: 'Cost', kind: 'money' },
     { name: 'Additional Notes', kind: 'text' },
 ];
 

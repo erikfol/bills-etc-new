@@ -1,7 +1,7 @@
 // Editable record table shared by the Home-page sections (Health, Vehicles): read-only with Excel-style sort and
 // filter on every column until Edit is pressed; then every cell is an input, rows can be added and removed, and
 // Save hands the rows back to be written.
-import { esc, toast } from '../../bills-etc/js/util.js';
+import { esc, toast, money } from '../../bills-etc/js/util.js';
 import { dataTable, closeFilterMenu } from '../../bills-etc/js/datatable.js';
 
 const NEW_CHOICE = '__new__'; // a choice can't be named this, so it can't clash
@@ -15,7 +15,7 @@ export function showDate(v) {
 }
 
 const numberOf = v => {
-    const s = String(v ?? '').replace(/,/g, '').trim();
+    const s = String(v ?? '').replace(/[$,]/g, '').trim();
     return s === '' ? '' : Number(s);
 };
 
@@ -34,6 +34,7 @@ export const newestFirst = columns => {
 /**
  * Render into `container` (which it owns). Options:
  *   columns: [{ name, kind }] — kind: 'date' (YYYY-MM-DD), 'end' (date; blank = ongoing), 'number',
+ *            'money' (stored as a plain number, shown as $1,234.56; a Total line sums the rows shown),
  *            'choice' (dropdown, see choices), 'suggest' (free text offering values already used + c.suggestions),
  *            'text' (multi-line)
  *   rows:    [{ [name]: string }]
@@ -80,6 +81,11 @@ export function recordTable(container, { columns: cols, rows: initial, save, cho
             value: r => { const n = numberOf(get(r)); return Number.isNaN(n) ? get(r) : n; },
             text: v => (typeof v === 'number' ? v.toLocaleString('en-US') : String(v)),
         };
+        if (c.kind === 'money') return {
+            ...base, num: true,
+            value: r => { const n = numberOf(get(r)); return Number.isNaN(n) ? get(r) : n; },
+            text: v => (typeof v === 'number' ? money(v) : String(v)),
+        };
         if (c.kind === 'choice') return {
             ...base, value: get,
             cell: r => (get(r) ? `<span class="cat-badge">${esc(get(r))}</span>` : ''),
@@ -102,8 +108,17 @@ export function recordTable(container, { columns: cols, rows: initial, save, cho
             rows: state.rows,
             sort: firstDate ? { col: firstDate.name, dir: 'desc' } : null,
             empty: state.rows.length ? 'No entries match the filters' : 'No entries yet. Press Edit to add one.',
+            footer: cols.some(c => c.kind === 'money') ? totalRow : undefined,
         });
     };
+
+    // Under a table with money columns: their totals over the rows currently shown (so filtering by Action or a year
+    // gives what that cost).
+    const totalRow = visible => !visible.length ? '' : `<tr class="total-row">${cols.map((c, i) => {
+        if (c.kind !== 'money') return `<td>${i === 0 ? `<strong>Total</strong> <span class="muted">(${visible.length} shown)</span>` : ''}</td>`;
+        const total = visible.reduce((t, r) => { const n = numberOf(r[c.name]); return t + (typeof n === 'number' && !Number.isNaN(n) ? n : 0); }, 0);
+        return `<td class="amt"><strong>${esc(money(total))}</strong></td>`;
+    }).join('')}</tr>`;
 
     const choiceOptions = (c, v) => {
         const all = choices[c.name].list;
@@ -125,7 +140,7 @@ export function recordTable(container, { columns: cols, rows: initial, save, cho
         const input = (c, i, v) => {
             const attrs = `data-i="${i}" data-k="${esc(c.name)}" aria-label="${esc(c.name)}"`;
             if (c.kind === 'date' || c.kind === 'end') return `<input type="date" ${attrs} value="${esc(v)}">`;
-            if (c.kind === 'number') return `<input type="text" inputmode="decimal" class="num-input" ${attrs} value="${esc(v)}">`;
+            if (c.kind === 'number' || c.kind === 'money') return `<input type="text" inputmode="decimal" class="num-input" ${attrs} value="${esc(v)}">`;
             if (c.kind === 'choice') return `<select ${attrs}>${choiceOptions(c, v)}</select>`;
             if (c.kind === 'suggest') return `<input type="text" list="dl-${cols.indexOf(c)}" ${attrs} value="${esc(v)}">`;
             return `<textarea ${attrs} rows="1">${esc(v)}</textarea>`;
@@ -212,10 +227,10 @@ export function recordTable(container, { columns: cols, rows: initial, save, cho
         const start = firstDate?.name, end = cols.find(c => c.kind === 'end')?.name;
         const backwards = end && rows.find(r => r[start] && r[end] && r[end] < r[start]);
         if (backwards) return toast(`${label(backwards)} ends before it starts — fix the dates, then Save.`, 'bad');
-        for (const c of cols.filter(c => c.kind === 'number')) {
+        for (const c of cols.filter(c => c.kind === 'number' || c.kind === 'money')) {
             const bad = rows.find(r => Number.isNaN(numberOf(r[c.name])));
             if (bad) return toast(`${label(bad)}: ${c.name} “${bad[c.name]}” isn't a number — fix it, then Save.`, 'bad');
-            for (const r of rows) r[c.name] = String(numberOf(r[c.name])); // '52,340' is stored as 52340
+            for (const r of rows) r[c.name] = String(numberOf(r[c.name])); // '52,340' is stored as 52340, '$1,250' as 1250
         }
         const btn = container.querySelector('[data-save]');
         btn.disabled = true;
