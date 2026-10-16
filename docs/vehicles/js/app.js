@@ -1,4 +1,5 @@
-// Vehicles: one page per vehicle (#<id>) plus "＋ Add vehicle" (#new); the menu is built from vehicles.json.
+// Vehicles: one page per vehicle (#<id>, its Guides tab #<id>/guides) plus "＋ Add vehicle" (#new); the menu is
+// built from vehicles.json.
 // Uses the same folder as Bills Etc (the browser remembers it for the whole site); the data lives in inputs/vehicles/.
 import * as fs from '../../bills-etc/js/fs.js';
 import { esc } from '../../bills-etc/js/util.js';
@@ -36,12 +37,13 @@ async function route(force = false) {
     }
     try {
         const list = await loadVehicles();
-        const want = hash.slice(1);
+        const [want, part] = hash.slice(1).split('/');
         const v = list.find(x => x.id === want) || (want === 'new' ? null : list[0]);
-        currentHash = '#' + (v ? v.id : 'new');
+        const sub = v && v.id === want && part === 'guides' ? 'guides' : '';
+        currentHash = '#' + (v ? v.id : 'new') + (sub ? '/' + sub : '');
         if (location.hash !== currentHash) history.replaceState(null, '', currentHash);
         drawNav(list, v ? v.id : 'new');
-        if (v) await renderVehicle(viewEl, list, v, listChanged);
+        if (v) await renderVehicle(viewEl, list, v, listChanged, sub);
         else renderNewVehicle(viewEl, list, listChanged);
     } catch (e) {
         console.error(e);

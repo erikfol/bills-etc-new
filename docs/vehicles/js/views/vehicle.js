@@ -1,27 +1,50 @@
-// One vehicle's page: its information (read-only until Edit) and its maintenance table (the shared record table).
-// Also the "Add vehicle" page.
+// One vehicle's page, in two tabs: Overview (information, service places, photos, maintenance table) and Guides
+// (long how-to notes with reference images). Also the "Add vehicle" page.
 import { esc, toast } from '../../../bills-etc/js/util.js';
 import { recordTable, closeFilterMenu } from '../../../shared/js/recordtable.js';
-import { renderPhotos, releasePhotos } from './photos.js';
+import { renderGallery, releaseGalleries } from './gallery.js';
 import { renderPlaces, placesUnsaved, forgetPlaces } from './places.js';
+import { renderGuides, guidesUnsaved, forgetGuides } from './guides.js';
 import {
-    TYPES, VEHICLES_PATH, saveVehicles, newVehicle, maintenancePath, maintenanceColumns, loadMaintenance, saveMaintenance,
+    TYPES, VEHICLES_PATH, saveVehicles, photosDir, newVehicle, maintenancePath, maintenanceColumns, loadMaintenance, saveMaintenance,
 } from '../vehicles.js';
 
 let table = null;
 let infoDraft = null; // { json at start, read() } while the information is being edited
 
-export const hasUnsavedEdits = () => !!table?.hasUnsavedEdits() || (!!infoDraft && infoDraft.read() !== infoDraft.start) || placesUnsaved();
-export const forget = () => { table = null; infoDraft = null; closeFilterMenu(); releasePhotos(); forgetPlaces(); };
+export const hasUnsavedEdits = () => !!table?.hasUnsavedEdits() || (!!infoDraft && infoDraft.read() !== infoDraft.start)
+    || placesUnsaved() || guidesUnsaved();
+export const forget = () => { table = null; infoDraft = null; closeFilterMenu(); releaseGalleries(); forgetPlaces(); forgetGuides(); };
 
-/** list: every vehicle (saved back whole); onListChanged(goTo) re-draws the menu and opens #goTo. */
-export async function renderVehicle(el, list, v, onListChanged) {
+/** The tabs under a vehicle's name. */
+const tabs = (v, part) => {
+    const n = (v.guides || []).length;
+    return `<nav class="pillnav">
+        <a href="#${esc(v.id)}"${part === 'guides' ? '' : ' class="active"'}>Overview</a>
+        <a href="#${esc(v.id)}/guides"${part === 'guides' ? ' class="active"' : ''}>Guides${n ? ` (${n})` : ''}</a>
+    </nav>`;
+};
+
+/**
+ * list: every vehicle (saved back whole); onListChanged(goTo) re-draws the menu and opens #goTo.
+ * part: 'guides' for the Guides tab, otherwise the Overview.
+ */
+export async function renderVehicle(el, list, v, onListChanged, part) {
+    if (part === 'guides') {
+        el.innerHTML = `
+            <h1 class="page">${esc(v.name)}</h1>
+            <p class="lead">Guides are kept in <code>${esc(VEHICLES_PATH)}</code>; their images in <code>inputs/vehicles/guides/${esc(v.id)}/</code>.</p>
+            ${tabs(v, part)}
+            <section><h2>Guides</h2><div id="guides"><p class="muted">Loading…</p></div></section>`;
+        return renderGuides(el.querySelector('#guides'), list, v);
+    }
     el.innerHTML = '<p class="muted">Loading…</p>';
     const rows = await loadMaintenance(v);
     el.innerHTML = `
         <h1 class="page" id="v-name"></h1>
         <p class="lead">${esc(TYPES[v.type]?.label || 'Vehicle')} · information in <code>${esc(VEHICLES_PATH)}</code>,
             maintenance in <code>${esc(maintenancePath(v))}</code>.</p>
+        ${tabs(v, part)}
         <section>
             <h2>Vehicle information</h2>
             <div id="info"></div>
@@ -118,7 +141,7 @@ export async function renderVehicle(el, list, v, onListChanged) {
 
     showInfo();
     renderPlaces(el.querySelector('#places'), list, v);
-    renderPhotos(el.querySelector('#photos'), v).catch(err => {
+    renderGallery(el.querySelector('#photos'), photosDir(v), { noun: 'photo' }).catch(err => {
         el.querySelector('#photos').innerHTML = `<div class="banner bad">Couldn't load photos: ${esc(err.message)}</div>`;
     });
     table = recordTable(el.querySelector('#maint'), {
