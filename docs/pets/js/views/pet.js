@@ -1,13 +1,21 @@
 // One pet's page (information + records table), and the "Add pet" page. The information box works like Vehicles'.
 import { esc, toast } from '../../../bills-etc/js/util.js';
 import { recordTable, closeFilterMenu } from '../../../shared/js/recordtable.js';
-import { PETS_PATH, savePets, newPet, recordsPath, RECORD_COLUMNS, loadRecords, saveRecords } from '../pets.js';
+import { PETS_PATH, ageText, savePets, newPet, recordsPath, RECORD_COLUMNS, loadRecords, saveRecords } from '../pets.js';
 
 let table = null;
 let infoDraft = null; // { json at start, read() } while the information is being edited
 
 export const hasUnsavedEdits = () => !!table?.hasUnsavedEdits() || (!!infoDraft && infoDraft.read() !== infoDraft.start);
 export const forget = () => { table = null; infoDraft = null; closeFilterMenu(); };
+
+/** After the Birthday field: the age today (worked out, not saved). */
+const ageItem = f => {
+    if (!/birth/i.test(f.label) || !f.value) return '';
+    const age = ageText(f.value);
+    return `<div class="info-item"><dt>Age</dt><dd>${age ? esc(age)
+        : '<span class="muted">Can’t read the birthday — type it like 3/5/2018, Mar 5 2018 or March 2018</span>'}</dd></div>`;
+};
 
 /** list: every pet (saved back whole); onListChanged(goTo) re-draws the menu and opens #goTo. */
 export async function renderPet(el, list, p, onListChanged) {
@@ -33,7 +41,7 @@ export async function renderPet(el, list, p, onListChanged) {
             <div class="row table-tools"><button type="button" class="small" id="info-edit">✎ Edit</button>
                 <span class="muted edit-hint">Turn on editing to change, add or remove information.</span></div>
             <dl class="info-grid">${p.info.map(f => `<div class="info-item${/notes/i.test(f.label) ? ' wide' : ''}">
-                <dt>${esc(f.label)}</dt><dd${/\b(microchip|serial|license)\b/i.test(f.label) ? ' class="mono"' : ''}>${f.value ? esc(f.value) : '<span class="muted">—</span>'}</dd></div>`).join('')
+                <dt>${esc(f.label)}</dt><dd${/\b(microchip|serial|license)\b/i.test(f.label) ? ' class="mono"' : ''}>${f.value ? esc(f.value) : '<span class="muted">—</span>'}</dd></div>${ageItem(f)}`).join('')
                 || '<p class="muted">No information yet. Press Edit to add some.</p>'}</dl>`;
         infoEl.querySelector('#info-edit').onclick = editInfo;
     };

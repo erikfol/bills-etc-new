@@ -7,7 +7,7 @@ import * as fs from '../../bills-etc/js/fs.js';
 import { esc, toast } from '../../bills-etc/js/util.js';
 import { loadVehicles, loadMaintenance, maintenanceColumns, photosDir, guideDir, noteDir, TYPES } from '../../vehicles/js/vehicles.js';
 import { SECTIONS, loadRecords } from '../../health/js/records.js';
-import { loadPets, RECORD_COLUMNS, loadRecords as loadPetRecords } from '../../pets/js/pets.js';
+import { loadPets, ageText, RECORD_COLUMNS, loadRecords as loadPetRecords } from '../../pets/js/pets.js';
 
 const FILE_NAME = 'Vehicles and Health.html'; // kept when Pets was added, so the file already on the phone stays the one updated
 const HANDLE_KEY = 'phoneCopyDir';
@@ -88,13 +88,13 @@ export function buildHtml(data) {
 <header><div class="brand">Vehicles, Health &amp; Pets</div><select id="page" aria-label="Page"></select></header>
 <main id="main"><p class="muted">This page needs JavaScript. On Android, open it with Chrome.</p></main>
 <div id="lightbox" hidden><button id="lb-prev" aria-label="Previous">‹</button><img alt=""><button id="lb-next" aria-label="Next">›</button><div id="lb-cap"></div></div>
-<script>(${viewer.toString()})(${json});</script>
+<script>(${viewer.toString()})(${json}, ${ageText.toString()});</script>
 </body>
 </html>`;
 }
 
 // ── The viewer (runs inside the phone page; must not use anything from this module) ──────────────────────────
-function viewer(D) {
+function viewer(D, ageText) { // ageText: pets/js/pets.js's, embedded so ages count from the day the page is opened
     const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
     const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     const showDate = v => { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(v || ''); return m ? `${MON[+m[2] - 1]} ${+m[3]}, ${m[1]}` : (v || ''); };
@@ -241,7 +241,8 @@ function viewer(D) {
 
     function drawPet(p) {
         main.insertAdjacentHTML('beforeend', `<h1>${esc(p.name)}</h1>`);
-        section('General information', true, infoList(p.info));
+        const info = p.info.flatMap(f => (/birth/i.test(f.label) && f.value && ageText(f.value) ? [f, { label: 'Age', value: ageText(f.value) }] : [f]));
+        section('General information', true, infoList(info));
         section(`Records (${p.records.rows.length})`, true, el => records(el, p.records.columns, p.records.rows));
     }
 
