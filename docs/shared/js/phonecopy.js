@@ -1,13 +1,15 @@
-// "📱 Phone copy" (Vehicles and Health top bars): writes one self-contained, read-only page — every vehicle
-// (information, service places, maintenance, photos, guides) and every Health section — into a folder you pick once,
+// "📱 Phone copy" (Vehicles, Health and Pets top bars): writes one self-contained, read-only page — every vehicle
+// (information, service places, maintenance, photos, guides), every Health section and every pet (information,
+// records) — into a folder you pick once,
 // e.g. in Google Drive so it syncs to your phone. Photos are shrunk and embedded, so the page is a single file that
 // opens offline (Android hands Chrome a single file, so a page can't load anything from next to itself).
 import * as fs from '../../bills-etc/js/fs.js';
 import { esc, toast } from '../../bills-etc/js/util.js';
 import { loadVehicles, loadMaintenance, maintenanceColumns, photosDir, guideDir, noteDir, TYPES } from '../../vehicles/js/vehicles.js';
 import { SECTIONS, loadRecords } from '../../health/js/records.js';
+import { loadPets, RECORD_COLUMNS, loadRecords as loadPetRecords } from '../../pets/js/pets.js';
 
-const FILE_NAME = 'Vehicles and Health.html';
+const FILE_NAME = 'Vehicles and Health.html'; // kept when Pets was added, so the file already on the phone stays the one updated
 const HANDLE_KEY = 'phoneCopyDir';
 const IMAGE = /\.(png|jpe?g|gif|webp|bmp)$/i;
 const MAX_SIDE = 1400; // px, longest side of an embedded photo — sharp on a phone, small in the file
@@ -65,7 +67,9 @@ export async function collectData(progress = () => {}) {
     }
     const health = [];
     for (const s of SECTIONS) health.push({ label: s.label, columns: s.columns, rows: await loadRecords(s, false) });
-    return { made: new Date().toISOString(), vehicles, health };
+    const pets = [];
+    for (const p of await loadPets(false)) pets.push({ name: p.name, info: p.info || [], records: { columns: RECORD_COLUMNS, rows: await loadPetRecords(p, false) } });
+    return { made: new Date().toISOString(), vehicles, health, pets };
 }
 
 /** The phone page: data + viewer in one HTML file. */
@@ -77,11 +81,11 @@ export function buildHtml(data) {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
-<title>Vehicles &amp; Health</title>
+<title>Vehicles, Health &amp; Pets</title>
 <style>${VIEWER_CSS}</style>
 </head>
 <body>
-<header><div class="brand">Vehicles &amp; Health</div><select id="page" aria-label="Page"></select></header>
+<header><div class="brand">Vehicles, Health &amp; Pets</div><select id="page" aria-label="Page"></select></header>
 <main id="main"><p class="muted">This page needs JavaScript. On Android, open it with Chrome.</p></main>
 <div id="lightbox" hidden><button id="lb-prev" aria-label="Previous">‹</button><img alt=""><button id="lb-next" aria-label="Next">›</button><div id="lb-cap"></div></div>
 <script>(${viewer.toString()})(${json});</script>
@@ -104,6 +108,7 @@ function viewer(D) {
     const pages = [
         ...D.vehicles.map((v, i) => ({ group: 'Vehicles', label: v.name, draw: () => drawVehicle(v) })),
         ...D.health.map((h, i) => ({ group: 'Health', label: h.label, draw: () => drawHealth(h) })),
+        ...(D.pets || []).map(p => ({ group: 'Pets', label: p.name, draw: () => drawPet(p) })),
     ];
     const groups = [...new Set(pages.map(p => p.group))];
     pick.innerHTML = groups.map(g => `<optgroup label="${esc(g)}">${pages.map((p, i) => p.group === g
@@ -200,10 +205,12 @@ function viewer(D) {
         return n ? `<div class="step"><span class="num">${esc(n[1])}</span><span>${esc(n[2])}</span></div>` : `<p>${esc(s)}</p>`;
     }).join('');
 
+    const infoList = info => `<dl class="info">${info.filter(f => f.value).map(f =>
+        `<div><dt>${esc(f.label)}</dt><dd>${esc(f.value)}</dd></div>`).join('') || '<p class="muted">No information.</p>'}</dl>`;
+
     function drawVehicle(v) {
         main.insertAdjacentHTML('beforeend', `<h1>${esc(v.name)}</h1><p class="muted">${esc(v.type)}</p>`);
-        section('Information', true, `<dl class="info">${v.info.filter(f => f.value).map(f =>
-            `<div><dt>${esc(f.label)}</dt><dd>${esc(f.value)}</dd></div>`).join('') || '<p class="muted">No information.</p>'}</dl>`);
+        section('Information', true, infoList(v.info));
         if (v.places.length) section(`Service places (${v.places.length})`, false, v.places.map(p => `<div class="place">
             <h3>${esc(p.name)}</h3>${p.notes ? `<p class="muted">${esc(p.notes)}</p>` : ''}
             ${p.phone ? `<p><a class="btn" href="tel:${esc(p.phone.replace(/[^\d+]/g, ''))}">📞 ${esc(p.phone)}</a></p>` : ''}
@@ -230,6 +237,12 @@ function viewer(D) {
     function drawHealth(h) {
         main.insertAdjacentHTML('beforeend', `<h1>${esc(h.label)}</h1>`);
         section(`Entries (${h.rows.length})`, true, el => records(el, h.columns, h.rows));
+    }
+
+    function drawPet(p) {
+        main.insertAdjacentHTML('beforeend', `<h1>${esc(p.name)}</h1>`);
+        section('General information', true, infoList(p.info));
+        section(`Records (${p.records.rows.length})`, true, el => records(el, p.records.columns, p.records.rows));
     }
 
     show();
@@ -295,8 +308,8 @@ a.btn { display:inline-block; text-decoration:none; border:1px solid var(--line)
 `;
 
 // ── Keeping it up to date ─────────────────────────────────────────────────────────────────────────────────────
-// Every save in Vehicles or Health fires a 'data-saved' event on window (the save functions in vehicles.js,
-// health/js/records.js and the image gallery). A few seconds after the last one,
+// Every save in Vehicles, Health or Pets fires a 'data-saved' event on window (the save functions in vehicles.js,
+// health/js/records.js, pets/js/pets.js and the image gallery). A few seconds after the last one,
 // the phone copy is rebuilt in the background — if a folder was chosen and Chrome still allows writing to it. After
 // Chrome restarts it has to ask again, which needs a click: then an "Update phone copy" notice stays up instead.
 // "Out of date" is remembered in this browser, so the notice is back if the page is closed before updating.
@@ -386,7 +399,7 @@ export function setupPhoneCopy(button) {
         const dir = await fs.rememberedHandle(HANDLE_KEY);
         panel.innerHTML = `
             <h3>📱 Phone copy</h3>
-            <p>A read-only page with Vehicles and Health (information, maintenance, guides, photos, health records) as one file.
+            <p>A read-only page with Vehicles, Health and Pets (information, maintenance, guides, photos, health and pet records) as one file.
                Save it in a Google Drive folder and open it on your phone from the Drive app with Chrome.</p>
             <p>It updates by itself a few seconds after you save something here.</p>
             <p class="pc-folder">Folder: <strong>${dir ? esc(dir.name) : 'not chosen yet'}</strong>

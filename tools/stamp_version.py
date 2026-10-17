@@ -16,15 +16,12 @@ DOCS = Path(__file__).resolve().parent.parent / 'docs'
 SHARED = ['bills-etc/css/app.css', 'bills-etc/js/csv.js', 'bills-etc/js/datatable.js', 'bills-etc/js/dates.js',
           'bills-etc/js/filtermenu.js', 'bills-etc/js/fs.js', 'bills-etc/js/util.js', 'shared/css/records.css',
           'shared/js/fileguard.js', 'shared/js/folder.js', 'shared/js/phonecopy.js', 'shared/js/recordtable.js',
-          'health/js/records.js', 'vehicles/js/vehicles.js']  # the phone copy reads both apps' data
+          'health/js/records.js', 'vehicles/js/vehicles.js', 'pets/js/pets.js']  # the phone copy reads every app's data
 APPS = {
     'bills-etc': ('billsetc-version', []),
     'health': ('health-version', SHARED),
     'vehicles': ('vehicles-version', SHARED),
-    'pets': ('pets-version', ['bills-etc/css/app.css', 'bills-etc/js/csv.js', 'bills-etc/js/datatable.js',
-                              'bills-etc/js/dates.js', 'bills-etc/js/filtermenu.js', 'bills-etc/js/fs.js',
-                              'bills-etc/js/util.js', 'shared/css/records.css', 'shared/js/fileguard.js',
-                              'shared/js/folder.js', 'shared/js/recordtable.js']),
+    'pets': ('pets-version', SHARED + ['vehicles/css/vehicles.css']),  # borrows the Vehicles information box styles
 }
 
 
