@@ -72,6 +72,7 @@ export const maintenanceColumns = v => [
     { name: 'Date', kind: 'date' },
     { name: v.meter || 'Mileage', kind: 'number' },
     { name: 'Action', kind: 'suggest', suggestions: TYPES[v.type]?.actions || [] },
+    { name: 'Location', kind: 'suggest', suggestions: (v.places || []).map(p => p.name) }, // where it was done
     { name: 'Description', kind: 'text' },
     { name: 'Cost', kind: 'money' },
     { name: 'Additional Notes', kind: 'text' },
