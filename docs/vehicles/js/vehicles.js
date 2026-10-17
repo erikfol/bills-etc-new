@@ -62,6 +62,15 @@ export function newVehicle(list, name, type) {
     return { id, name, type, meter: TYPES[type].meter, info: blankInfo(type) };
 }
 
+// What the shared views (places, guides, notes) save with and say; another app (House) passes its own.
+export const STORE = {
+    save: list => saveVehicles(list),
+    guideDir: (v, g) => guideDir(v, g),
+    noteDir: (v, n) => noteDir(v, n),
+    noPlaces: 'No places yet. Press Edit to add a shop or marina.',
+    noNotes: 'No notes yet. Add things you noticed, questions for the marina, ideas…',
+};
+
 export const maintenancePath = v => `${VEHICLES_DIR}/${v.id}-maintenance.csv`;
 export const photosDir = v => `${VEHICLES_DIR}/photos/${v.id}`;
 export const guideDir = (v, g) => `${VEHICLES_DIR}/guides/${v.id}/${g.id}`;

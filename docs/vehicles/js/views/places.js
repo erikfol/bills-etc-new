@@ -1,7 +1,7 @@
 // A vehicle's service places (shops, marinas): name, address (map link), phone (call link), hours, notes.
 // Kept on the vehicle in vehicles.json as places: [{ name, address, phone, hours, notes }]; read-only until Edit.
 import { esc, toast } from '../../../bills-etc/js/util.js';
-import { saveVehicles } from '../vehicles.js';
+import { STORE } from '../vehicles.js';
 
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const FIELDS = ['name', 'address', 'phone', 'hours', 'notes'];
@@ -26,8 +26,8 @@ function hoursHtml(hours) {
     }).join('')}</table>`;
 }
 
-/** list: every vehicle (saved back whole). */
-export function renderPlaces(el, list, v) {
+/** list: every vehicle (saved back whole). store: how to save and what to say (vehicles.js STORE, or another app's). */
+export function renderPlaces(el, list, v, store = STORE) {
     const show = () => {
         draft = null;
         const places = v.places || [];
@@ -42,7 +42,7 @@ export function renderPlaces(el, list, v) {
                     ${p.phone ? `<p>📞 <a href="${telLink(p.phone)}">${esc(p.phone)}</a></p>` : ''}
                     ${p.hours ? hoursHtml(p.hours) : ''}
                 </div>`).join('')}</div>`
-                : '<p class="muted">No places yet. Press Edit to add a shop or marina.</p>'}`;
+                : `<p class="muted">${esc(store.noPlaces)}</p>`}`;
         el.querySelector('#pl-edit').onclick = edit;
     };
 
@@ -91,7 +91,7 @@ export function renderPlaces(el, list, v) {
             const before = v.places;
             v.places = places;
             try {
-                await saveVehicles(list);
+                await store.save(list);
             } catch (err) {
                 v.places = before;
                 return toast(`Couldn't save: ${err.message}`, 'bad');

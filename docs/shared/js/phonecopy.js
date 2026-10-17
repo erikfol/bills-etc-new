@@ -1,5 +1,5 @@
-// "📱 Phone copy" (Vehicles, Health and Pets top bars): writes one self-contained, read-only page — every vehicle
-// (information, service places, maintenance, photos, guides), every Health section and every pet (information,
+// "📱 Phone copy" (Vehicles, House, Health and Pets top bars): writes one self-contained, read-only page — every vehicle
+// and house (information, service places, maintenance, photos, guides, notes), every Health section and every pet (information,
 // photos, records) — into a folder you pick once,
 // e.g. in Google Drive so it syncs to your phone. Photos are shrunk and embedded, so the page is a single file that
 // opens offline (Android hands Chrome a single file, so a page can't load anything from next to itself).
@@ -7,6 +7,7 @@ import * as fs from '../../bills-etc/js/fs.js';
 import { esc, toast } from '../../bills-etc/js/util.js';
 import { loadVehicles, loadMaintenance, maintenanceColumns, photosDir, guideDir, noteDir, TYPES } from '../../vehicles/js/vehicles.js';
 import { SECTIONS, loadRecords } from '../../health/js/records.js';
+import * as house from '../../house/js/house.js';
 import { loadPets, ageText, RECORD_COLUMNS, loadRecords as loadPetRecords, photosDir as petPhotosDir } from '../../pets/js/pets.js';
 
 const FILE_NAME = 'Vehicles and Health.html'; // kept when Pets was added, so the file already on the phone stays the one updated
@@ -65,11 +66,30 @@ export async function collectData(progress = () => {}) {
             notes,
         });
     }
+    const houses = [];
+    for (const h of await house.loadHouses(false)) {
+        const guides = [];
+        for (const g of h.guides || []) guides.push({ title: g.title, text: g.text || '', images: await images(house.guideDir(h, g), tick) });
+        const notes = [];
+        for (const n of h.notes || []) notes.push({ date: n.date || '', title: n.title || '', text: n.text || '', images: await images(house.noteDir(h, n), tick) });
+        notes.sort((a, b) => b.date.localeCompare(a.date));
+        houses.push({
+            name: h.name,
+            type: 'House',
+            placesLabel: 'Service companies',
+            info: h.info || [],
+            places: h.places || [],
+            maintenance: { columns: house.maintenanceColumns(h).map(c => ({ name: c.name, kind: c.kind })), rows: await house.loadMaintenance(h, false) },
+            photos: await images(house.photosDir(h), tick),
+            guides,
+            notes,
+        });
+    }
     const health = [];
     for (const s of SECTIONS) health.push({ label: s.label, columns: s.columns, rows: await loadRecords(s, false) });
     const pets = [];
     for (const p of await loadPets(false)) pets.push({ name: p.name, info: p.info || [], records: { columns: RECORD_COLUMNS, rows: await loadPetRecords(p, false) }, photos: await images(petPhotosDir(p), tick) });
-    return { made: new Date().toISOString(), vehicles, health, pets };
+    return { made: new Date().toISOString(), vehicles, houses, health, pets };
 }
 
 /** The phone page: data + viewer in one HTML file. */
@@ -81,20 +101,20 @@ export function buildHtml(data) {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
-<title>Vehicles, Health &amp; Pets</title>
+<title>Vehicles, House, Health &amp; Pets</title>
 <style>${VIEWER_CSS}</style>
 </head>
 <body>
-<header><div class="brand">Vehicles, Health &amp; Pets</div><select id="page" aria-label="Page"></select></header>
+<header><div class="brand">Vehicles, House, Health &amp; Pets</div><select id="page" aria-label="Page"></select></header>
 <main id="main"><p class="muted">This page needs JavaScript. On Android, open it with Chrome.</p></main>
 <div id="lightbox" hidden><button id="lb-prev" aria-label="Previous">‹</button><img alt=""><button id="lb-next" aria-label="Next">›</button><div id="lb-cap"></div></div>
-<script>(${viewer.toString()})(${json}, ${ageText.toString()});</script>
+<script>(${viewer.toString()})(${json}, ${ageText.toString()}, ${house.houseAge.toString()});</script>
 </body>
 </html>`;
 }
 
 // ── The viewer (runs inside the phone page; must not use anything from this module) ──────────────────────────
-function viewer(D, ageText) { // ageText: pets/js/pets.js's, embedded so ages count from the day the page is opened
+function viewer(D, ageText, houseAge) { // pets.js ageText and house.js houseAge, embedded so ages count from the day the page is opened
     const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
     const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     const showDate = v => { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(v || ''); return m ? `${MON[+m[2] - 1]} ${+m[3]}, ${m[1]}` : (v || ''); };
@@ -107,6 +127,7 @@ function viewer(D, ageText) { // ageText: pets/js/pets.js's, embedded so ages co
     const made = new Date(D.made);
     const pages = [
         ...D.vehicles.map((v, i) => ({ group: 'Vehicles', label: v.name, draw: () => drawVehicle(v) })),
+        ...(D.houses || []).map(h => ({ group: 'House', label: h.name, draw: () => drawVehicle(h) })),
         ...D.health.map((h, i) => ({ group: 'Health', label: h.label, draw: () => drawHealth(h) })),
         ...(D.pets || []).map(p => ({ group: 'Pets', label: p.name, draw: () => drawPet(p) })),
     ];
@@ -210,8 +231,9 @@ function viewer(D, ageText) { // ageText: pets/js/pets.js's, embedded so ages co
 
     function drawVehicle(v) {
         main.insertAdjacentHTML('beforeend', `<h1>${esc(v.name)}</h1><p class="muted">${esc(v.type)}</p>`);
-        section('Information', true, infoList(v.info));
-        if (v.places.length) section(`Service places (${v.places.length})`, false, v.places.map(p => `<div class="place">
+        const info = v.type === 'House' ? v.info.flatMap(f => (/built/i.test(f.label) && f.value && houseAge(f.value) ? [f, { label: 'Age', value: houseAge(f.value) }] : [f])) : v.info;
+        section('Information', true, infoList(info));
+        if (v.places.length) section(`${esc(v.placesLabel || 'Service places')} (${v.places.length})`, false, v.places.map(p => `<div class="place">
             <h3>${esc(p.name)}</h3>${p.notes ? `<p class="muted">${esc(p.notes)}</p>` : ''}
             ${p.phone ? `<p><a class="btn" href="tel:${esc(p.phone.replace(/[^\d+]/g, ''))}">📞 ${esc(p.phone)}</a></p>` : ''}
             ${p.address ? `<p><a href="https://www.google.com/maps/search/?api=1&amp;query=${encodeURIComponent(p.address)}">📍 ${esc(p.address)}</a></p>` : ''}
@@ -310,8 +332,8 @@ a.btn { display:inline-block; text-decoration:none; border:1px solid var(--line)
 `;
 
 // ── Keeping it up to date ─────────────────────────────────────────────────────────────────────────────────────
-// Every save in Vehicles, Health or Pets fires a 'data-saved' event on window (the save functions in vehicles.js,
-// health/js/records.js, pets/js/pets.js and the image gallery). A few seconds after the last one,
+// Every save in Vehicles, House, Health or Pets fires a 'data-saved' event on window (the save functions in vehicles.js,
+// house/js/house.js, health/js/records.js, pets/js/pets.js and the image gallery). A few seconds after the last one,
 // the phone copy is rebuilt in the background — if a folder was chosen and Chrome still allows writing to it. After
 // Chrome restarts it has to ask again, which needs a click: then an "Update phone copy" notice stays up instead.
 // "Out of date" is remembered in this browser, so the notice is back if the page is closed before updating.
@@ -401,7 +423,7 @@ export function setupPhoneCopy(button) {
         const dir = await fs.rememberedHandle(HANDLE_KEY);
         panel.innerHTML = `
             <h3>📱 Phone copy</h3>
-            <p>A read-only page with Vehicles, Health and Pets (information, maintenance, guides, photos, health and pet records) as one file.
+            <p>A read-only page with Vehicles, House, Health and Pets (information, maintenance, guides, notes, photos, health and pet records) as one file.
                Save it in a Google Drive folder and open it on your phone from the Drive app with Chrome.</p>
             <p>It updates by itself a few seconds after you save something here.</p>
             <p class="pc-folder">Folder: <strong>${dir ? esc(dir.name) : 'not chosen yet'}</strong>

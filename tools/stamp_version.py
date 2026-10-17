@@ -1,4 +1,4 @@
-"""Stamp each app's index.html (docs/bills-etc/, docs/health/, docs/vehicles/, docs/pets/) with a new version and the list of its files.
+"""Stamp each app's index.html (docs/bills-etc/, docs/health/, docs/vehicles/, docs/house/, docs/pets/) with a new version and the list of its files.
 
 GitHub Pages lets browsers cache files for up to 10 minutes, so right after an update a browser can get the new
 index.html but old JavaScript. index.html compares this version with the one the browser last ran; when it changed,
@@ -16,11 +16,13 @@ DOCS = Path(__file__).resolve().parent.parent / 'docs'
 SHARED = ['bills-etc/css/app.css', 'bills-etc/js/csv.js', 'bills-etc/js/datatable.js', 'bills-etc/js/dates.js',
           'bills-etc/js/filtermenu.js', 'bills-etc/js/fs.js', 'bills-etc/js/util.js', 'shared/css/records.css',
           'shared/js/fileguard.js', 'shared/js/folder.js', 'shared/js/phonecopy.js', 'shared/js/recordtable.js',
-          'health/js/records.js', 'vehicles/js/vehicles.js', 'pets/js/pets.js']  # the phone copy reads every app's data
+          'health/js/records.js', 'vehicles/js/vehicles.js', 'house/js/house.js', 'pets/js/pets.js']  # the phone copy reads every app's data
 APPS = {
     'bills-etc': ('billsetc-version', []),
     'health': ('health-version', SHARED),
     'vehicles': ('vehicles-version', SHARED),
+    'house': ('house-version', SHARED + ['vehicles/css/vehicles.css', 'vehicles/js/views/gallery.js', 'vehicles/js/views/places.js',
+                                         'vehicles/js/views/guides.js', 'vehicles/js/views/notes.js']),  # Vehicles' views
     'pets': ('pets-version', SHARED + ['vehicles/css/vehicles.css', 'vehicles/js/views/gallery.js']),  # borrows Vehicles' info box + photos
 }
 

@@ -2,7 +2,7 @@
 // each with its own reference images. Kept on the vehicle in vehicles.json as guides: [{ id, title, text }];
 // a guide's images are the files in inputs/vehicles/guides/<vehicle id>/<guide id>/.
 import { esc, toast } from '../../../bills-etc/js/util.js';
-import { saveVehicles, guideDir } from '../vehicles.js';
+import { STORE } from '../vehicles.js';
 import { renderGallery, listImages, releaseGalleries } from './gallery.js';
 
 let draft = null; // { start, read } while a guide is being edited
@@ -31,7 +31,8 @@ const newId = (guides, title) => {
 };
 
 /** list: every vehicle (saved back whole). openId: a guide to show opened (e.g. one just saved). */
-export async function renderGuides(el, list, v, openId = null) {
+export async function renderGuides(el, list, v, openId = null, store = STORE) {
+    const guideDir = store.guideDir;
     draft = null;
     releaseGalleries();
     const guides = v.guides || [];
@@ -99,7 +100,7 @@ export async function renderGuides(el, list, v, openId = null) {
             const before = v.guides;
             v.guides = next;
             try {
-                await saveVehicles(list);
+                await store.save(list);
                 return true;
             } catch (err) {
                 v.guides = before;
@@ -109,7 +110,7 @@ export async function renderGuides(el, list, v, openId = null) {
         };
         container.querySelector('[data-cancel]').onclick = () => {
             if (guidesUnsaved() && !confirm('Discard your changes?')) return;
-            renderGuides(el, list, v, g?.id);
+            renderGuides(el, list, v, g?.id, store);
         };
         container.querySelector('[data-save]').onclick = async () => {
             const d = JSON.parse(read());
@@ -118,13 +119,13 @@ export async function renderGuides(el, list, v, openId = null) {
             const updated = g ? { ...g, title, text } : { id: newId(guides, title), title, text };
             if (!await save(g ? guides.map(x => (x === g ? updated : x)) : [...guides, updated])) return;
             toast('Saved', 'ok');
-            renderGuides(el, list, v, updated.id);
+            renderGuides(el, list, v, updated.id, store);
         };
         container.querySelector('[data-remove]')?.addEventListener('click', async () => {
             if (!confirm(`Remove the guide “${g.title}”?\n\nIts images stay in your folder (${guideDir(v, g)}/).`)) return;
             if (!await save(guides.filter(x => x !== g))) return;
             toast(`Removed “${g.title}”`, 'ok');
-            renderGuides(el, list, v);
+            renderGuides(el, list, v, null, store);
         });
     };
 

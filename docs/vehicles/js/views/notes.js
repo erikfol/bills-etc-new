@@ -3,7 +3,7 @@
 // are the files in inputs/vehicles/notes/<vehicle id>/<note id>/.
 import { esc, toast } from '../../../bills-etc/js/util.js';
 import { showDate } from '../../../shared/js/recordtable.js';
-import { saveVehicles, noteDir } from '../vehicles.js';
+import { STORE } from '../vehicles.js';
 import { renderGallery, releaseGalleries } from './gallery.js';
 
 let draft = null; // { start, read } while a note is being edited
@@ -23,7 +23,8 @@ const newId = (notes, date, title) => {
 };
 
 /** list: every vehicle (saved back whole). */
-export function renderNotes(el, list, v) {
+export function renderNotes(el, list, v, store = STORE) {
+    const noteDir = store.noteDir;
     draft = null;
     releaseGalleries();
     const notes = [...(v.notes || [])].sort(newestFirst);
@@ -33,7 +34,7 @@ export function renderNotes(el, list, v) {
         <div class="row table-tools">
             <input type="search" id="n-search" placeholder="Search notes…" aria-label="Search notes"${notes.length ? '' : ' hidden'}>
             <button type="button" class="small" id="n-add">＋ Add note</button>
-            <span class="muted edit-hint" id="n-count">${notes.length ? '' : 'No notes yet. Add things you noticed, questions for the marina, ideas…'}</span>
+            <span class="muted edit-hint" id="n-count">${notes.length ? '' : esc(store.noNotes)}</span>
         </div>
         <div id="n-new"></div>
         <div id="n-list">${notes.map((n, i) => `
@@ -97,7 +98,7 @@ export function renderNotes(el, list, v) {
             const before = v.notes;
             v.notes = next;
             try {
-                await saveVehicles(list);
+                await store.save(list);
                 return true;
             } catch (err) {
                 v.notes = before;
@@ -107,7 +108,7 @@ export function renderNotes(el, list, v) {
         };
         container.querySelector('[data-cancel]').onclick = () => {
             if (notesUnsaved() && !confirm('Discard your changes?')) return;
-            renderNotes(el, list, v);
+            renderNotes(el, list, v, store);
         };
         container.querySelector('[data-save]').onclick = async () => {
             const d = JSON.parse(read());
@@ -117,13 +118,13 @@ export function renderNotes(el, list, v) {
             const updated = n ? { ...n, date, title, text } : { id: newId(all, date, title), date, title, text };
             if (!await save(n ? all.map(x => (x.id === n.id ? updated : x)) : [...all, updated])) return;
             toast('Saved', 'ok');
-            renderNotes(el, list, v);
+            renderNotes(el, list, v, store);
         };
         container.querySelector('[data-remove]')?.addEventListener('click', async () => {
             if (!confirm(`Remove the note “${n.title || showDate(n.date)}”?\n\nIts images stay in your folder (${noteDir(v, n)}/).`)) return;
             if (!await save((v.notes || []).filter(x => x.id !== n.id))) return;
             toast('Note removed', 'ok');
-            renderNotes(el, list, v);
+            renderNotes(el, list, v, store);
         });
     };
 
