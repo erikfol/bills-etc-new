@@ -70,6 +70,7 @@ export function ageText(birthday, today = new Date()) {
 }
 
 export const recordsPath = p => `${PETS_DIR}/${p.id}-records.csv`;
+export const photosDir = p => `${PETS_DIR}/photos/${p.id}`;
 
 export const RECORD_COLUMNS = [
     { name: 'Date', kind: 'date' },

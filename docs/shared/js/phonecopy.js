@@ -1,13 +1,13 @@
 // "📱 Phone copy" (Vehicles, Health and Pets top bars): writes one self-contained, read-only page — every vehicle
 // (information, service places, maintenance, photos, guides), every Health section and every pet (information,
-// records) — into a folder you pick once,
+// photos, records) — into a folder you pick once,
 // e.g. in Google Drive so it syncs to your phone. Photos are shrunk and embedded, so the page is a single file that
 // opens offline (Android hands Chrome a single file, so a page can't load anything from next to itself).
 import * as fs from '../../bills-etc/js/fs.js';
 import { esc, toast } from '../../bills-etc/js/util.js';
 import { loadVehicles, loadMaintenance, maintenanceColumns, photosDir, guideDir, noteDir, TYPES } from '../../vehicles/js/vehicles.js';
 import { SECTIONS, loadRecords } from '../../health/js/records.js';
-import { loadPets, ageText, RECORD_COLUMNS, loadRecords as loadPetRecords } from '../../pets/js/pets.js';
+import { loadPets, ageText, RECORD_COLUMNS, loadRecords as loadPetRecords, photosDir as petPhotosDir } from '../../pets/js/pets.js';
 
 const FILE_NAME = 'Vehicles and Health.html'; // kept when Pets was added, so the file already on the phone stays the one updated
 const HANDLE_KEY = 'phoneCopyDir';
@@ -68,7 +68,7 @@ export async function collectData(progress = () => {}) {
     const health = [];
     for (const s of SECTIONS) health.push({ label: s.label, columns: s.columns, rows: await loadRecords(s, false) });
     const pets = [];
-    for (const p of await loadPets(false)) pets.push({ name: p.name, info: p.info || [], records: { columns: RECORD_COLUMNS, rows: await loadPetRecords(p, false) } });
+    for (const p of await loadPets(false)) pets.push({ name: p.name, info: p.info || [], records: { columns: RECORD_COLUMNS, rows: await loadPetRecords(p, false) }, photos: await images(petPhotosDir(p), tick) });
     return { made: new Date().toISOString(), vehicles, health, pets };
 }
 
@@ -243,6 +243,7 @@ function viewer(D, ageText) { // ageText: pets/js/pets.js's, embedded so ages co
         main.insertAdjacentHTML('beforeend', `<h1>${esc(p.name)}</h1>`);
         const info = p.info.flatMap(f => (/birth/i.test(f.label) && f.value && ageText(f.value) ? [f, { label: 'Age', value: ageText(f.value) }] : [f]));
         section('General information', true, infoList(info));
+        if (p.photos?.length) section(`Photos (${p.photos.length})`, false, gallery(p.photos));
         section(`Records (${p.records.rows.length})`, true, el => records(el, p.records.columns, p.records.rows));
     }
 

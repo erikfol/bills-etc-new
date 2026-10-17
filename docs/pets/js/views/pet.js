@@ -1,13 +1,14 @@
 // One pet's page (information + records table), and the "Add pet" page. The information box works like Vehicles'.
 import { esc, toast } from '../../../bills-etc/js/util.js';
 import { recordTable, closeFilterMenu } from '../../../shared/js/recordtable.js';
-import { PETS_PATH, ageText, savePets, newPet, recordsPath, RECORD_COLUMNS, loadRecords, saveRecords } from '../pets.js';
+import { renderGallery, releaseGalleries } from '../../../vehicles/js/views/gallery.js';
+import { PETS_PATH, ageText, savePets, newPet, recordsPath, photosDir, RECORD_COLUMNS, loadRecords, saveRecords } from '../pets.js';
 
 let table = null;
 let infoDraft = null; // { json at start, read() } while the information is being edited
 
 export const hasUnsavedEdits = () => !!table?.hasUnsavedEdits() || (!!infoDraft && infoDraft.read() !== infoDraft.start);
-export const forget = () => { table = null; infoDraft = null; closeFilterMenu(); };
+export const forget = () => { table = null; infoDraft = null; closeFilterMenu(); releaseGalleries(); };
 
 /** After the Birthday field: the age today (worked out, not saved). */
 const ageItem = f => {
@@ -27,6 +28,10 @@ export async function renderPet(el, list, p, onListChanged) {
         <section>
             <h2>General information</h2>
             <div id="info"></div>
+        </section>
+        <section>
+            <h2>Photos</h2>
+            <div id="photos"></div>
         </section>
         <section>
             <h2>Records</h2>
@@ -111,6 +116,9 @@ export async function renderPet(el, list, p, onListChanged) {
     };
 
     showInfo();
+    renderGallery(el.querySelector('#photos'), photosDir(p), { noun: 'photo' }).catch(err => {
+        el.querySelector('#photos').innerHTML = `<div class="banner bad">Couldn't load photos: ${esc(err.message)}</div>`;
+    });
     table = recordTable(el.querySelector('#records'), {
         columns: RECORD_COLUMNS,
         rows,
@@ -122,7 +130,7 @@ export async function renderPet(el, list, p, onListChanged) {
 export function renderNewPet(el, list, onListChanged) {
     el.innerHTML = `
         <h1 class="page">Add a pet</h1>
-        <p class="lead">It gets its own page with a general information section and a records table.</p>
+        <p class="lead">It gets its own page with general information, photos and a records table.</p>
         <section>
             <form id="new-form" class="new-vehicle">
                 <label class="field">Name (shown in the menu)<input type="text" name="name" required></label>

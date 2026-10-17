@@ -21,7 +21,7 @@ APPS = {
     'bills-etc': ('billsetc-version', []),
     'health': ('health-version', SHARED),
     'vehicles': ('vehicles-version', SHARED),
-    'pets': ('pets-version', SHARED + ['vehicles/css/vehicles.css']),  # borrows the Vehicles information box styles
+    'pets': ('pets-version', SHARED + ['vehicles/css/vehicles.css', 'vehicles/js/views/gallery.js']),  # borrows Vehicles' info box + photos
 }
 
 
