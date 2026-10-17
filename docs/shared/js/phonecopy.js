@@ -11,7 +11,7 @@ import { SECTIONS, loadRecords } from '../../health/js/records.js';
 import * as house from '../../house/js/house.js';
 import { loadPets, ageText, RECORD_COLUMNS, loadRecords as loadPetRecords, photosDir as petPhotosDir } from '../../pets/js/pets.js';
 
-const FILE_NAME = 'Vehicles and Health.html'; // kept when Pets was added, so the file already on the phone stays the one updated
+const FILE_NAME = 'Vehicles, House, Health and Pets.html';
 const HANDLE_KEY = 'phoneCopyDir';
 const IMAGE = /\.(png|jpe?g|gif|webp|bmp)$/i;
 const MAX_SIDE = 1400; // px, longest side of an embedded photo — sharp on a phone, small in the file
