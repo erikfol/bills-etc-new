@@ -1,5 +1,6 @@
 // "📱 Phone copy" (Vehicles, House, Health and Pets top bars): writes one self-contained, read-only page — every vehicle
-// and house (information, service places, maintenance, photos, guides, notes), every Health section and every pet (information,
+// (information, service places, maintenance, photos, guides, notes), every house (information, service companies,
+// photos, and per area information, photos, records), every Health section and every pet (information,
 // photos, records) — into a folder you pick once,
 // e.g. in Google Drive so it syncs to your phone. Photos are shrunk and embedded, so the page is a single file that
 // opens offline (Android hands Chrome a single file, so a page can't load anything from next to itself).
@@ -68,22 +69,16 @@ export async function collectData(progress = () => {}) {
     }
     const houses = [];
     for (const h of await house.loadHouses(false)) {
-        const guides = [];
-        for (const g of h.guides || []) guides.push({ title: g.title, text: g.text || '', images: await images(house.guideDir(h, g), tick) });
-        const notes = [];
-        for (const n of h.notes || []) notes.push({ date: n.date || '', title: n.title || '', text: n.text || '', images: await images(house.noteDir(h, n), tick) });
-        notes.sort((a, b) => b.date.localeCompare(a.date));
-        houses.push({
-            name: h.name,
-            type: 'House',
-            placesLabel: 'Service companies',
-            info: h.info || [],
-            places: h.places || [],
-            maintenance: { columns: house.maintenanceColumns(h).map(c => ({ name: c.name, kind: c.kind })), rows: await house.loadMaintenance(h, false) },
-            photos: await images(house.photosDir(h), tick),
-            guides,
-            notes,
-        });
+        const areas = [];
+        for (const a of house.AREAS) {
+            areas.push({
+                label: a.label,
+                info: house.areaInfo(h, a),
+                photos: await images(house.photosDir(h, a), tick),
+                records: { columns: house.recordColumns(h, a).map(c => ({ name: c.name, kind: c.kind })), rows: await house.loadRecords(h, a, false) },
+            });
+        }
+        houses.push({ name: h.name, info: h.info || [], places: h.places || [], photos: await images(house.photosDir(h), tick), areas });
     }
     const health = [];
     for (const s of SECTIONS) health.push({ label: s.label, columns: s.columns, rows: await loadRecords(s, false) });
@@ -127,7 +122,10 @@ function viewer(D, ageText, houseAge) { // pets.js ageText and house.js houseAge
     const made = new Date(D.made);
     const pages = [
         ...D.vehicles.map((v, i) => ({ group: 'Vehicles', label: v.name, draw: () => drawVehicle(v) })),
-        ...(D.houses || []).map(h => ({ group: 'House', label: h.name, draw: () => drawVehicle(h) })),
+        ...(D.houses || []).flatMap(h => [
+            { group: 'House', label: h.name, draw: () => drawHouse(h) },
+            ...h.areas.map(a => ({ group: 'House', label: `${h.name} · ${a.label}`, draw: () => drawArea(h, a) })),
+        ]),
         ...D.health.map((h, i) => ({ group: 'Health', label: h.label, draw: () => drawHealth(h) })),
         ...(D.pets || []).map(p => ({ group: 'Pets', label: p.name, draw: () => drawPet(p) })),
     ];
@@ -226,18 +224,19 @@ function viewer(D, ageText, houseAge) { // pets.js ageText and house.js houseAge
         return n ? `<div class="step"><span class="num">${esc(n[1])}</span><span>${esc(n[2])}</span></div>` : `<p>${esc(s)}</p>`;
     }).join('');
 
+    const placesHtml = places => places.map(p => `<div class="place">
+        <h3>${esc(p.name)}</h3>${p.notes ? `<p class="muted">${esc(p.notes)}</p>` : ''}
+        ${p.phone ? `<p><a class="btn" href="tel:${esc(p.phone.replace(/[^\d+]/g, ''))}">📞 ${esc(p.phone)}</a></p>` : ''}
+        ${p.address ? `<p><a href="https://www.google.com/maps/search/?api=1&amp;query=${encodeURIComponent(p.address)}">📍 ${esc(p.address)}</a></p>` : ''}
+        ${p.hours ? `<pre class="hours">${esc(p.hours)}</pre>` : ''}</div>`).join('');
+
     const infoList = info => `<dl class="info">${info.filter(f => f.value).map(f =>
         `<div><dt>${esc(f.label)}</dt><dd>${esc(f.value)}</dd></div>`).join('') || '<p class="muted">No information.</p>'}</dl>`;
 
     function drawVehicle(v) {
         main.insertAdjacentHTML('beforeend', `<h1>${esc(v.name)}</h1><p class="muted">${esc(v.type)}</p>`);
-        const info = v.type === 'House' ? v.info.flatMap(f => (/built/i.test(f.label) && f.value && houseAge(f.value) ? [f, { label: 'Age', value: houseAge(f.value) }] : [f])) : v.info;
-        section('Information', true, infoList(info));
-        if (v.places.length) section(`${esc(v.placesLabel || 'Service places')} (${v.places.length})`, false, v.places.map(p => `<div class="place">
-            <h3>${esc(p.name)}</h3>${p.notes ? `<p class="muted">${esc(p.notes)}</p>` : ''}
-            ${p.phone ? `<p><a class="btn" href="tel:${esc(p.phone.replace(/[^\d+]/g, ''))}">📞 ${esc(p.phone)}</a></p>` : ''}
-            ${p.address ? `<p><a href="https://www.google.com/maps/search/?api=1&amp;query=${encodeURIComponent(p.address)}">📍 ${esc(p.address)}</a></p>` : ''}
-            ${p.hours ? `<pre class="hours">${esc(p.hours)}</pre>` : ''}</div>`).join(''));
+        section('Information', true, infoList(v.info));
+        if (v.places.length) section(`Service places (${v.places.length})`, false, placesHtml(v.places));
         section(`Maintenance (${v.maintenance.rows.length})`, true, el => records(el, v.maintenance.columns, v.maintenance.rows));
         if (v.notes.length) section(`Notes (${v.notes.length})`, false, el => {
             el.innerHTML = `<div class="tools"><input type="search" placeholder="Search notes" aria-label="Search notes"></div>${v.notes.map(n => `
@@ -254,6 +253,21 @@ function viewer(D, ageText, houseAge) { // pets.js ageText and house.js houseAge
                 <div class="steps">${stepsHtml(g.text)}</div>${g.images.length ? gallery(g.images) : ''}</details>`).join('');
         });
         if (v.photos.length) section(`Photos (${v.photos.length})`, false, gallery(v.photos));
+    }
+
+    function drawHouse(h) {
+        main.insertAdjacentHTML('beforeend', `<h1>${esc(h.name)}</h1><p class="muted">House · the areas are in the page list above</p>`);
+        const info = h.info.flatMap(f => (/built/i.test(f.label) && f.value && houseAge(f.value) ? [f, { label: 'Age', value: houseAge(f.value) }] : [f]));
+        section('Information', true, infoList(info));
+        if (h.places.length) section(`Service companies (${h.places.length})`, false, placesHtml(h.places));
+        if (h.photos.length) section(`Photos (${h.photos.length})`, false, gallery(h.photos));
+    }
+
+    function drawArea(h, a) {
+        main.insertAdjacentHTML('beforeend', `<h1>${esc(a.label)}</h1><p class="muted">${esc(h.name)}</p>`);
+        section('Information', true, infoList(a.info));
+        if (a.photos.length) section(`Photos (${a.photos.length})`, false, gallery(a.photos));
+        section(`Records (${a.records.rows.length})`, true, el => records(el, a.records.columns, a.records.rows));
     }
 
     function drawHealth(h) {

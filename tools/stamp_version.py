@@ -21,8 +21,8 @@ APPS = {
     'bills-etc': ('billsetc-version', []),
     'health': ('health-version', SHARED),
     'vehicles': ('vehicles-version', SHARED),
-    'house': ('house-version', SHARED + ['vehicles/css/vehicles.css', 'vehicles/js/views/gallery.js', 'vehicles/js/views/places.js',
-                                         'vehicles/js/views/guides.js', 'vehicles/js/views/notes.js']),  # Vehicles' views
+    'house': ('house-version', SHARED + ['vehicles/css/vehicles.css', 'vehicles/js/views/gallery.js',
+                                         'vehicles/js/views/places.js']),  # Vehicles' views
     'pets': ('pets-version', SHARED + ['vehicles/css/vehicles.css', 'vehicles/js/views/gallery.js']),  # borrows Vehicles' info box + photos
 }
 

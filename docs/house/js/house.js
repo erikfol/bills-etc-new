@@ -1,5 +1,5 @@
-// House: the list (with each house's information, service companies, guides and notes) in inputs/house/house.json,
-// and one maintenance CSV per house next to it. inputs/ is kept out of git.
+// House: the list (each house's information, service companies, and per area its information) in
+// inputs/house/house.json, plus one records CSV per house and area next to it. inputs/ is kept out of git.
 import * as fs from '../../bills-etc/js/fs.js';
 import { parseCSV, toCSV } from '../../bills-etc/js/csv.js';
 import { newestFirst } from '../../shared/js/recordtable.js';
@@ -8,22 +8,39 @@ import { readTracked, writeTracked } from '../../shared/js/fileguard.js';
 export const HOUSE_DIR = 'inputs/house';
 export const HOUSE_PATH = `${HOUSE_DIR}/house.json`;
 
-// The information fields a new house starts with (any can be renamed or removed).
+// The Overview's information fields a new house starts with (any can be renamed or removed).
 export const FIELDS = ['Address', 'Year Built', 'Style', 'Bedrooms', 'Bathrooms', 'Square Footage', 'Lot Size', 'Stories',
-    'Basement', 'Garage', 'Heating', 'Cooling', 'Water Heater', 'Water Source', 'Sewer / Septic', 'Roof', 'Siding',
-    'Foundation', 'Electrical Panel', 'Purchase Date', 'Purchase Price', 'Notes'];
+    'Basement', 'Garage', 'Purchase Date', 'Purchase Price', 'Notes'];
 
-// Offered in the maintenance table (anything else can be typed).
-const ACTIONS = ['Furnace / boiler service', 'Furnace filter', 'Mini-split cleaning', 'Chimney cleaning', 'Septic pumped',
-    'Water heater', 'Water test', 'Gutter cleaning', 'Roof repair', 'Plumbing', 'Electrical', 'Painting', 'Appliance repair',
-    'Smoke / CO detectors', 'Lawn / yard', 'Snow removal', 'Pest control'];
-const AREAS = ['Whole house', 'Kitchen', 'Bathroom', 'Bedroom', 'Living room', 'Basement', 'Attic', 'Garage', 'Roof',
-    'Exterior', 'Yard'];
+// The tabs after the Overview: each has its own information (starting fields below), photos and records table.
+// actions: offered in the records table's Action column (anything else can be typed).
+export const AREAS = [
+    { id: 'heating', label: 'Heating/Cooling',
+        fields: ['Heating System', 'Fuel', 'Boiler / Furnace Make', 'Model', 'Installed', 'Oil Tank Size', 'Cooling System',
+            'Mini-split Units', 'Filter Size', 'Thermostats', 'Notes'],
+        actions: ['Boiler / furnace service', 'Oil filter', 'Nozzle', 'Chimney cleaning', 'Mini-split cleaning', 'Filter change',
+            'Thermostat', 'Repair'] },
+    { id: 'septic', label: 'Septic',
+        fields: ['Tank Size', 'Tank Material', 'Tank Location', 'Leach Field Location', 'Installed', 'Pump Every', 'Notes'],
+        actions: ['Pumped', 'Inspection', 'Effluent filter cleaned', 'Baffle repair', 'Riser / cover', 'Repair'] },
+    { id: 'inside', label: 'Other Inside',
+        fields: ['Water Heater', 'Water Source', 'Well Pump', 'Water Treatment', 'Electrical Panel', 'Main Breaker',
+            'Appliances', 'Smoke / CO Detectors', 'Notes'],
+        actions: ['Plumbing', 'Electrical', 'Water heater', 'Water test', 'Appliance repair', 'Painting', 'Flooring',
+            'Smoke / CO detectors', 'Repair'] },
+    { id: 'outside', label: 'Other Outside',
+        fields: ['Roof', 'Roof Installed', 'Siding', 'Gutters', 'Windows', 'Foundation', 'Driveway', 'Deck / Porch', 'Generator', 'Notes'],
+        actions: ['Roof repair', 'Gutter cleaning', 'Painting / staining', 'Lawn / yard', 'Tree work', 'Snow removal', 'Driveway',
+            'Deck', 'Pest control', 'Repair'] },
+];
 
-const blankInfo = () => FIELDS.map(label => ({ label, value: '' }));
+const blank = fields => fields.map(label => ({ label, value: '' }));
+
+/** An area's information on house `h` (its starting fields until saved). */
+export const areaInfo = (h, a) => h.areas?.[a.id]?.info ?? blank(a.fields);
 
 // Used until house.json is first saved.
-const STARTING_HOUSES = [{ id: 'home', name: 'Home', info: blankInfo() }];
+const STARTING_HOUSES = [{ id: 'home', name: 'Home', info: blank(FIELDS) }];
 
 /** track: false for read-only use (the phone copy), so the save guard keeps the version this page is editing. */
 export async function loadHouses(track = true) {
@@ -43,7 +60,7 @@ export function newHouse(list, name) {
     const base = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'house';
     let id = base;
     for (let n = 2; list.some(h => h.id === id); n++) id = `${base}-${n}`;
-    return { id, name, info: blankInfo() };
+    return { id, name, info: blank(FIELDS) };
 }
 
 /** 'Year Built' 1985 (or a date with a year in it) → '41 years'; null if there's no year or it's in the future. */
@@ -54,39 +71,34 @@ export function houseAge(value, today = new Date()) {
     return years < 0 ? null : years === 0 ? 'under a year' : `${years} year${years === 1 ? '' : 's'}`;
 }
 
-export const maintenancePath = h => `${HOUSE_DIR}/${h.id}-maintenance.csv`;
-export const photosDir = h => `${HOUSE_DIR}/photos/${h.id}`;
-export const guideDir = (h, g) => `${HOUSE_DIR}/guides/${h.id}/${g.id}`;
-export const noteDir = (h, n) => `${HOUSE_DIR}/notes/${h.id}/${n.id}`;
+/** Photos of the house (Overview) or of one area. */
+export const photosDir = (h, a = null) => `${HOUSE_DIR}/photos/${h.id}${a ? '-' + a.id : ''}`;
+export const recordsPath = (h, a) => `${HOUSE_DIR}/${h.id}-${a.id}-records.csv`;
 
-// For the views shared with Vehicles (service places, guides, notes).
+// For the Vehicles service-places view.
 export const STORE = {
     save: list => saveHouses(list),
-    guideDir,
-    noteDir,
     noPlaces: 'No companies yet. Press Edit to add a plumber, electrician, oil company…',
-    noNotes: 'No notes yet. Add things you noticed, projects, questions for a contractor, ideas…',
 };
 
-export const maintenanceColumns = h => [
+export const recordColumns = (h, a) => [
     { name: 'Date', kind: 'date' },
-    { name: 'Action', kind: 'suggest', suggestions: ACTIONS },
-    { name: 'Area', kind: 'suggest', suggestions: AREAS },
+    { name: 'Action', kind: 'suggest', suggestions: a.actions },
     { name: 'Done By', kind: 'suggest', suggestions: ['Me', ...(h.places || []).map(p => p.name)] },
     { name: 'Description', kind: 'text' },
     { name: 'Cost', kind: 'money' },
     { name: 'Additional Notes', kind: 'text' },
 ];
 
-export async function loadMaintenance(h, track = true) {
-    const text = track ? await readTracked(maintenancePath(h)) : await fs.readText(maintenancePath(h));
+export async function loadRecords(h, a, track = true) {
+    const text = track ? await readTracked(recordsPath(h, a)) : await fs.readText(recordsPath(h, a));
     if (text === null) return [];
-    const names = maintenanceColumns(h).map(c => c.name);
+    const names = recordColumns(h, a).map(c => c.name);
     return parseCSV(text).rows.map(r => Object.fromEntries(names.map(c => [c, r[c] ?? ''])));
 }
 
-export async function saveMaintenance(h, rows) {
-    const cols = maintenanceColumns(h);
-    await writeTracked(maintenancePath(h), toCSV(cols.map(c => c.name), [...rows].sort(newestFirst(cols))));
+export async function saveRecords(h, a, rows) {
+    const cols = recordColumns(h, a);
+    await writeTracked(recordsPath(h, a), toCSV(cols.map(c => c.name), [...rows].sort(newestFirst(cols))));
     window.dispatchEvent(new Event('data-saved')); // the phone copy (shared/js/phonecopy.js) updates itself
 }

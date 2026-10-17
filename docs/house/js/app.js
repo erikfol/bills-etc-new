@@ -1,11 +1,11 @@
-// House: one page per house (#<id>, its Guides and Notes tabs #<id>/guides, #<id>/notes) plus "＋ Add house" (#new);
+// House: one page per house (#<id>, its area tabs #<id>/heating, /septic, /inside, /outside) plus "＋ Add house" (#new);
 // the menu is built from house.json.
 // Uses the same folder as Bills Etc (the browser remembers it for the whole site); the data lives in inputs/house/.
 import * as fs from '../../bills-etc/js/fs.js';
 import { esc } from '../../bills-etc/js/util.js';
 import { refreshStatus, askForFolder } from '../../shared/js/folder.js';
 import { setupPhoneCopy } from '../../shared/js/phonecopy.js';
-import { loadHouses } from './house.js';
+import { loadHouses, AREAS } from './house.js';
 import { renderHouse, renderNewHouse, hasUnsavedEdits, forget } from './views/house.js';
 
 const viewEl = document.getElementById('view');
@@ -40,7 +40,7 @@ async function route(force = false) {
         const list = await loadHouses();
         const [want, part] = hash.slice(1).split('/');
         const h = list.find(x => x.id === want) || (want === 'new' ? null : list[0]);
-        const sub = h && h.id === want && ['guides', 'notes'].includes(part) ? part : '';
+        const sub = h && h.id === want && AREAS.some(a => a.id === part) ? part : '';
         currentHash = '#' + (h ? h.id : 'new') + (sub ? '/' + sub : '');
         if (location.hash !== currentHash) history.replaceState(null, '', currentHash);
         drawNav(list, h ? h.id : 'new');
