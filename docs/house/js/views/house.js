@@ -3,6 +3,7 @@
 // Also the "Add house" page. Service companies and photos use the Vehicles views.
 import { esc, toast } from '../../../bills-etc/js/util.js';
 import { recordTable, closeFilterMenu } from '../../../shared/js/recordtable.js';
+import { infoBox } from '../../../shared/js/infobox.js';
 import { renderGallery, releaseGalleries } from '../../../vehicles/js/views/gallery.js';
 import { renderPlaces, placesUnsaved, forgetPlaces } from '../../../vehicles/js/views/places.js';
 import {
@@ -10,11 +11,11 @@ import {
 } from '../house.js';
 
 let table = null;
-let infoDraft = null; // { json at start, read() } while information is being edited
+let info = null; // the information box
 
-export const hasUnsavedEdits = () => !!table?.hasUnsavedEdits() || (!!infoDraft && infoDraft.read() !== infoDraft.start)
+export const hasUnsavedEdits = () => !!table?.hasUnsavedEdits() || !!info?.hasUnsavedEdits()
     || placesUnsaved();
-export const forget = () => { table = null; infoDraft = null; closeFilterMenu(); releaseGalleries(); forgetPlaces(); };
+export const forget = () => { table = null; info = null; closeFilterMenu(); releaseGalleries(); forgetPlaces(); };
 
 /** The tabs under a house's name. */
 const tabs = (h, part) => {
@@ -28,80 +29,6 @@ const ageItem = f => {
     const age = houseAge(f.value);
     return age ? `<div class="info-item"><dt>Age</dt><dd>${esc(age)}</dd></div>` : '';
 };
-
-/**
- * An information box: read-only until Edit. save(info, name) writes it; with `name` the box also edits the
- * house's name, and remove() (if given) adds a "Remove this house" button.
- */
-function infoBox(el, { info, name = null, save, remove = null }) {
-    const show = () => {
-        infoDraft = null;
-        el.innerHTML = `
-            <div class="row table-tools"><button type="button" class="small" data-edit>✎ Edit</button>
-                <span class="muted edit-hint">Turn on editing to change, add or remove information.</span></div>
-            <dl class="info-grid">${info.map(f => `<div class="info-item${/notes/i.test(f.label) ? ' wide' : ''}">
-                <dt>${esc(f.label)}</dt><dd>${f.value ? esc(f.value) : '<span class="muted">—</span>'}</dd></div>${ageItem(f)}`).join('')
-                || '<p class="muted">No information yet. Press Edit to add some.</p>'}</dl>`;
-        el.querySelector('[data-edit]').onclick = edit;
-    };
-
-    const edit = () => {
-        el.innerHTML = `
-            <div class="row table-tools"><span class="muted edit-hint">Editing — nothing is written until you press Save.</span></div>
-            ${name === null ? '' : `<label class="field info-name">Name (shown in the menu)<input type="text" data-name value="${esc(name)}"></label>`}
-            <div class="table-wrap"><table class="info-edit">
-                <thead><tr><th>Field</th><th>Value</th><th></th></tr></thead>
-                <tbody></tbody>
-            </table></div>
-            <div class="row" style="margin-top:14px">
-                <button type="button" data-add>＋ Add field</button>
-                ${remove ? '<button type="button" class="danger" data-remove-all>Remove this house</button>' : ''}
-                <span class="spacer"></span>
-                <button type="button" data-cancel>Cancel</button>
-                <button type="button" class="primary" data-save>Save</button>
-            </div>`;
-        const body = el.querySelector('tbody');
-        const fieldRow = f => `<tr>
-            <td><input type="text" data-f="label" value="${esc(f.label)}" aria-label="Field name"></td>
-            <td>${/notes/i.test(f.label)
-                ? `<textarea data-f="value" rows="2" aria-label="Value">${esc(f.value)}</textarea>`
-                : `<input type="text" data-f="value" value="${esc(f.value)}" aria-label="Value">`}</td>
-            <td class="remove"><button type="button" class="danger" data-remove title="Remove this field" aria-label="Remove this field">✕</button></td></tr>`;
-        body.innerHTML = info.map(fieldRow).join('');
-        const read = () => JSON.stringify({
-            name: el.querySelector('[data-name]')?.value ?? null,
-            info: [...body.rows].map(tr => ({ label: tr.querySelector('[data-f=label]').value, value: tr.querySelector('[data-f=value]').value })),
-        });
-        infoDraft = { start: read(), read };
-
-        body.addEventListener('click', e => { if (e.target.closest('[data-remove]')) e.target.closest('tr').remove(); });
-        el.querySelector('[data-add]').onclick = () => {
-            body.insertAdjacentHTML('beforeend', fieldRow({ label: '', value: '' }));
-            body.lastElementChild.querySelector('input').focus();
-        };
-        el.querySelector('[data-cancel]').onclick = () => {
-            if (infoDraft.read() !== infoDraft.start && !confirm('Discard your changes?')) return;
-            show();
-        };
-        el.querySelector('[data-save]').onclick = async () => {
-            const draft = JSON.parse(read());
-            const newName = draft.name?.trim() ?? null;
-            if (newName === '') return toast('Give the house a name, then Save.', 'bad');
-            const newInfo = draft.info.map(f => ({ label: f.label.trim(), value: f.value.trim() })).filter(f => f.label || f.value);
-            if (newInfo.some(f => !f.label)) return toast('Every value needs a field name — fill it in or remove the row, then Save.', 'bad');
-            try {
-                await save(newInfo, newName);
-            } catch (err) { return toast(`Couldn't save: ${err.message}`, 'bad'); }
-            info = newInfo;
-            infoDraft = null;
-            toast('Saved', 'ok');
-            show();
-        };
-        el.querySelector('[data-remove-all]')?.addEventListener('click', remove);
-    };
-
-    show();
-}
 
 /**
  * list: every house (saved back whole); onListChanged(goTo) re-draws the menu and opens #goTo.
@@ -126,11 +53,13 @@ export async function renderHouse(el, list, h, onListChanged, part) {
             <h2>Photos</h2>
             <div id="photos"></div>
         </section>`;
-    infoBox(el.querySelector('#info'), {
+    info = infoBox(el.querySelector('#info'), {
         info: h.info,
         name: h.name,
-        save: async (info, name) => {
-            const updated = { ...h, name, info };
+        noun: 'house',
+        extra: ageItem,
+        save: async (newInfo, name) => {
+            const updated = { ...h, name, info: newInfo };
             await saveHouses(list.map(x => (x.id === h.id ? updated : x)));
             const renamed = name !== h.name;
             Object.assign(h, updated);
@@ -141,7 +70,7 @@ export async function renderHouse(el, list, h, onListChanged, part) {
             try {
                 await saveHouses(list.filter(x => x.id !== h.id));
             } catch (err) { return toast(`Couldn't save: ${err.message}`, 'bad'); }
-            infoDraft = null;
+            info = null;
             toast(`Removed “${h.name}”`, 'ok');
             onListChanged(list.find(x => x.id !== h.id)?.id || 'new');
         },
@@ -172,10 +101,11 @@ async function renderArea(el, list, h, a) {
             <h2>Records</h2>
             <div id="records"></div>
         </section>`;
-    infoBox(el.querySelector('#info'), {
+    info = infoBox(el.querySelector('#info'), {
         info: areaInfo(h, a),
-        save: async info => {
-            const updated = { ...h, areas: { ...h.areas, [a.id]: { ...h.areas?.[a.id], info } } };
+        noun: 'house',
+        save: async newInfo => {
+            const updated = { ...h, areas: { ...h.areas, [a.id]: { ...h.areas?.[a.id], info: newInfo } } };
             await saveHouses(list.map(x => (x.id === h.id ? updated : x)));
             Object.assign(h, updated);
         },

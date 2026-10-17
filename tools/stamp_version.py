@@ -15,7 +15,8 @@ DOCS = Path(__file__).resolve().parent.parent / 'docs'
 # app folder → (localStorage key, files from other apps it imports, relative to docs/)
 SHARED = ['bills-etc/css/app.css', 'bills-etc/js/csv.js', 'bills-etc/js/datatable.js', 'bills-etc/js/dates.js',
           'bills-etc/js/filtermenu.js', 'bills-etc/js/fs.js', 'bills-etc/js/util.js', 'shared/css/records.css',
-          'shared/js/fileguard.js', 'shared/js/folder.js', 'shared/js/phonecopy.js', 'shared/js/recordtable.js',
+          'shared/js/fileguard.js', 'shared/js/folder.js', 'shared/js/infobox.js', 'shared/js/phonecopy.js',
+          'shared/js/recordtable.js',
           'health/js/records.js', 'vehicles/js/vehicles.js', 'house/js/house.js', 'pets/js/pets.js']  # the phone copy reads every app's data
 APPS = {
     'bills-etc': ('billsetc-version', []),

@@ -1,6 +1,7 @@
 // A vehicle's service places (shops, marinas): name, address (map link), phone (call link), hours, notes.
 // Kept on the vehicle in vehicles.json as places: [{ name, address, phone, hours, notes }]; read-only until Edit.
 import { esc, toast } from '../../../bills-etc/js/util.js';
+import { moveButtons, moveItem } from '../../../shared/js/infobox.js';
 import { STORE } from '../vehicles.js';
 
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -33,7 +34,7 @@ export function renderPlaces(el, list, v, store = STORE) {
         const places = v.places || [];
         el.innerHTML = `
             <div class="row table-tools"><button type="button" class="small" id="pl-edit">✎ Edit</button>
-                <span class="muted edit-hint">Turn on editing to add, change or remove places.</span></div>
+                <span class="muted edit-hint">Turn on editing to add, change, remove or reorder places.</span></div>
             ${places.length ? `<div class="place-grid">${places.map(p => `
                 <div class="place">
                     <h3>${esc(p.name)}</h3>
@@ -49,6 +50,7 @@ export function renderPlaces(el, list, v, store = STORE) {
     const placeForm = p => `
         <div class="place-form">
             <div class="row"><strong>Place</strong><span class="spacer"></span>
+                ${moveButtons()}
                 <button type="button" class="danger small" data-remove title="Remove this place">✕ Remove</button></div>
             <div class="place-form-grid">
                 <label class="field">Name<input type="text" data-f="name" value="${esc(p.name)}"></label>
@@ -61,7 +63,7 @@ export function renderPlaces(el, list, v, store = STORE) {
 
     const edit = () => {
         el.innerHTML = `
-            <div class="row table-tools"><span class="muted edit-hint">Editing — nothing is written until you press Save.</span></div>
+            <div class="row table-tools"><span class="muted edit-hint">Editing — nothing is written until you press Save. ↑ ↓ move a place.</span></div>
             <div id="pl-forms">${(v.places || []).map(placeForm).join('')}</div>
             <div class="row" style="margin-top:14px">
                 <button type="button" id="pl-add">＋ Add place</button>
@@ -74,7 +76,10 @@ export function renderPlaces(el, list, v, store = STORE) {
             Object.fromEntries(FIELDS.map(k => [k, f.querySelector(`[data-f=${k}]`).value]))));
         draft = { start: read(), read };
 
-        forms.addEventListener('click', e => { if (e.target.closest('[data-remove]')) e.target.closest('.place-form').remove(); });
+        forms.addEventListener('click', e => {
+            if (moveItem(e, '.place-form')) return;
+            if (e.target.closest('[data-remove]')) e.target.closest('.place-form').remove();
+        });
         el.querySelector('#pl-add').onclick = () => {
             forms.insertAdjacentHTML('beforeend', placeForm(Object.fromEntries(FIELDS.map(k => [k, '']))));
             forms.lastElementChild.querySelector('input').focus();
