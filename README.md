@@ -9,7 +9,7 @@ Personal spending tracker. Exports Come Citizens Bank transaction CSV, categoriz
 
 ## GUI (GitHub Pages)
 
-`docs/` is served by GitHub Pages at **https://erikfol.github.io/bills-etc-new/**: a home page (`docs/index.html`) that links to each app.
+`docs/` is served by GitHub Pages at **https://erikfol.github.io/bills-etc-new/**: the Organized Life home page (`docs/index.html`) that links to each app.
 `docs/bills-etc/` holds a browser version of the whole bills workflow, at
 **https://erikfol.github.io/bills-etc-new/bills-etc/**.
 `docs/health/` is the Health app (General Health, Dental, Eye tables), which saves to `inputs/health/` in the same folder.
