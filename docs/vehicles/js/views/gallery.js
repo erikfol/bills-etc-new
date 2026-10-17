@@ -26,8 +26,11 @@ export async function listImages(dir) {
         .sort((a, b) => stem(a).localeCompare(stem(b), undefined, { numeric: true }));
 }
 
-/** Draw the gallery for `dir` into `el`. noun: 'photo' / 'image'; onChange(count) after images are added. */
-export async function renderGallery(el, dir, { noun = 'photo', onChange } = {}) {
+/**
+ * Draw the gallery for `dir` into `el`. noun: 'photo' / 'image'; onChange(count) after images are added;
+ * compact: no hint line (just the Add button), for small places like a note.
+ */
+export async function renderGallery(el, dir, { noun = 'photo', onChange, compact = false } = {}) {
     release(el);
     const names = await listImages(dir);
     const images = [], urls = [];
@@ -43,7 +46,7 @@ export async function renderGallery(el, dir, { noun = 'photo', onChange } = {}) 
     el.innerHTML = `
         <div class="row table-tools">
             <button type="button" class="small" data-add-images>＋ Add ${noun}s</button>
-            <span class="muted edit-hint">${n ? `${plural(n)} · click one to see it large.` : `No ${noun}s yet.`} Saved in <code>${esc(dir)}/</code>.</span>
+            ${compact ? '' : `<span class="muted edit-hint">${n ? `${plural(n)} · click one to see it large.` : `No ${noun}s yet.`} Saved in <code>${esc(dir)}/</code>.</span>`}
             <input type="file" accept="image/*" multiple hidden>
         </div>
         ${n ? `<div class="photo-grid">${images.map((p, i) => `
@@ -76,7 +79,7 @@ export async function renderGallery(el, dir, { noun = 'photo', onChange } = {}) 
         } catch (err) {
             toast(`Couldn't add ${noun}s: ${err.message}`, 'bad');
         }
-        await renderGallery(el, dir, { noun, onChange });
+        await renderGallery(el, dir, { noun, onChange, compact });
         onChange?.(taken.size);
     };
 }

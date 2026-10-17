@@ -4,7 +4,7 @@
 // opens offline (Android hands Chrome a single file, so a page can't load anything from next to itself).
 import * as fs from '../../bills-etc/js/fs.js';
 import { esc, toast } from '../../bills-etc/js/util.js';
-import { loadVehicles, loadMaintenance, maintenanceColumns, photosDir, guideDir, TYPES } from '../../vehicles/js/vehicles.js';
+import { loadVehicles, loadMaintenance, maintenanceColumns, photosDir, guideDir, noteDir, TYPES } from '../../vehicles/js/vehicles.js';
 import { SECTIONS, loadRecords } from '../../health/js/records.js';
 
 const FILE_NAME = 'Vehicles and Health.html';
@@ -49,6 +49,9 @@ export async function collectData(progress = () => {}) {
     for (const v of await loadVehicles(false)) {
         const guides = [];
         for (const g of v.guides || []) guides.push({ title: g.title, text: g.text || '', images: await images(guideDir(v, g), tick) });
+        const notes = [];
+        for (const n of v.notes || []) notes.push({ date: n.date || '', title: n.title || '', text: n.text || '', images: await images(noteDir(v, n), tick) });
+        notes.sort((a, b) => b.date.localeCompare(a.date));
         vehicles.push({
             name: v.name,
             type: TYPES[v.type]?.label || 'Vehicle',
@@ -57,6 +60,7 @@ export async function collectData(progress = () => {}) {
             maintenance: { columns: maintenanceColumns(v).map(c => ({ name: c.name, kind: c.kind })), rows: await loadMaintenance(v, false) },
             photos: await images(photosDir(v), tick),
             guides,
+            notes,
         });
     }
     const health = [];
@@ -206,6 +210,16 @@ function viewer(D) {
             ${p.address ? `<p><a href="https://www.google.com/maps/search/?api=1&amp;query=${encodeURIComponent(p.address)}">📍 ${esc(p.address)}</a></p>` : ''}
             ${p.hours ? `<pre class="hours">${esc(p.hours)}</pre>` : ''}</div>`).join(''));
         section(`Maintenance (${v.maintenance.rows.length})`, true, el => records(el, v.maintenance.columns, v.maintenance.rows));
+        if (v.notes.length) section(`Notes (${v.notes.length})`, false, el => {
+            el.innerHTML = `<div class="tools"><input type="search" placeholder="Search notes" aria-label="Search notes"></div>${v.notes.map(n => `
+                <div class="card"><div class="card-head"><span class="when">${esc(n.date ? showDate(n.date) : 'No date')}</span><b>${esc(n.title)}</b></div>
+                ${n.text ? `<div class="desc">${esc(n.text)}</div>` : ''}${n.images.length ? gallery(n.images) : ''}</div>`).join('')}`;
+            const q = el.querySelector('input'), cards = [...el.querySelectorAll('.card')];
+            q.oninput = () => {
+                const words = q.value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+                cards.forEach((c, i) => { const n = v.notes[i]; const t = `${n.date} ${showDate(n.date)} ${n.title} ${n.text}`.toLowerCase(); c.hidden = !words.every(w => t.includes(w)); });
+            };
+        });
         if (v.guides.length) section(`Guides (${v.guides.length})`, false, el => {
             el.innerHTML = v.guides.map((g, i) => `<details class="guide"><summary>${esc(g.title)}</summary>
                 <div class="steps">${stepsHtml(g.text)}</div>${g.images.length ? gallery(g.images) : ''}</details>`).join('');
@@ -242,6 +256,8 @@ h1 { font-size:1.35em; margin:6px 0 2px; }
 .tools input { flex:1; min-width:0; }
 input, select { font:inherit; font-size:15px; padding:8px 10px; border:1px solid var(--line); border-radius:8px; background:var(--card); color:var(--text); }
 .card { border:1px solid var(--line); border-radius:8px; padding:10px 12px; margin-bottom:8px; }
+.card[hidden] { display:none; }
+.card .thumbs { padding:8px 0 0; }
 .card-head { display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin-bottom:4px; }
 .when { font-weight:600; }
 .tag { background:var(--tag); color:var(--accent); border-radius:5px; padding:1px 7px; font-size:.82em; }

@@ -1,10 +1,11 @@
-// One vehicle's page, in two tabs: Overview (information, service places, photos, maintenance table) and Guides
-// (long how-to notes with reference images). Also the "Add vehicle" page.
+// One vehicle's page, in three tabs: Overview (information, service places, photos, maintenance table), Guides
+// (long how-to notes with reference images) and Notes (a dated log). Also the "Add vehicle" page.
 import { esc, toast } from '../../../bills-etc/js/util.js';
 import { recordTable, closeFilterMenu } from '../../../shared/js/recordtable.js';
 import { renderGallery, releaseGalleries } from './gallery.js';
 import { renderPlaces, placesUnsaved, forgetPlaces } from './places.js';
 import { renderGuides, guidesUnsaved, forgetGuides } from './guides.js';
+import { renderNotes, notesUnsaved, forgetNotes } from './notes.js';
 import {
     TYPES, VEHICLES_PATH, saveVehicles, photosDir, newVehicle, maintenancePath, maintenanceColumns, loadMaintenance, saveMaintenance,
 } from '../vehicles.js';
@@ -13,21 +14,18 @@ let table = null;
 let infoDraft = null; // { json at start, read() } while the information is being edited
 
 export const hasUnsavedEdits = () => !!table?.hasUnsavedEdits() || (!!infoDraft && infoDraft.read() !== infoDraft.start)
-    || placesUnsaved() || guidesUnsaved();
-export const forget = () => { table = null; infoDraft = null; closeFilterMenu(); releaseGalleries(); forgetPlaces(); forgetGuides(); };
+    || placesUnsaved() || guidesUnsaved() || notesUnsaved();
+export const forget = () => { table = null; infoDraft = null; closeFilterMenu(); releaseGalleries(); forgetPlaces(); forgetGuides(); forgetNotes(); };
 
 /** The tabs under a vehicle's name. */
 const tabs = (v, part) => {
-    const n = (v.guides || []).length;
-    return `<nav class="pillnav">
-        <a href="#${esc(v.id)}"${part === 'guides' ? '' : ' class="active"'}>Overview</a>
-        <a href="#${esc(v.id)}/guides"${part === 'guides' ? ' class="active"' : ''}>Guides${n ? ` (${n})` : ''}</a>
-    </nav>`;
+    const tab = (sub, label, n) => `<a href="#${esc(v.id)}${sub ? '/' + sub : ''}"${(part || '') === sub ? ' class="active"' : ''}>${label}${n ? ` (${n})` : ''}</a>`;
+    return `<nav class="pillnav">${tab('', 'Overview')}${tab('guides', 'Guides', (v.guides || []).length)}${tab('notes', 'Notes', (v.notes || []).length)}</nav>`;
 };
 
 /**
  * list: every vehicle (saved back whole); onListChanged(goTo) re-draws the menu and opens #goTo.
- * part: 'guides' for the Guides tab, otherwise the Overview.
+ * part: 'guides' / 'notes' for those tabs, otherwise the Overview.
  */
 export async function renderVehicle(el, list, v, onListChanged, part) {
     if (part === 'guides') {
@@ -37,6 +35,14 @@ export async function renderVehicle(el, list, v, onListChanged, part) {
             ${tabs(v, part)}
             <section><h2>Guides</h2><div id="guides"><p class="muted">Loading…</p></div></section>`;
         return renderGuides(el.querySelector('#guides'), list, v);
+    }
+    if (part === 'notes') {
+        el.innerHTML = `
+            <h1 class="page">${esc(v.name)}</h1>
+            <p class="lead">Notes are kept in <code>${esc(VEHICLES_PATH)}</code>; their images in <code>inputs/vehicles/notes/${esc(v.id)}/</code>.</p>
+            ${tabs(v, part)}
+            <section><h2>Notes</h2><div id="notes"></div></section>`;
+        return renderNotes(el.querySelector('#notes'), list, v);
     }
     el.innerHTML = '<p class="muted">Loading…</p>';
     const rows = await loadMaintenance(v);

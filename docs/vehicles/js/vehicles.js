@@ -65,6 +65,7 @@ export function newVehicle(list, name, type) {
 export const maintenancePath = v => `${VEHICLES_DIR}/${v.id}-maintenance.csv`;
 export const photosDir = v => `${VEHICLES_DIR}/photos/${v.id}`;
 export const guideDir = (v, g) => `${VEHICLES_DIR}/guides/${v.id}/${g.id}`;
+export const noteDir = (v, n) => `${VEHICLES_DIR}/notes/${v.id}/${n.id}`;
 
 /** Maintenance columns; the second one is what the vehicle tracks (Mileage, Engine Hours). */
 export const maintenanceColumns = v => [
