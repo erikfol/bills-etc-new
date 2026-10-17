@@ -224,8 +224,8 @@ function viewer(D, ageText, houseAge) { // pets.js ageText and house.js houseAge
         return n ? `<div class="step"><span class="num">${esc(n[1])}</span><span>${esc(n[2])}</span></div>` : `<p>${esc(s)}</p>`;
     }).join('');
 
-    const placesHtml = places => places.map(p => `<div class="place">
-        <h3>${esc(p.name)}</h3>${p.notes ? `<p class="muted">${esc(p.notes)}</p>` : ''}
+    const placesHtml = places => places.map(p => `<div class="place${p.crossed ? ' crossed' : ''}">
+        <h3>${p.crossed ? `<s>${esc(p.name)}</s> (don't use)` : esc(p.name)}</h3>${p.notes ? `<p class="muted">${esc(p.notes)}</p>` : ''}
         ${p.phone ? `<p><a class="btn" href="tel:${esc(p.phone.replace(/[^\d+]/g, ''))}">📞 ${esc(p.phone)}</a></p>` : ''}
         ${p.address ? `<p><a href="https://www.google.com/maps/search/?api=1&amp;query=${encodeURIComponent(p.address)}">📍 ${esc(p.address)}</a></p>` : ''}
         ${p.hours ? `<pre class="hours">${esc(p.hours)}</pre>` : ''}</div>`).join('');
@@ -321,6 +321,7 @@ input, select { font:inherit; font-size:15px; padding:8px 10px; border:1px solid
 .place:first-child { border-top:0; padding-top:0; }
 .place h3 { font-size:1em; }
 .place p { margin:4px 0; }
+.place.crossed { opacity:0.6; }
 a { color:var(--accent); }
 a.btn { display:inline-block; text-decoration:none; border:1px solid var(--line); border-radius:8px; padding:6px 12px; }
 .hours { font:inherit; font-size:.88em; white-space:pre-wrap; color:var(--muted); }

@@ -1,5 +1,6 @@
 // A vehicle's service places (shops, marinas): name, address (map link), phone (call link), hours, notes.
-// Kept on the vehicle in vehicles.json as places: [{ name, address, phone, hours, notes }]; read-only until Edit.
+// Kept on the vehicle in vehicles.json as places: [{ name, address, phone, hours, notes, crossed? }]; read-only until Edit.
+// crossed: true marks a place not to use any more (name struck through, card dimmed), kept for its notes.
 import { esc, toast } from '../../../bills-etc/js/util.js';
 import { moveButtons, moveItem } from '../../../shared/js/infobox.js';
 import { STORE } from '../vehicles.js';
@@ -36,8 +37,8 @@ export function renderPlaces(el, list, v, store = STORE) {
             <div class="row table-tools"><button type="button" class="small" id="pl-edit">✎ Edit</button>
                 <span class="muted edit-hint">Turn on editing to add, change, remove or reorder places.</span></div>
             ${places.length ? `<div class="place-grid">${places.map(p => `
-                <div class="place">
-                    <h3>${esc(p.name)}</h3>
+                <div class="place${p.crossed ? ' crossed' : ''}">
+                    <h3>${p.crossed ? `<s>${esc(p.name)}</s> <span class="crossed-tag">don't use</span>` : esc(p.name)}</h3>
                     ${p.notes ? `<p class="place-notes">${esc(p.notes)}</p>` : ''}
                     ${p.address ? `<p>📍 <a href="${mapLink(p.address)}" target="_blank" rel="noopener">${esc(p.address)}</a></p>` : ''}
                     ${p.phone ? `<p>📞 <a href="${telLink(p.phone)}">${esc(p.phone)}</a></p>` : ''}
@@ -50,6 +51,7 @@ export function renderPlaces(el, list, v, store = STORE) {
     const placeForm = p => `
         <div class="place-form">
             <div class="row"><strong>Place</strong><span class="spacer"></span>
+                <label class="crossed-check" title="Keep this place but strike it through"><input type="checkbox" data-crossed${p.crossed ? ' checked' : ''}> Crossed out</label>
                 ${moveButtons()}
                 <button type="button" class="danger small" data-remove title="Remove this place">✕ Remove</button></div>
             <div class="place-form-grid">
@@ -72,8 +74,9 @@ export function renderPlaces(el, list, v, store = STORE) {
                 <button type="button" class="primary" id="pl-save">Save</button>
             </div>`;
         const forms = el.querySelector('#pl-forms');
-        const read = () => JSON.stringify([...forms.querySelectorAll('.place-form')].map(f =>
-            Object.fromEntries(FIELDS.map(k => [k, f.querySelector(`[data-f=${k}]`).value]))));
+        const read = () => JSON.stringify([...forms.querySelectorAll('.place-form')].map(f => ({
+            ...Object.fromEntries(FIELDS.map(k => [k, f.querySelector(`[data-f=${k}]`).value])),
+            crossed: f.querySelector('[data-crossed]').checked })));
         draft = { start: read(), read };
 
         forms.addEventListener('click', e => {
@@ -90,7 +93,7 @@ export function renderPlaces(el, list, v, store = STORE) {
         };
         el.querySelector('#pl-save').onclick = async () => {
             const places = JSON.parse(read())
-                .map(p => Object.fromEntries(FIELDS.map(k => [k, p[k].trim()])))
+                .map(p => ({ ...Object.fromEntries(FIELDS.map(k => [k, p[k].trim()])), ...(p.crossed && { crossed: true }) }))
                 .filter(p => FIELDS.some(k => p[k]));
             if (places.some(p => !p.name)) return toast('Every place needs a name — fill it in or remove it, then Save.', 'bad');
             const before = v.places;
