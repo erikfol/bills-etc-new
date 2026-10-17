@@ -278,12 +278,93 @@ a.btn { display:inline-block; text-decoration:none; border:1px solid var(--line)
 .made { margin-top:20px; font-size:.8em; color:var(--muted); text-align:center; }
 `;
 
-// ── The top-bar button and its panel ──────────────────────────────────────────────────────────────────────────
+// ── Keeping it up to date ─────────────────────────────────────────────────────────────────────────────────────
+// Every save in Vehicles or Health fires a 'data-saved' event on window (the save functions in vehicles.js,
+// health/js/records.js and the image gallery). A few seconds after the last one,
+// the phone copy is rebuilt in the background — if a folder was chosen and Chrome still allows writing to it. After
+// Chrome restarts it has to ask again, which needs a click: then an "Update phone copy" notice stays up instead.
+// "Out of date" is remembered in this browser, so the notice is back if the page is closed before updating.
+const STALE_KEY = 'phoneCopyStale';
+const AUTO_DELAY = 4000; // ms after the last save
+
+const stale = {
+    get() { try { return !!localStorage.getItem(STALE_KEY); } catch { return false; } },
+    set(on) { try { on ? localStorage.setItem(STALE_KEY, new Date().toISOString()) : localStorage.removeItem(STALE_KEY); } catch { /* fine */ } },
+};
+
+/** Build and write the phone copy into `dir` (permission already granted). Returns its size in MB. */
+async function writeCopy(dir, progress = () => {}) {
+    const html = buildHtml(await collectData(progress));
+    const fh = await dir.getFileHandle(FILE_NAME, { create: true });
+    const w = await fh.createWritable();
+    await w.write(html);
+    await w.close();
+    stale.set(false);
+    return (new Blob([html]).size / 1048576).toFixed(1);
+}
+
+// ── The top-bar button, its panel and the "out of date" notice ──────────────────────────────────────────────────
 export function setupPhoneCopy(button) {
     const panel = document.createElement('div');
     panel.className = 'phone-panel';
     panel.hidden = true;
     document.body.appendChild(panel);
+    const notice = document.createElement('div');
+    notice.className = 'phone-notice';
+    notice.hidden = true;
+    document.body.appendChild(notice);
+
+    let busy = false, again = false, timer = null;
+
+    const showNotice = () => {
+        notice.hidden = !stale.get() || busy;
+        button.classList.toggle('stale', stale.get());
+        notice.innerHTML = `<span>📱 Phone copy is out of date.</span>
+            <button type="button" class="small primary" data-update>Update phone copy</button>
+            <button type="button" class="small" data-later title="Hide until the next change">Later</button>`;
+        notice.querySelector('[data-update]').onclick = () => makeNow();
+        notice.querySelector('[data-later]').onclick = () => { notice.hidden = true; };
+    };
+
+    /** Rebuild now. From a click it may ask Chrome for permission; in the background it only writes if allowed. */
+    const makeNow = async ({ background = false, status = () => {} } = {}) => {
+        const dir = await fs.rememberedHandle(HANDLE_KEY);
+        if (!dir) return false;
+        if (!fs.folder()) { if (!background) toast('Connect your bills-etc-new folder first.', 'bad'); showNotice(); return false; }
+        const allowed = background
+            ? (await dir.queryPermission({ mode: 'readwrite' })) === 'granted'
+            : (await dir.requestPermission({ mode: 'readwrite' })) === 'granted';
+        if (!allowed) {
+            if (!background) toast('The phone-copy folder needs permission to write.', 'bad');
+            showNotice();
+            return false;
+        }
+        if (busy) { again = true; return false; }
+        busy = true;
+        notice.hidden = true;
+        try {
+            const mb = await writeCopy(dir, n => status(`Shrinking photos… ${n}`));
+            status(`Saved “${FILE_NAME}” (${mb} MB) in ${dir.name}.`);
+            toast(background ? 'Phone copy updated' : 'Phone copy saved', 'ok');
+            return true;
+        } catch (err) {
+            status('');
+            toast(`Couldn't update the phone copy: ${err.message}`, 'bad');
+            return false;
+        } finally {
+            busy = false;
+            showNotice();
+            if (again) { again = false; makeNow({ background: true }); } // something was saved while building
+        }
+    };
+
+    window.addEventListener('data-saved', async () => {
+        if (!await fs.rememberedHandle(HANDLE_KEY)) return; // no phone copy set up
+        stale.set(true);
+        clearTimeout(timer);
+        timer = setTimeout(() => makeNow({ background: true }), AUTO_DELAY);
+    });
+    window.addEventListener('beforeunload', () => { clearTimeout(timer); });
 
     const draw = async () => {
         const dir = await fs.rememberedHandle(HANDLE_KEY);
@@ -291,10 +372,11 @@ export function setupPhoneCopy(button) {
             <h3>📱 Phone copy</h3>
             <p>A read-only page with Vehicles and Health (information, maintenance, guides, photos, health records) as one file.
                Save it in a Google Drive folder and open it on your phone from the Drive app with Chrome.</p>
+            <p>It updates by itself a few seconds after you save something here.</p>
             <p class="pc-folder">Folder: <strong>${dir ? esc(dir.name) : 'not chosen yet'}</strong>
                <button type="button" class="small" data-choose>${dir ? 'Change…' : 'Choose folder…'}</button></p>
-            <div class="row"><button type="button" class="primary" data-make${dir ? '' : ' disabled'}>Make phone copy</button>
-               <span class="muted" data-status></span></div>`;
+            <div class="row"><button type="button" class="primary" data-make${dir ? '' : ' disabled'}>Make phone copy now</button>
+               <span class="muted" data-status>${stale.get() ? 'Out of date.' : ''}</span></div>`;
         panel.querySelector('[data-choose]').onclick = async () => {
             try {
                 const h = await window.showDirectoryPicker({ id: 'phonecopy', mode: 'readwrite' });
@@ -302,31 +384,12 @@ export function setupPhoneCopy(button) {
             } catch { return; } // cancelled
             draw();
         };
-        panel.querySelector('[data-make]').onclick = () => make(dir);
-    };
-
-    const make = async dir => {
-        const status = panel.querySelector('[data-status]'), btn = panel.querySelector('[data-make]');
-        if (!fs.folder()) return toast('Connect your bills-etc-new folder first.', 'bad');
-        if ((await dir.requestPermission({ mode: 'readwrite' })) !== 'granted') return toast('The phone-copy folder needs permission to write.', 'bad');
-        btn.disabled = true;
-        try {
-            const data = await collectData(n => { status.textContent = `Shrinking photos… ${n}`; });
-            status.textContent = 'Saving…';
-            const html = buildHtml(data);
-            const fh = await dir.getFileHandle(FILE_NAME, { create: true });
-            const w = await fh.createWritable();
-            await w.write(html);
-            await w.close();
-            const mb = (new Blob([html]).size / 1048576).toFixed(1);
-            status.textContent = `Saved “${FILE_NAME}” (${mb} MB) in ${dir.name}.`;
-            toast('Phone copy saved', 'ok');
-        } catch (err) {
-            status.textContent = '';
-            toast(`Couldn't make the phone copy: ${err.message}`, 'bad');
-        } finally {
-            btn.disabled = false;
-        }
+        const status = t => { const el = panel.querySelector('[data-status]'); if (el) el.textContent = t; };
+        panel.querySelector('[data-make]').onclick = async e => {
+            e.target.disabled = true;
+            await makeNow({ status });
+            e.target.disabled = false;
+        };
     };
 
     button.onclick = () => {
@@ -336,4 +399,8 @@ export function setupPhoneCopy(button) {
     document.addEventListener('mousedown', e => {
         if (!panel.hidden && !panel.contains(e.target) && e.target !== button) panel.hidden = true;
     });
+
+    // Opening the page: if a change wasn't copied yet, try now (works when Chrome kept the permission), else ask.
+    button.classList.toggle('stale', stale.get());
+    if (stale.get()) setTimeout(() => makeNow({ background: true }), AUTO_DELAY);
 }

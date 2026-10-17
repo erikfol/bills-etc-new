@@ -28,3 +28,10 @@
 .phone-panel h3 { font-size: 1.05em; }
 .phone-panel p { line-height: 1.45; }
 .pc-folder { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.phone-btn.stale::after { content: ''; display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #f5b041; margin-left: 6px; vertical-align: middle; }
+.phone-notice {
+    position: fixed; bottom: 18px; right: 18px; z-index: 60; max-width: calc(100vw - 36px);
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    background: var(--surface); border: 1px solid #f0d58a; border-left: 4px solid #f5b041; border-radius: 8px;
+    padding: 10px 12px; box-shadow: 0 6px 20px rgba(0,0,0,0.15); font-size: 0.9em;
+}

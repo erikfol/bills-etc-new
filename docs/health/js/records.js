@@ -40,6 +40,7 @@ export async function loadRecords(section) {
 
 export async function saveRecords(section, rows) {
     await fs.writeText(section.path, toCSV(names(section), [...rows].sort(newestFirst(section.columns))));
+    window.dispatchEvent(new Event('data-saved')); // the phone copy (shared/js/phonecopy.js) updates itself
 }
 
 export async function loadLocations() {

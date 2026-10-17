@@ -49,6 +49,7 @@ export async function loadVehicles() {
 
 export async function saveVehicles(list) {
     await fs.writeText(VEHICLES_PATH, JSON.stringify({ vehicles: list }, null, 2) + '\n');
+    window.dispatchEvent(new Event('data-saved')); // the phone copy (shared/js/phonecopy.js) updates itself
 }
 
 /** A new vehicle with a unique id made from its name. */
@@ -83,4 +84,5 @@ export async function loadMaintenance(v) {
 export async function saveMaintenance(v, rows) {
     const cols = maintenanceColumns(v);
     await fs.writeText(maintenancePath(v), toCSV(cols.map(c => c.name), [...rows].sort(newestFirst(cols))));
+    window.dispatchEvent(new Event('data-saved')); // the phone copy (shared/js/phonecopy.js) updates itself
 }
