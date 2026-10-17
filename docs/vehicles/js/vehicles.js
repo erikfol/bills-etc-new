@@ -3,6 +3,7 @@
 import * as fs from '../../bills-etc/js/fs.js';
 import { parseCSV, toCSV } from '../../bills-etc/js/csv.js';
 import { newestFirst } from '../../shared/js/recordtable.js';
+import { readTracked, writeTracked } from '../../shared/js/fileguard.js';
 
 export const VEHICLES_DIR = 'inputs/vehicles';
 export const VEHICLES_PATH = `${VEHICLES_DIR}/vehicles.json`;
@@ -40,15 +41,16 @@ const STARTING_VEHICLES = [
         info: blankInfo('boat', { Year: '1996', Make: 'Four Winns', Model: '205 Sundowner' }) },
 ];
 
-export async function loadVehicles() {
-    const text = await fs.readText(VEHICLES_PATH);
+/** track: false for read-only use (the phone copy), so the save guard keeps the version this page is editing. */
+export async function loadVehicles(track = true) {
+    const text = track ? await readTracked(VEHICLES_PATH) : await fs.readText(VEHICLES_PATH);
     if (text === null) return structuredClone(STARTING_VEHICLES);
     const list = JSON.parse(text).vehicles;
     return Array.isArray(list) ? list : structuredClone(STARTING_VEHICLES);
 }
 
 export async function saveVehicles(list) {
-    await fs.writeText(VEHICLES_PATH, JSON.stringify({ vehicles: list }, null, 2) + '\n');
+    await writeTracked(VEHICLES_PATH, JSON.stringify({ vehicles: list }, null, 2) + '\n');
     window.dispatchEvent(new Event('data-saved')); // the phone copy (shared/js/phonecopy.js) updates itself
 }
 
@@ -74,8 +76,8 @@ export const maintenanceColumns = v => [
     { name: 'Additional Notes', kind: 'text' },
 ];
 
-export async function loadMaintenance(v) {
-    const text = await fs.readText(maintenancePath(v));
+export async function loadMaintenance(v, track = true) {
+    const text = track ? await readTracked(maintenancePath(v)) : await fs.readText(maintenancePath(v));
     if (text === null) return [];
     const names = maintenanceColumns(v).map(c => c.name);
     return parseCSV(text).rows.map(r => Object.fromEntries(names.map(c => [c, r[c] ?? ''])));
@@ -83,6 +85,6 @@ export async function loadMaintenance(v) {
 
 export async function saveMaintenance(v, rows) {
     const cols = maintenanceColumns(v);
-    await fs.writeText(maintenancePath(v), toCSV(cols.map(c => c.name), [...rows].sort(newestFirst(cols))));
+    await writeTracked(maintenancePath(v), toCSV(cols.map(c => c.name), [...rows].sort(newestFirst(cols))));
     window.dispatchEvent(new Event('data-saved')); // the phone copy (shared/js/phonecopy.js) updates itself
 }

@@ -46,7 +46,7 @@ export async function collectData(progress = () => {}) {
     let done = 0;
     const tick = () => progress(++done);
     const vehicles = [];
-    for (const v of await loadVehicles()) {
+    for (const v of await loadVehicles(false)) {
         const guides = [];
         for (const g of v.guides || []) guides.push({ title: g.title, text: g.text || '', images: await images(guideDir(v, g), tick) });
         vehicles.push({
@@ -54,13 +54,13 @@ export async function collectData(progress = () => {}) {
             type: TYPES[v.type]?.label || 'Vehicle',
             info: v.info || [],
             places: v.places || [],
-            maintenance: { columns: maintenanceColumns(v).map(c => ({ name: c.name, kind: c.kind })), rows: await loadMaintenance(v) },
+            maintenance: { columns: maintenanceColumns(v).map(c => ({ name: c.name, kind: c.kind })), rows: await loadMaintenance(v, false) },
             photos: await images(photosDir(v), tick),
             guides,
         });
     }
     const health = [];
-    for (const s of SECTIONS) health.push({ label: s.label, columns: s.columns, rows: await loadRecords(s) });
+    for (const s of SECTIONS) health.push({ label: s.label, columns: s.columns, rows: await loadRecords(s, false) });
     return { made: new Date().toISOString(), vehicles, health };
 }
 
