@@ -90,3 +90,43 @@ export async function saveRecords(p, rows) {
     await writeTracked(recordsPath(p), toCSV(RECORD_COLUMNS.map(c => c.name), [...rows].sort(newestFirst(RECORD_COLUMNS))));
     window.dispatchEvent(new Event('data-saved')); // the phone copy (shared/js/phonecopy.js) updates itself
 }
+
+// Future appointments: one CSV per pet next to its records.
+export const appointmentsPath = p => `${PETS_DIR}/${p.id}-appointments.csv`;
+
+export const APPOINTMENT_COLUMNS = [
+    { name: 'Date', kind: 'date' },
+    { name: 'Time', kind: 'suggest' },
+    { name: 'Description', kind: 'text' },
+    { name: 'Other Notes', kind: 'text' },
+];
+
+export async function loadAppointments(p, track = true) {
+    const text = track ? await readTracked(appointmentsPath(p)) : await fs.readText(appointmentsPath(p));
+    if (text === null) return [];
+    const names = APPOINTMENT_COLUMNS.map(c => c.name);
+    return parseCSV(text).rows.map(r => Object.fromEntries(names.map(c => [c, r[c] ?? ''])));
+}
+
+export async function saveAppointments(p, rows) {
+    await writeTracked(appointmentsPath(p), toCSV(APPOINTMENT_COLUMNS.map(c => c.name), [...rows].sort(newestFirst(APPOINTMENT_COLUMNS))));
+    window.dispatchEvent(new Event('data-saved')); // the phone copy (shared/js/phonecopy.js) updates itself
+}
+
+/**
+ * The banner at the top of a pet's page: the next appointment on or after `today` (rows with a YYYY-MM-DD Date).
+ * { level: 'none' } (red) when there isn't one, 'soon' (yellow) when it's within 14 days, else 'later' (green);
+ * with next (the row) and days (0 = today).
+ * Uses nothing outside itself: the phone copy (shared/js/phonecopy.js) embeds it as text.
+ */
+export function appointmentStatus(rows, today = new Date()) {
+    const SOON_DAYS = 14;
+    const pad = n => String(n).padStart(2, '0');
+    const todayIso = `${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`;
+    const next = rows.filter(r => /^\d{4}-\d{2}-\d{2}$/.test(r.Date || '') && r.Date >= todayIso)
+        .sort((a, b) => a.Date.localeCompare(b.Date) || String(a.Time || '').localeCompare(String(b.Time || '')))[0];
+    if (!next) return { level: 'none' };
+    const [y, m, d] = next.Date.split('-').map(Number);
+    const days = Math.round((new Date(y, m - 1, d) - new Date(today.getFullYear(), today.getMonth(), today.getDate())) / 86400000);
+    return { level: days <= SOON_DAYS ? 'soon' : 'later', next, days };
+}

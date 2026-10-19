@@ -1,6 +1,6 @@
 // "📱 Phone copy" (Vehicles, House, Health and Pets top bars): writes one self-contained, read-only page — every vehicle
 // (information, service places, maintenance, photos, guides, notes), every house (information, service companies,
-// photos, and per area information, photos, records), every Health section and every pet (information,
+// photos, and per area information, photos, records), every Health section and every pet (information, future appointments,
 // photos, records) — into a folder you pick once,
 // e.g. in Google Drive so it syncs to your phone. Photos are shrunk and embedded, so the page is a single file that
 // opens offline (Android hands Chrome a single file, so a page can't load anything from next to itself).
@@ -9,7 +9,8 @@ import { esc, toast } from '../../bills-etc/js/util.js';
 import { loadVehicles, loadMaintenance, maintenanceColumns, photosDir, guideDir, noteDir, TYPES } from '../../vehicles/js/vehicles.js';
 import { SECTIONS, loadRecords } from '../../health/js/records.js';
 import * as house from '../../house/js/house.js';
-import { loadPets, ageText, RECORD_COLUMNS, loadRecords as loadPetRecords, photosDir as petPhotosDir } from '../../pets/js/pets.js';
+import { loadPets, ageText, RECORD_COLUMNS, loadRecords as loadPetRecords, photosDir as petPhotosDir,
+    APPOINTMENT_COLUMNS, loadAppointments, appointmentStatus } from '../../pets/js/pets.js';
 
 const FILE_NAME = 'Vehicles, House, Health and Pets.html';
 const HANDLE_KEY = 'phoneCopyDir';
@@ -83,7 +84,7 @@ export async function collectData(progress = () => {}) {
     const health = [];
     for (const s of SECTIONS) health.push({ label: s.label, columns: s.columns, rows: await loadRecords(s, false) });
     const pets = [];
-    for (const p of await loadPets(false)) pets.push({ name: p.name, info: p.info || [], records: { columns: RECORD_COLUMNS, rows: await loadPetRecords(p, false) }, photos: await images(petPhotosDir(p), tick) });
+    for (const p of await loadPets(false)) pets.push({ name: p.name, info: p.info || [], appointments: { columns: APPOINTMENT_COLUMNS, rows: await loadAppointments(p, false) }, records: { columns: RECORD_COLUMNS, rows: await loadPetRecords(p, false) }, photos: await images(petPhotosDir(p), tick) });
     return { made: new Date().toISOString(), vehicles, houses, health, pets };
 }
 
@@ -103,13 +104,13 @@ export function buildHtml(data) {
 <header><div class="brand">Vehicles, House, Health &amp; Pets</div><select id="page" aria-label="Page"></select></header>
 <main id="main"><p class="muted">This page needs JavaScript. On Android, open it with Chrome.</p></main>
 <div id="lightbox" hidden><button id="lb-prev" aria-label="Previous">‹</button><img alt=""><button id="lb-next" aria-label="Next">›</button><div id="lb-cap"></div></div>
-<script>(${viewer.toString()})(${json}, ${ageText.toString()}, ${house.houseAge.toString()});</script>
+<script>(${viewer.toString()})(${json}, ${ageText.toString()}, ${house.houseAge.toString()}, ${appointmentStatus.toString()});</script>
 </body>
 </html>`;
 }
 
 // ── The viewer (runs inside the phone page; must not use anything from this module) ──────────────────────────
-function viewer(D, ageText, houseAge) { // pets.js ageText and house.js houseAge, embedded so ages count from the day the page is opened
+function viewer(D, ageText, houseAge, appointmentStatus) { // pets.js ageText + appointmentStatus and house.js houseAge, embedded so they count from the day the page is opened
     const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
     const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     const showDate = v => { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(v || ''); return m ? `${MON[+m[2] - 1]} ${+m[3]}, ${m[1]}` : (v || ''); };
@@ -277,9 +278,16 @@ function viewer(D, ageText, houseAge) { // pets.js ageText and house.js houseAge
 
     function drawPet(p) {
         main.insertAdjacentHTML('beforeend', `<h1>${esc(p.name)}</h1>`);
+        const appts = p.appointments?.rows || [];
+        const s = appointmentStatus(appts);
+        const inDays = n => (n === 0 ? 'today' : n === 1 ? 'tomorrow' : `in ${n} days`);
+        const what = r => `${esc(showDate(r.Date))}${r.Time ? ` at ${esc(r.Time)}` : ''}${r.Description ? ` — ${esc(r.Description)}` : ''}`;
+        main.insertAdjacentHTML('beforeend', s.level === 'none' ? '<div class="banner bad"><b>No future appointment</b></div>'
+            : `<div class="banner ${s.level === 'soon' ? 'soon' : 'ok'}"><b>${s.level === 'soon' ? 'Coming up' : 'Next appointment'} ${inDays(s.days)}:</b> ${what(s.next)}</div>`);
         const info = p.info.flatMap(f => (/birth/i.test(f.label) && f.value && ageText(f.value) ? [f, { label: 'Age', value: ageText(f.value) }] : [f]));
         section('General information', true, infoList(info));
         if (p.photos?.length) section(`Photos (${p.photos.length})`, false, gallery(p.photos));
+        if (p.appointments) section(`Future appointments (${appts.length})`, true, el => records(el, p.appointments.columns, appts));
         section(`Records (${p.records.rows.length})`, true, el => records(el, p.records.columns, p.records.rows));
     }
 
@@ -343,6 +351,10 @@ a.btn { display:inline-block; text-decoration:none; border:1px solid var(--line)
 #lightbox button { position:absolute; bottom:18px; background:rgba(255,255,255,.18); color:#fff; border:0; border-radius:8px; font-size:28px; padding:6px 18px; }
 #lb-prev { left:16px; } #lb-next { right:16px; }
 #lb-cap { position:absolute; top:12px; left:0; right:0; text-align:center; color:#ccc; font-size:.85em; padding:0 12px; }
+.banner { border-radius:8px; padding:10px 14px; margin:10px 0; border:1px solid; }
+.banner.bad { background:#fdecea; color:#a8322a; border-color:#f5c6c0; }
+.banner.soon { background:#fffbe0; color:#7a6400; border-color:#f0e08a; }
+.banner.ok { background:#e8f8ef; color:#1e7a46; border-color:#bfe8cf; }
 .made { margin-top:20px; font-size:.8em; color:var(--muted); text-align:center; }
 `;
 
