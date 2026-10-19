@@ -85,6 +85,10 @@
 .g-step { display: flex; gap: 8px; margin: 5px 0; }
 .g-num { flex: 0 0 auto; min-width: 22px; font-weight: 600; color: var(--blue-text); }
 .g-gap { height: 8px; }
+.g-head { font-size: 0.98em; margin: 14px 0 4px; }
+.g-head:first-child { margin-top: 0; }
+.g-done > span:last-child { color: var(--muted); text-decoration: line-through; }
+.imp-done > summary .g-title { color: var(--muted); text-decoration: line-through; }
 h3.g-images { font-size: 0.85em; text-transform: uppercase; letter-spacing: 0.4px; color: var(--muted); margin: 10px 0 6px; }
 .guide-form { display: flex; flex-direction: column; gap: 12px; margin: 10px 0; }
 .guide-form textarea {

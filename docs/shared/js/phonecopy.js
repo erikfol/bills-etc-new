@@ -75,6 +75,7 @@ export async function collectData(progress = () => {}) {
             areas.push({
                 label: a.label,
                 info: house.areaInfo(h, a),
+                improvements: house.areaImprovements(h, a),
                 photos: await images(house.photosDir(h, a), tick),
                 records: { columns: house.recordColumns(h, a).map(c => ({ name: c.name, kind: c.kind })), rows: await house.loadRecords(h, a, false) },
             });
@@ -221,7 +222,11 @@ function viewer(D, ageText, houseAge, appointmentStatus) { // pets.js ageText + 
     const stepsHtml = t => t.split('\n').map(line => {
         const s = line.trim();
         if (!s) return '<div class="gap"></div>';
-        const n = /^(\d+[.)])\s+(.*)$/.exec(s) || (/^[-•*]\s+(.*)$/.exec(s) && ['', '•', s.replace(/^[-•*]\s+/, '')]);
+        const head = /^#{1,3}\s+(.*)$/.exec(s);
+        if (head) return `<h4>${esc(head[1])}</h4>`;
+        const check = /^\[([ xX])\]\s*(.*)$/.exec(s);
+        if (check) return `<div class="step${check[1] === ' ' ? '' : ' done'}"><span class="num">${check[1] === ' ' ? '☐' : '☑'}</span><span>${esc(check[2])}</span></div>`;
+        const n =/^(\d+[.)])\s+(.*)$/.exec(s) || (/^[-•*]\s+(.*)$/.exec(s) && ['', '•', s.replace(/^[-•*]\s+/, '')]);
         return n ? `<div class="step"><span class="num">${esc(n[1])}</span><span>${esc(n[2])}</span></div>` : `<p>${esc(s)}</p>`;
     }).join('');
 
@@ -268,6 +273,9 @@ function viewer(D, ageText, houseAge, appointmentStatus) { // pets.js ageText + 
         main.insertAdjacentHTML('beforeend', `<h1>${esc(a.label)}</h1><p class="muted">${esc(h.name)}</p>`);
         section('Information', true, infoList(a.info));
         if (a.photos.length) section(`Photos (${a.photos.length})`, false, gallery(a.photos));
+        if (a.improvements?.length) section(`Future improvements (${a.improvements.length})`, false, a.improvements.map(x => `
+            <details class="guide"><summary>${/^done$/i.test(x.status || '') ? `<s>${esc(x.title)}</s>` : esc(x.title)}${x.status ? ` <span class="tag">${esc(x.status)}</span>` : ''}</summary>
+                <div class="steps">${x.cost ? `<p><b>Estimated cost:</b> ${esc(x.cost)}</p>` : ''}${stepsHtml(x.text || '')}</div></details>`).join(''));
         section(`Records (${a.records.rows.length})`, true, el => records(el, a.records.columns, a.records.rows));
     }
 
@@ -337,6 +345,8 @@ a.btn { display:inline-block; text-decoration:none; border:1px solid var(--line)
 .guide > summary { padding:10px 12px; font-weight:600; cursor:pointer; }
 .steps { padding:0 12px 8px; font-size:.95em; line-height:1.45; }
 .steps p { margin:4px 0; }
+.steps h4 { font-size:1em; margin:12px 0 4px; }
+.step.done > span:last-child { color:var(--muted); text-decoration:line-through; }
 .step { display:flex; gap:8px; margin:5px 0; }
 .num { min-width:22px; font-weight:600; color:var(--accent); }
 .gap { height:6px; }

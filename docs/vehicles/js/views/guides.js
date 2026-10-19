@@ -10,11 +10,18 @@ let draft = null; // { start, read } while a guide is being edited
 export const guidesUnsaved = () => !!draft && draft.read() !== draft.start;
 export const forgetGuides = () => { draft = null; };
 
-/** Guide text → HTML: '1. …' lines become numbered steps, '- …' lines bullets, blank lines spacing. */
-function textHtml(text) {
+/**
+ * Guide text → HTML: '1. …' lines become numbered steps, '- …' lines bullets, '[ ] …' / '[x] …' checklist items,
+ * '## …' small headings, blank lines spacing. House's Future improvements use it too.
+ */
+export function textHtml(text) {
     return text.split('\n').map(line => {
         const t = line.trim();
         if (!t) return '<div class="g-gap"></div>';
+        const head = /^#{1,3}\s+(.*)$/.exec(t);
+        if (head) return `<h4 class="g-head">${esc(head[1])}</h4>`;
+        const check = /^\[([ xX])\]\s*(.*)$/.exec(t);
+        if (check) return `<div class="g-step${check[1] === ' ' ? '' : ' g-done'}"><span class="g-num">${check[1] === ' ' ? '☐' : '☑'}</span><span>${esc(check[2])}</span></div>`;
         const step = /^(\d+[.)])\s+(.*)$/.exec(t);
         if (step) return `<div class="g-step"><span class="g-num">${esc(step[1])}</span><span>${esc(step[2])}</span></div>`;
         const bullet = /^[-•*]\s+(.*)$/.exec(t);

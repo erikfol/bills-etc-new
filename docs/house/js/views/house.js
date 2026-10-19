@@ -1,11 +1,13 @@
 // One house's page, in tabs: Overview (house information, service companies, photos), then one tab per area
-// (Heating/Cooling, Septic, Other Inside, Other Outside) with that area's information, photos and records table.
-// Also the "Add house" page. Service companies and photos use the Vehicles views.
+// (Heating/Cooling, Septic, Other Inside, Other Outside) with that area's information, photos and records table
+// (Heating/Cooling also has Future improvements). Also the "Add house" page. Service companies and photos use the
+// Vehicles views.
 import { esc, toast } from '../../../bills-etc/js/util.js';
 import { recordTable, closeFilterMenu } from '../../../shared/js/recordtable.js';
 import { infoBox } from '../../../shared/js/infobox.js';
 import { renderGallery, releaseGalleries } from '../../../vehicles/js/views/gallery.js';
 import { renderPlaces, placesUnsaved, forgetPlaces } from '../../../vehicles/js/views/places.js';
+import { renderImprovements, improvementsUnsaved, forgetImprovements } from './improvements.js';
 import {
     HOUSE_PATH, AREAS, STORE, areaInfo, saveHouses, houseAge, photosDir, newHouse, recordsPath, recordColumns, loadRecords, saveRecords,
 } from '../house.js';
@@ -14,8 +16,8 @@ let table = null;
 let info = null; // the information box
 
 export const hasUnsavedEdits = () => !!table?.hasUnsavedEdits() || !!info?.hasUnsavedEdits()
-    || placesUnsaved();
-export const forget = () => { table = null; info = null; closeFilterMenu(); releaseGalleries(); forgetPlaces(); };
+    || placesUnsaved() || improvementsUnsaved();
+export const forget = () => { table = null; info = null; closeFilterMenu(); releaseGalleries(); forgetPlaces(); forgetImprovements(); };
 
 /** The tabs under a house's name. */
 const tabs = (h, part) => {
@@ -97,6 +99,10 @@ async function renderArea(el, list, h, a) {
             <h2>Photos</h2>
             <div id="photos"></div>
         </section>
+        ${a.improvements ? `<section>
+            <h2>Future improvements</h2>
+            <div id="improvements"></div>
+        </section>` : ''}
         <section>
             <h2>Records</h2>
             <div id="records"></div>
@@ -113,6 +119,7 @@ async function renderArea(el, list, h, a) {
     renderGallery(el.querySelector('#photos'), photosDir(h, a), { noun: 'photo' }).catch(err => {
         el.querySelector('#photos').innerHTML = `<div class="banner bad">Couldn't load photos: ${esc(err.message)}</div>`;
     });
+    if (a.improvements) renderImprovements(el.querySelector('#improvements'), list, h, a);
     table = recordTable(el.querySelector('#records'), {
         columns: recordColumns(h, a),
         rows,

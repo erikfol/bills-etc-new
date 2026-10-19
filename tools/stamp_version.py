@@ -23,7 +23,7 @@ APPS = {
     'health': ('health-version', SHARED),
     'vehicles': ('vehicles-version', SHARED),
     'house': ('house-version', SHARED + ['vehicles/css/vehicles.css', 'vehicles/js/views/gallery.js',
-                                         'vehicles/js/views/places.js']),  # Vehicles' views
+                                         'vehicles/js/views/places.js', 'vehicles/js/views/guides.js']),  # Vehicles' views (+ guide text formatting)
     'insurance': ('insurance-version', SHARED + ['vehicles/css/vehicles.css', 'vehicles/js/views/gallery.js',
                                                  'vehicles/js/views/places.js']),  # Vehicles' views
     'pets': ('pets-version', SHARED + ['vehicles/css/vehicles.css', 'vehicles/js/views/gallery.js']),  # borrows Vehicles' info box + photos

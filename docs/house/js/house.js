@@ -14,12 +14,14 @@ export const FIELDS = ['Address', 'Year Built', 'Style', 'Bedrooms', 'Bathrooms'
 
 // The tabs after the Overview: each has its own information (starting fields below), photos and records table.
 // actions: offered in the records table's Action column (anything else can be typed).
+// improvements: the tab also has a Future improvements section (views/improvements.js).
 export const AREAS = [
     { id: 'heating', label: 'Heating/Cooling',
         fields: ['Heating System', 'Fuel', 'Boiler / Furnace Make', 'Model', 'Installed', 'Oil Tank Size', 'Cooling System',
             'Mini-split Units', 'Filter Size', 'Thermostats', 'Notes'],
         actions: ['Boiler / furnace service', 'Oil filter', 'Nozzle', 'Chimney cleaning', 'Mini-split cleaning', 'Filter change',
-            'Thermostat', 'Repair'] },
+            'Thermostat', 'Repair'],
+        improvements: true },
     { id: 'septic', label: 'Septic',
         fields: ['Tank Size', 'Tank Material', 'Tank Location', 'Leach Field Location', 'Installed', 'Pump Every', 'Notes'],
         actions: ['Pumped', 'Inspection', 'Effluent filter cleaned', 'Baffle repair', 'Riser / cover', 'Repair'] },
@@ -33,6 +35,12 @@ export const AREAS = [
         actions: ['Roof repair', 'Gutter cleaning', 'Painting / staining', 'Lawn / yard', 'Tree work', 'Snow removal', 'Driveway',
             'Deck', 'Pest control', 'Repair'] },
 ];
+
+// Offered in a future improvement's Status (anything else can be typed). 'Done' ones are shown crossed out.
+export const IMPROVEMENT_STATUSES = ['Idea', 'Researching', 'Getting quotes', 'Planned', 'In progress', 'Done'];
+
+/** An area's future improvements on house `h`: [{ id, title, status, cost, text }]. */
+export const areaImprovements = (h, a) => h.areas?.[a.id]?.improvements ?? [];
 
 const blank = fields => fields.map(label => ({ label, value: '' }));
 
