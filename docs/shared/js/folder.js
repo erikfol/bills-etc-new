@@ -16,7 +16,7 @@ export async function askForFolder(el, { what, where, onConnected }) {
     el.innerHTML = `
         <section>
             <h2>Connect your folder</h2>
-            <p>${esc(what)} are saved in <code>${esc(where)}</code> inside your <code>bills-etc-new</code> folder
+            <p>${esc(what)} are saved in <code>${esc(where)}</code> inside your <code>erik-life-app</code> folder
             (the same folder Bills Etc uses). Nothing is uploaded, and <code>inputs/</code> is never put on GitHub.</p>
             ${fs.isSupported() ? '' : '<div class="banner bad" style="margin-top:12px">This browser can’t open local folders. Use Chrome or Edge.</div>'}
             <div class="row" style="margin-top:12px">

@@ -420,7 +420,7 @@ export function setupPhoneCopy(button) {
     const makeNow = async ({ background = false, status = () => {} } = {}) => {
         const dir = await fs.rememberedHandle(HANDLE_KEY);
         if (!dir) return false;
-        if (!fs.folder()) { if (!background) toast('Connect your bills-etc-new folder first.', 'bad'); showNotice(); return false; }
+        if (!fs.folder()) { if (!background) toast('Connect your erik-life-app folder first.', 'bad'); showNotice(); return false; }
         const allowed = background
             ? (await dir.queryPermission({ mode: 'readwrite' })) === 'granted'
             : (await dir.requestPermission({ mode: 'readwrite' })) === 'granted';

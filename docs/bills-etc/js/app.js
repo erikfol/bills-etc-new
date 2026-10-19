@@ -42,7 +42,7 @@ export function requireFolder(el) {
     el.innerHTML = `
         <section>
             <h2>No folder connected</h2>
-            <p>Connect your <code>bills-etc-new</code> folder on the <a href="#home">Setup</a> page first.
+            <p>Connect your <code>erik-life-app</code> folder on the <a href="#home">Setup</a> page first.
             The app reads and writes the same files as the Python scripts; nothing is uploaded.</p>
             <div class="row" style="margin-top:12px"><button class="primary" id="reconnect-here" hidden></button></div>
         </section>`;

@@ -109,7 +109,7 @@ const home = {
 
             <section>
                 <h2>Your data folder</h2>
-                <p>Choose your <code>bills-etc-new</code> folder, the one that contains <code>inputs/</code> and <code>config.json</code>.
+                <p>Choose your <code>erik-life-app</code> folder, the one that contains <code>inputs/</code> and <code>config.json</code>.
                 The app reads and writes the same files as the Python scripts, so you can switch between them.</p>
                 <div class="row" style="margin:14px 0">
                     <button id="pick" ${supported ? '' : 'disabled'}>Choose folder…</button>
