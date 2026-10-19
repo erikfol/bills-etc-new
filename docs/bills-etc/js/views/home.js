@@ -116,6 +116,7 @@ const home = {
                     <button class="primary" id="reconnect" hidden></button>
                     <span id="folder-name" class="muted"></span>
                 </div>
+                <div class="banner bad" id="folder-moved" style="margin-bottom:14px" hidden></div>
                 <div id="folder-tools" hidden>
                     <div class="row">
                         <button class="primary" id="add-files">Add bank files…</button>
@@ -319,18 +320,26 @@ const home = {
         el.querySelector('#pick').onclick = async () => {
             try { await fs.pickFolder(); } catch (e) { if (e.name !== 'AbortError') toast(e.message, 'bad'); return; }
             el.querySelector('#reconnect').hidden = true;
+            el.querySelector('#folder-moved').hidden = true;
             refreshStatus();
             showFolder();
         };
 
         if (!fs.folder() && supported) {
             const remembered = await fs.rememberedFolder().catch(() => null);
-            if (remembered && !remembered.granted) {
+            const showMoved = () => {
+                const note = el.querySelector('#folder-moved');
+                note.textContent = `${fs.movedMessage(remembered.handle)} Choose it again where it is now.`;
+                note.hidden = false;
+            };
+            if (remembered?.moved) showMoved();
+            else if (remembered && !remembered.granted) {
                 const btn = el.querySelector('#reconnect');
                 btn.hidden = false;
                 btn.textContent = `Reconnect “${remembered.handle.name}”`;
                 btn.onclick = async () => {
                     if (await fs.reconnect(remembered.handle)) { btn.hidden = true; refreshStatus(); showFolder(); }
+                    else if (await fs.isGone(remembered.handle)) { btn.hidden = true; showMoved(); }
                 };
             }
         }

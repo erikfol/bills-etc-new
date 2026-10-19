@@ -42,6 +42,7 @@ export function requireFolder(el) {
     el.innerHTML = `
         <section>
             <h2>No folder connected</h2>
+            <div class="banner bad" id="moved-here" style="margin-bottom:12px" hidden></div>
             <p>Connect your <code>erik-life-app</code> folder on the <a href="#home">Setup</a> page first.
             The app reads and writes the same files as the Python scripts; nothing is uploaded.</p>
             <div class="row" style="margin-top:12px"><button class="primary" id="reconnect-here" hidden></button></div>
@@ -50,10 +51,17 @@ export function requireFolder(el) {
     fs.rememberedFolder().then(rem => {
         const btn = el.querySelector('#reconnect-here');
         if (!rem || !btn) return;
+        if (rem.moved) {
+            const note = el.querySelector('#moved-here');
+            note.textContent = `${fs.movedMessage(rem.handle)} Choose it again on the Setup page.`;
+            note.hidden = false;
+            return;
+        }
         btn.hidden = false;
         btn.textContent = `Reconnect “${rem.handle.name}”`;
         btn.onclick = async () => {
             if (await fs.reconnect(rem.handle)) { await refreshStatus(); route(true); }
+            else requireFolder(el); // says so if the folder turned out to be moved
         };
     }).catch(() => {});
     return false;

@@ -13,19 +13,22 @@ export function refreshStatus() {
 /** Shown until a folder is connected: reconnect the remembered one, or choose one. `where` is e.g. 'inputs/health/'. */
 export async function askForFolder(el, { what, where, onConnected }) {
     const rem = await fs.rememberedFolder().catch(() => null);
+    const moved = rem?.moved;
     el.innerHTML = `
         <section>
             <h2>Connect your folder</h2>
+            ${moved ? `<div class="banner bad" style="margin-bottom:12px">${esc(fs.movedMessage(rem.handle))} Choose it again where it is now.</div>` : ''}
             <p>${esc(what)} are saved in <code>${esc(where)}</code> inside your <code>erik-life-app</code> folder
             (the same folder Bills Etc uses). Nothing is uploaded, and <code>inputs/</code> is never put on GitHub.</p>
             ${fs.isSupported() ? '' : '<div class="banner bad" style="margin-top:12px">This browser can’t open local folders. Use Chrome or Edge.</div>'}
             <div class="row" style="margin-top:12px">
-                ${rem ? `<button class="primary" id="reconnect">Reconnect “${esc(rem.handle.name)}”</button>` : ''}
-                <button ${rem ? '' : 'class="primary"'} id="choose"${fs.isSupported() ? '' : ' disabled'}>Choose folder…</button>
+                ${rem && !moved ? `<button class="primary" id="reconnect">Reconnect “${esc(rem.handle.name)}”</button>` : ''}
+                <button ${rem && !moved ? '' : 'class="primary"'} id="choose"${fs.isSupported() ? '' : ' disabled'}>Choose folder…</button>
             </div>
         </section>`;
     el.querySelector('#reconnect')?.addEventListener('click', async () => {
         if (await fs.reconnect(rem.handle)) { refreshStatus(); onConnected(); }
+        else askForFolder(el, { what, where, onConnected }); // says so if the folder turned out to be moved
     });
     el.querySelector('#choose').addEventListener('click', async () => {
         try { await fs.pickFolder(); } catch { return; } // picker cancelled

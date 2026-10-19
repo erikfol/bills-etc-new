@@ -39,7 +39,7 @@ export default async function renderWater(el) {
     el.innerHTML = '<p class="muted">Loading water bills…</p>';
     const data = await loadWater();
     if (!data) {
-        el.innerHTML = `<div class="banner">No water bills found. This page reads <code>${esc(WATER_PATH)}</code> in your bills-etc folder.</div>`;
+        el.innerHTML = `<div class="banner">No water bills found. This page reads <code>${esc(WATER_PATH)}</code> in your erik-life-app folder.</div>`;
         return;
     }
     if (data.missing.length) {

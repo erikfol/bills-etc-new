@@ -21,7 +21,7 @@ export default async function renderPropane(el) {
     el.innerHTML = '<p class="muted">Loading propane fill-ups…</p>';
     const data = await loadPropane();
     if (!data) {
-        el.innerHTML = `<div class="banner">No propane fill-ups found. This page reads <code>${esc(PROPANE_PATH)}</code> in your bills-etc folder.</div>`;
+        el.innerHTML = `<div class="banner">No propane fill-ups found. This page reads <code>${esc(PROPANE_PATH)}</code> in your erik-life-app folder.</div>`;
         return;
     }
     if (data.missing.length) {

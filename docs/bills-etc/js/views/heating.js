@@ -37,7 +37,7 @@ export default async function renderHeating(el) {
     el.innerHTML = '<p class="muted">Loading heating oil deliveries…</p>';
     const data = await loadDeliveries();
     if (!data) {
-        el.innerHTML = `<div class="banner">No heating deliveries found. This page reads <code>${esc(HEAT_PATH)}</code> in your bills-etc folder.</div>`;
+        el.innerHTML = `<div class="banner">No heating deliveries found. This page reads <code>${esc(HEAT_PATH)}</code> in your erik-life-app folder.</div>`;
         return;
     }
     if (data.missing.length) {

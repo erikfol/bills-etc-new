@@ -439,7 +439,9 @@ export function setupPhoneCopy(button) {
             return true;
         } catch (err) {
             status('');
-            toast(`Couldn't update the phone copy: ${err.message}`, 'bad');
+            const why = err.name !== 'FolderMovedError' && await fs.isGone(dir)
+                ? `${fs.movedMessage(dir)} Choose it again with Change… in the 📱 panel.` : err.message;
+            toast(`Couldn't update the phone copy: ${why}`, 'bad');
             return false;
         } finally {
             busy = false;

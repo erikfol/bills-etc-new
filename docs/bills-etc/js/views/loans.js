@@ -179,7 +179,7 @@ export default {
                 <div class="row">
                     <button type="submit" class="primary">Add loan</button>
                     <button type="button" id="acct-cancel">Cancel</button>
-                    <span class="muted" style="font-size:0.85em">Saved in ${esc(LOANS_DIR)}/ in your bills-etc folder.</span>
+                    <span class="muted" style="font-size:0.85em">Saved in ${esc(LOANS_DIR)}/ in your erik-life-app folder.</span>
                 </div>` : `
                 <div class="add-grid">
                     <label class="field">Title<input type="text" name="title" required placeholder="${tab.titleHint}"></label>
@@ -205,7 +205,7 @@ export default {
                 <div class="row">
                     <button type="submit" class="primary">Add account</button>
                     <button type="button" id="acct-cancel">Cancel</button>
-                    <span class="muted" style="font-size:0.85em">Saved in ${esc(LOANS_DIR)}/ in your bills-etc folder.</span>
+                    <span class="muted" style="font-size:0.85em">Saved in ${esc(LOANS_DIR)}/ in your erik-life-app folder.</span>
                 </div>`}
             </form>
             <div id="due"></div>

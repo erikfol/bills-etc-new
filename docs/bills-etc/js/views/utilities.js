@@ -82,7 +82,7 @@ async function renderElectric(el) {
     el.innerHTML = '<p class="muted">Loading electric bills…</p>';
     const data = await loadElectric();
     if (!data) {
-        el.innerHTML = `<div class="banner">No electric bills found. This page reads <code>${esc(ELECTRIC_PATH)}</code> in your bills-etc folder.</div>`;
+        el.innerHTML = `<div class="banner">No electric bills found. This page reads <code>${esc(ELECTRIC_PATH)}</code> in your erik-life-app folder.</div>`;
         return;
     }
     if (data.missing.length) {

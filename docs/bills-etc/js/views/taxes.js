@@ -34,7 +34,7 @@ export default async function renderTaxes(el) {
     el.innerHTML = '<p class="muted">Loading property tax bills…</p>';
     const data = await loadTaxes();
     if (!data) {
-        el.innerHTML = `<div class="banner">No property tax bills found. This page reads <code>${esc(TAX_PATH)}</code> in your bills-etc folder.</div>`;
+        el.innerHTML = `<div class="banner">No property tax bills found. This page reads <code>${esc(TAX_PATH)}</code> in your erik-life-app folder.</div>`;
         return;
     }
     if (data.missing.length) {

@@ -47,7 +47,7 @@ export default {
         el.innerHTML = '<p class="muted">Loading your savings…</p>';
         const data = await loadSavings();
         if (!data) {
-            el.innerHTML = `<h1 class="page">Savings</h1><div class="banner">No savings sheet found. This page reads <code>${esc(SAVINGS_PATH)}</code> in your bills-etc folder.</div>`;
+            el.innerHTML = `<h1 class="page">Savings</h1><div class="banner">No savings sheet found. This page reads <code>${esc(SAVINGS_PATH)}</code> in your erik-life-app folder.</div>`;
             return;
         }
         const spending = await averageSpending();
