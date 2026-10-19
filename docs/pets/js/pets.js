@@ -74,6 +74,7 @@ export const photosDir = p => `${PETS_DIR}/photos/${p.id}`;
 
 export const RECORD_COLUMNS = [
     { name: 'Date', kind: 'date' },
+    { name: 'Location', kind: 'suggest' }, // where it was done; files saved before it was added just have it blank
     { name: 'Description', kind: 'text' },
     { name: 'Cost', kind: 'money' },
     { name: 'Other Notes', kind: 'text' },

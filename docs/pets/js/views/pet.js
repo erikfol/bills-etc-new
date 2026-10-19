@@ -92,8 +92,10 @@ export async function renderPet(el, list, p, onListChanged) {
         rows: apptRows,
         save: async r => { await saveAppointments(p, r); drawBanner(r); },
     });
+    // Location offers what's been typed before plus every pet's Vet.
+    const vets = [...new Set(list.flatMap(x => (x.info || []).filter(f => /\bvet\b/i.test(f.label) && f.value.trim()).map(f => f.value.trim())))];
     table = recordTable(el.querySelector('#records'), {
-        columns: RECORD_COLUMNS,
+        columns: RECORD_COLUMNS.map(c => (c.name === 'Location' ? { ...c, suggestions: vets } : c)),
         rows,
         save: rows => saveRecords(p, rows),
     });

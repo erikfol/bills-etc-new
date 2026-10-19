@@ -7,6 +7,7 @@ import { dataTable, closeFilterMenu } from '../../bills-etc/js/datatable.js';
 const NEW_CHOICE = '__new__'; // a choice can't be named this, so it can't clash
 const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const ONGOING = 'ongoing';
+let tableCount = 0; // gives each table's suggestion lists their own ids (a page can have more than one table)
 
 /** '2026-10-15' → 'Oct 15, 2026'; anything else (typed into the file by hand) shows as it is. */
 export function showDate(v) {
@@ -43,7 +44,9 @@ export const newestFirst = columns => {
  * Returns { hasUnsavedEdits() }.
  */
 export function recordTable(container, { columns: cols, rows: initial, save, choices = {} }) {
+    const tableNo = ++tableCount;
     const state = { rows: initial, draft: null, original: null };
+    const dlId = c => `dl-${tableNo}-${cols.indexOf(c)}`;
     container.innerHTML = `
         <div class="row table-tools" data-tools></div>
         <div class="record-table" data-read></div>
@@ -142,11 +145,11 @@ export function recordTable(container, { columns: cols, rows: initial, save, cho
             if (c.kind === 'date' || c.kind === 'end') return `<input type="date" ${attrs} value="${esc(v)}">`;
             if (c.kind === 'number' || c.kind === 'money') return `<input type="text" inputmode="decimal" class="num-input" ${attrs} value="${esc(v)}">`;
             if (c.kind === 'choice') return `<select ${attrs}>${choiceOptions(c, v)}</select>`;
-            if (c.kind === 'suggest') return `<input type="text" list="dl-${cols.indexOf(c)}" ${attrs} value="${esc(v)}">`;
+            if (c.kind === 'suggest') return `<input type="text" list="${dlId(c)}" ${attrs} value="${esc(v)}">`;
             return `<textarea ${attrs} rows="1">${esc(v)}</textarea>`;
         };
         const lists = cols.filter(c => c.kind === 'suggest').map(c =>
-            `<datalist id="dl-${cols.indexOf(c)}">${suggestions(c).map(v => `<option value="${esc(v)}">`).join('')}</datalist>`).join('');
+            `<datalist id="${dlId(c)}">${suggestions(c).map(v => `<option value="${esc(v)}">`).join('')}</datalist>`).join('');
         tbl.innerHTML = `<thead><tr>${cols.map(c => `<th>${esc(c.name)}${c.kind === 'end' ? ' <span class="muted">(blank = ongoing)</span>' : ''}</th>`).join('')}<th>${lists}</th></tr></thead>
             <tbody>${state.draft.map((r, i) => `<tr>${cols.map(c => `<td>${input(c, i, r[c.name])}</td>`).join('')}
                 <td class="remove"><button type="button" class="danger" data-remove="${i}" title="Remove this entry" aria-label="Remove this entry">✕</button></td></tr>`).join('')
