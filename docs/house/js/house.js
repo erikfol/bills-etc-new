@@ -24,12 +24,19 @@ export const FIELDS = ['Address', 'Year Built', 'Style', 'Bedrooms', 'Bathrooms'
 // boxes: several information boxes instead of one [{ key, label, fields }], each kept under house.areas[<id>][key].
 // gallery: { label, noun } for the photos section (default Photos). records: false = no records table.
 // A tab or part with `table` (its columns) is just that one table, kept in <house>-<its id>.csv.
+const UPDATE_LOCATIONS = ['Whole house', 'Kitchen', 'Living room', 'Dining room', 'Bedroom', 'Bathroom', 'Basement', 'Garage',
+    'Attic', 'Outside', 'Yard'];
 const UPDATE_COLUMNS = [
     { name: 'Date', kind: 'date' },
     { name: 'Update', kind: 'text' },
-    { name: 'Location', kind: 'suggest', suggestions: ['Whole house', 'Kitchen', 'Living room', 'Dining room', 'Bedroom',
-        'Bathroom', 'Basement', 'Garage', 'Attic', 'Outside', 'Yard'] },
+    { name: 'Location', kind: 'suggest', suggestions: UPDATE_LOCATIONS },
     { name: 'Additional Notes', kind: 'text' },
+];
+const FUTURE_UPDATE_COLUMNS = [
+    { name: 'Planned Date', kind: 'date' },
+    { name: 'Update', kind: 'text' },
+    { name: 'Location', kind: 'suggest', suggestions: UPDATE_LOCATIONS },
+    { name: 'Notes', kind: 'text' },
 ];
 export const AREAS = [
     { id: 'financing', label: 'Financing', records: false, gallery: { label: 'Documents & photos', noun: 'image' },
@@ -42,7 +49,7 @@ export const AREAS = [
         ] },
     { id: 'updates', label: 'Updates', parts: [
         { id: 'updates-done', label: 'Updates Done', icon: '✅', table: UPDATE_COLUMNS },
-        { id: 'future-updates', label: 'Future Updates', icon: '🗓️', table: UPDATE_COLUMNS },
+        { id: 'future-updates', label: 'Future Updates', icon: '🗓️', table: FUTURE_UPDATE_COLUMNS },
     ] },
     { id: 'heating', label: 'Heating/Cooling', parts: [
         { id: 'oil-furnace', label: 'Oil furnace', icon: '🔥',
