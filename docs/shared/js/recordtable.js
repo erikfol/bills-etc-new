@@ -36,11 +36,12 @@ export const newestFirst = columns => {
  * Render into `container` (which it owns). Options:
  *   columns: [{ name, kind }] — kind: 'date' (YYYY-MM-DD), 'end' (date; blank = ongoing), 'number',
  *            'money' (stored as a plain number, shown as $1,234.56; a Total line sums the rows shown),
- *            'choice' (dropdown, see choices), 'suggest' (free text offering values already used + c.suggestions),
- *            'text' (multi-line)
+ *            'choice' (dropdown, see choices; c.href(value) → a link for it in the read-only view, or null),
+ *            'suggest' (free text offering values already used + c.suggestions), 'text' (multi-line)
  *   rows:    [{ [name]: string }]
  *   save:    async rows => void (rows already trimmed and without blank entries)
  *   choices: { [name]: { list: string[], noun: 'location', add: async name => void } } for 'choice' columns
+ *            (without add the list is fixed: no "＋ New …" option)
  * Returns { hasUnsavedEdits() }.
  */
 export function recordTable(container, { columns: cols, rows: initial, save, choices = {} }) {
@@ -91,7 +92,10 @@ export function recordTable(container, { columns: cols, rows: initial, save, cho
         };
         if (c.kind === 'choice') return {
             ...base, value: get,
-            cell: r => (get(r) ? `<span class="cat-badge">${esc(get(r))}</span>` : ''),
+            cell: r => {
+                const v = get(r), href = v && c.href?.(v);
+                return !v ? '' : href ? `<a class="cat-badge" href="${esc(href)}">${esc(v)}</a>` : `<span class="cat-badge">${esc(v)}</span>`;
+            },
         };
         return { ...base, value: get, tdClass: () => 'text' };
     };
@@ -128,7 +132,7 @@ export function recordTable(container, { columns: cols, rows: initial, save, cho
         const list = !v || all.includes(v) ? all : [v, ...all];
         return `<option value=""${v ? '' : ' selected'}>—</option>`
             + list.map(l => `<option${l === v ? ' selected' : ''}>${esc(l)}</option>`).join('')
-            + `<option value="${NEW_CHOICE}">＋ New ${esc(choices[c.name].noun)}…</option>`;
+            + (choices[c.name].add ? `<option value="${NEW_CHOICE}">＋ New ${esc(choices[c.name].noun)}…</option>` : '');
     };
     // Values offered by a 'suggest' column: what's been used before, most-used first, then its suggestions.
     const suggestions = c => {

@@ -76,8 +76,12 @@ export async function collectData(progress = () => {}) {
                 areas.push({ label: a.label, tab: t.parts ? t.label : '', table: { columns: a.table.map(c => ({ name: c.name, kind: c.kind })), rows: await house.loadTable(h, a, false) } });
                 continue;
             }
-            if (a.cards) { // a page that's just cards (Projects)
-                areas.push({ label: a.label, tab: t.parts ? t.label : '', cards: house.areaImprovements(h, a) });
+            if (a.projects) { // the Projects tab, each project with its images and the Future Updates linked to it
+                const future = await house.loadTable(h, house.FUTURE_UPDATES, false), projects = [];
+                for (const p of house.houseProjects(h)) projects.push({ title: p.title, status: p.status || '', text: p.text || '',
+                    specs: p.specs || [], costs: p.costs || [], images: await images(house.projectDir(h, p), tick),
+                    updates: future.filter(r => r.Project === p.title) });
+                areas.push({ label: a.label, tab: '', projects });
                 continue;
             }
             areas.push({
@@ -294,10 +298,23 @@ function viewer(D, ageText, houseAge, appointmentStatus, maintenanceStatus) { //
         <details class="guide"><summary>${/^done$/i.test(x.status || '') ? `<s>${esc(x.title)}</s>` : esc(x.title)}${x.status ? ` <span class="tag">${esc(x.status)}</span>` : ''}</summary>
             <div class="steps">${x.cost ? `<p><b>Estimated cost:</b> ${esc(x.cost)}</p>` : ''}${stepsHtml(x.text || '')}</div></details>`).join('');
 
+    /** One project: plan & notes, measurements & specs, cost estimates with their total, images, linked future updates. */
+    const projectHtml = p => {
+        const total = p.costs.reduce((t, r) => t + (Number.isNaN(num(r.Estimate)) ? 0 : num(r.Estimate)), 0);
+        const specs = p.specs.filter(f => f.value);
+        return `<details class="guide"><summary>${/^done$/i.test(p.status) ? `<s>${esc(p.title)}</s>` : esc(p.title)}${p.status ? ` <span class="tag">${esc(p.status)}</span>` : ''}</summary>
+            <div class="steps"><p><b>Estimated total:</b> ${money(total)}</p>
+                ${p.text ? `<h3>Plan &amp; notes</h3>${stepsHtml(p.text)}` : ''}
+                ${specs.length ? `<h3>Measurements &amp; specs</h3>${infoList(specs)}` : ''}
+                ${p.costs.length ? `<h3>Cost estimates</h3>${p.costs.map(r => `<div class="sub">${esc(r.Item || '—')}: ${Number.isNaN(num(r.Estimate)) ? esc(r.Estimate || '') : money(num(r.Estimate))}${r.Source ? ` (${esc(r.Source)})` : ''}${r.Notes ? ` — ${esc(r.Notes)}` : ''}</div>`).join('')}` : ''}
+                ${p.updates.length ? `<h3>Future updates</h3>${p.updates.map(r => `<div class="sub">${esc(r.Update || '')}${r['Planned Date'] ? ` — planned ${esc(showDate(r['Planned Date']))}` : ''}</div>`).join('')}` : ''}
+            </div>${p.images.length ? gallery(p.images) : ''}</details>`;
+    };
+
     function drawArea(h, a) {
         main.insertAdjacentHTML('beforeend', `<h1>${esc(a.label)}</h1><p class="muted">${esc(h.name)}${a.tab ? ` · ${esc(a.tab)}` : ''}</p>`);
         if (a.table) return section(`Entries (${a.table.rows.length})`, true, el => records(el, a.table.columns, a.table.rows));
-        if (a.cards) return section(`${a.label} (${a.cards.length})`, true, a.cards.length ? cardsHtml(a.cards) : '<p class="muted">Nothing here yet.</p>');
+        if (a.projects) return section(`${a.label} (${a.projects.length})`, true, a.projects.length ? a.projects.map(projectHtml).join('') : '<p class="muted">Nothing here yet.</p>');
         const m = a.maintenance;
         if (m?.due) {
             const { level, done, last } = maintenanceStatus(m.rows, m.due);

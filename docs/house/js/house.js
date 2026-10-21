@@ -23,8 +23,8 @@ export const FIELDS = ['Address', 'Year Built', 'Style', 'Bedrooms', 'Bathrooms'
 // entry dated this year, red from the 1st of due.month (1 = January) while there's none, and green before then.
 // boxes: several information boxes instead of one [{ key, label, fields }], each kept under house.areas[<id>][key].
 // gallery: { label, noun } for the photos section (default Photos). records: false = no records table.
-// A tab or part with `table` (its columns) is just that one table, kept in <house>-<its id>.csv; one with `cards`
-// ({ noun, list, hint }) is just cards like Future improvements (views/improvements.js), kept in house.json.
+// A tab or part with `table` (its columns) is just that one table, kept in <house>-<its id>.csv. The tab with
+// `projects` is the Projects list and pages (views/projects.js).
 const UPDATE_LOCATIONS = ['Whole house', 'Kitchen', 'Living room', 'Dining room', 'Bedroom', 'Bathroom', 'Basement', 'Garage',
     'Attic', 'Outside', 'Yard'];
 const UPDATE_COLUMNS = [
@@ -37,6 +37,7 @@ const FUTURE_UPDATE_COLUMNS = [
     { name: 'Planned Date', kind: 'date' },
     { name: 'Update', kind: 'text' },
     { name: 'Location', kind: 'suggest', suggestions: UPDATE_LOCATIONS },
+    { name: 'Project', kind: 'choice', projects: true }, // a project's title (Projects tab), linked to its page
     { name: 'Notes', kind: 'text' },
 ];
 export const AREAS = [
@@ -52,8 +53,7 @@ export const AREAS = [
         { id: 'updates-done', label: 'Updates Done', icon: '✅', table: UPDATE_COLUMNS },
         { id: 'future-updates', label: 'Future Updates', icon: '🗓️', table: FUTURE_UPDATE_COLUMNS },
     ] },
-    { id: 'projects', label: 'Projects',
-        cards: { noun: 'project', list: 'Projects', hint: "House projects you're planning or working on, with what they'd cost and the steps left." } },
+    { id: 'projects', label: 'Projects', projects: true },
     { id: 'heating', label: 'Heating/Cooling', parts: [
         { id: 'oil-furnace', label: 'Oil furnace', icon: '🔥',
             fields: ['Heating System', 'Fuel', 'Boiler / Furnace Make', 'Model', 'Installed', 'Oil Tank Size', 'Thermostats', 'Notes'],
@@ -73,7 +73,23 @@ export const AREAS = [
         actions: ['Pumped', 'Inspection', 'Effluent filter cleaned', 'Baffle repair', 'Riser / cover', 'Repair'] },
 ];
 
-// Offered in a future improvement's Status (anything else can be typed). 'Done' ones are shown crossed out.
+/** Updates → Future Updates, whose Project column links a planned update to a project. */
+export const FUTURE_UPDATES = AREAS.find(t => t.id === 'updates').parts.find(p => p.id === 'future-updates');
+
+// The Projects tab's projects, kept on the house in house.json as areas.projects.items:
+// [{ id, title, status, text (plan & notes), specs: [{ label, value }], costs: [{ Item, Estimate, Source, Notes }] }];
+// each project's photos and sketches in its own folder.
+export const houseProjects = h => h.areas?.projects?.items ?? [];
+export const projectDir = (h, p) => `${HOUSE_DIR}/projects/${h.id}-${p.id}`;
+export const PROJECT_SPECS = ['Dimensions', 'Materials', 'Notes']; // a new project's starting Measurements & specs fields
+export const COST_COLUMNS = [
+    { name: 'Item', kind: 'text' },
+    { name: 'Estimate', kind: 'money' },
+    { name: 'Source', kind: 'suggest' },
+    { name: 'Notes', kind: 'text' },
+];
+
+// Offered in a future improvement's (and a project's) Status (anything else can be typed). 'Done' ones are shown crossed out.
 export const IMPROVEMENT_STATUSES = ['Idea', 'Researching', 'Getting quotes', 'Planned', 'In progress', 'Done'];
 
 /** An area's future improvements on house `h`: [{ id, title, status, cost, text }]. */

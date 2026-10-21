@@ -2,7 +2,7 @@
 // companies, photos) and each area, each showing that area's information, photos and records table (Septic), or as
 // AREAS says: Financing has Mortgage, Closing and Value & Taxes boxes, documents and no records; Updates and
 // Heating/Cooling have pills — Updates Done / Future Updates, each just a table; Oil furnace / Mini-split / Water heater,
-// each with maintenance too (and a due banner, or Future improvements); Projects is just project cards.
+// each with maintenance too (and a due banner, or Future improvements); Projects is views/projects.js.
 // Also the "Add house" page. Service companies and photos use the Vehicles views.
 import { esc, toast } from '../../../bills-etc/js/util.js';
 import { recordTable, closeFilterMenu, showDate } from '../../../shared/js/recordtable.js';
@@ -10,9 +10,11 @@ import { infoBox } from '../../../shared/js/infobox.js';
 import { renderGallery, releaseGalleries } from '../../../vehicles/js/views/gallery.js';
 import { renderPlaces, placesUnsaved, forgetPlaces } from '../../../vehicles/js/views/places.js';
 import { renderImprovements, improvementsUnsaved, forgetImprovements } from './improvements.js';
+import { renderProjectList, renderProject, projectUnsaved, forgetProject } from './projects.js';
 import {
     HOUSE_PATH, AREAS, STORE, areaBoxes, areaInfo, saveHouses, houseAge, photosDir, newHouse, recordsPath, recordColumns, loadRecords, saveRecords,
     maintenancePath, maintenanceColumns, loadMaintenance, saveMaintenance, maintenanceStatus, tablePath, loadTable, saveTable,
+    houseProjects,
 } from '../house.js';
 
 let table = null;
@@ -20,10 +22,10 @@ let maint = null; // the Maintenance table
 let infos = []; // the information boxes
 
 export const hasUnsavedEdits = () => !!table?.hasUnsavedEdits() || !!maint?.hasUnsavedEdits() || infos.some(b => b.hasUnsavedEdits())
-    || placesUnsaved() || improvementsUnsaved();
+    || placesUnsaved() || improvementsUnsaved() || projectUnsaved();
 export const forget = () => {
     table = null; maint = null; infos = [];
-    closeFilterMenu(); releaseGalleries(); forgetPlaces(); forgetImprovements();
+    closeFilterMenu(); releaseGalleries(); forgetPlaces(); forgetImprovements(); forgetProject();
 };
 
 /** The menus under a house's name: the Overview and area tabs, then (on a tab with parts) the pills for its parts. */
@@ -56,11 +58,15 @@ const maintenanceBanner = (a, rows) => {
 
 /**
  * list: every house (saved back whole); onListChanged(goTo) re-draws the menu and opens #goTo.
- * tab: the AREAS tab shown (none for the Overview); page: the area shown — the tab itself, or one of its parts.
+ * tab: the AREAS tab shown (none for the Overview); page: the area shown — the tab itself, or one of its parts;
+ * project: on the Projects tab, the project whose page is shown (none for the list).
  */
-export async function renderHouse(el, list, h, onListChanged, tab = null, page = null) {
+export async function renderHouse(el, list, h, onListChanged, tab = null, page = null, project = null) {
     if (page?.table) return renderTableTab(el, h, tab, page);
-    if (page?.cards) return renderCardsTab(el, list, h, tab, page);
+    if (page?.projects) {
+        const top = `<h1 class="page">${esc(h.name)}</h1>${menus(h, tab, page)}`;
+        return project ? renderProject(el, list, h, top, project) : renderProjectList(el, list, h, top);
+    }
     if (tab) return renderArea(el, list, h, tab, page);
     el.innerHTML = `
         <h1 class="page">${esc(h.name)}</h1>
@@ -152,30 +158,30 @@ async function renderArea(el, list, h, tab, a) {
     });
 }
 
-/** A page that's just one table (tab t, or its part — Updates Done, Future Updates). */
+/**
+ * A page that's just one table (tab t, or its part — Updates Done, Future Updates). A `projects` column (Future
+ * Updates' Project) is a dropdown of the Projects tab's projects, each shown as a link to its page.
+ */
 async function renderTableTab(el, h, tab, t) {
     el.innerHTML = '<p class="muted">Loading…</p>';
     const rows = await loadTable(h, t);
+    const projects = houseProjects(h);
+    const columns = t.table.map(c => (c.projects ? { ...c, href: v => {
+        const p = projects.find(x => x.title === v);
+        return p ? `#${h.id}/projects/${p.id}` : null;
+    } } : c));
+    const choices = Object.fromEntries(t.table.filter(c => c.projects).map(c => [c.name, { list: projects.map(p => p.title), noun: 'project' }]));
     el.innerHTML = `
         <h1 class="page">${esc(h.name)}</h1>
         ${menus(h, tab, t)}
         <p class="lead">Kept in <code>${esc(tablePath(h, t))}</code>.</p>
         <section><h2>${esc(t.label)}</h2><div id="records"></div></section>`;
     table = recordTable(el.querySelector('#records'), {
-        columns: t.table,
+        columns,
         rows,
+        choices,
         save: r => saveTable(h, t, r),
     });
-}
-
-/** A page that's just cards (Projects), like Future improvements. */
-function renderCardsTab(el, list, h, tab, t) {
-    el.innerHTML = `
-        <h1 class="page">${esc(h.name)}</h1>
-        ${menus(h, tab, t)}
-        <p class="lead">Kept in <code>${esc(HOUSE_PATH)}</code>.</p>
-        <section><h2>${esc(t.label)}</h2><div id="cards"></div></section>`;
-    renderImprovements(el.querySelector('#cards'), list, h, t);
 }
 
 /** The "＋ Add house" page (a second home, a camp, a rental…). */
