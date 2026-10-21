@@ -20,6 +20,14 @@ import { editableSheet, hasUnsavedEdits, resetUnsaved } from './sheeteditor.js';
 // The electric company's customer portal, where statements are downloaded.
 const ELECTRIC_PORTAL = 'https://myaccount.libertyenergyandwater.com/portal/#/login?LUNH';
 export const portalLink = `<a class="ext-link" href="${ELECTRIC_PORTAL}" target="_blank" rel="noopener">Liberty account ↗</a>`;
+/**
+ * When this month's bill details should show up in the Liberty account: ~11 days after the next service period
+ * ends (period ending the 17th → around the 28th), which is after the statement's due date.
+ */
+export const electricDetailsOn = last => {
+    const periodEnds = addMonths(last.end, 1);
+    return new Date(periodEnds.getFullYear(), periodEnds.getMonth(), periodEnds.getDate() + 11);
+};
 
 const SUBPAGES = [
     { id: 'electric', label: 'Electric', render: renderElectricArea },
@@ -474,13 +482,12 @@ async function renderElectric(el) {
             <span>📬 <strong>There's a new electric statement to add.</strong> Your last bill was due ${esc(dLong(lastDue))}, so the next one was due around ${esc(dLong(nextDue))}.</span>
             <span class="spacer"></span><button class="primary small" id="catchup-add">Add it now</button></div>`
         : `<div class="banner ok">✓ <strong>All electric statements are caught up.</strong> The next one is due around ${esc(dLong(nextDue))}.</div>`;
-    // Bills are monthly, so the details can be looked up once the next service period ends (~a week before it's due).
-    // Green while waiting; yellow from that day on (something to do); gone once the statement is due.
-    const detailsOn = addMonths(last.end, 1);
-    $('#details-soon').innerHTML = today() >= nextDue || detailsOn >= nextDue ? ''
-        : today() >= detailsOn
-            ? `<div class="banner">🔎 <strong>Around ${esc(dLong(detailsOn))} you should be able to get the details of this month's bill.</strong> ${portalLink}</div>`
-            : `<div class="banner ok">🗓️ <strong>Around ${esc(dLong(detailsOn))} you should be able to get the details of this month's bill.</strong></div>`;
+    // Details come after the due date (electricDetailsOn), so this stays until the statement is added.
+    // Green while waiting; yellow from that day on (something to do).
+    const detailsOn = electricDetailsOn(last);
+    $('#details-soon').innerHTML = today() >= detailsOn
+        ? `<div class="banner">🔎 <strong>Around ${esc(dLong(detailsOn))} you should be able to get the details of this month's bill.</strong> ${portalLink}</div>`
+        : `<div class="banner ok">🗓️ <strong>Around ${esc(dLong(detailsOn))} you should be able to get the details of this month's bill.</strong></div>`;
     $('#catchup-add')?.addEventListener('click', () => $('#add-open').click());
     form.oninput = preview;
     form.onsubmit = async e => {

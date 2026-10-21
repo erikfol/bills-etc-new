@@ -11,7 +11,7 @@ import { esc, money, sum, toast } from '../util.js';
 import { dLong, addMonths, today } from './utilcommon.js';
 import { depositsDue, BALANCES_STALE_DAYS } from './savings.js';
 import { amountDue, staleCards, VERY_STALE_DAYS } from './loans.js';
-import { portalLink as electricPortal } from './utilities.js';
+import { portalLink as electricPortal, electricDetailsOn } from './utilities.js';
 import { portalLink as waterPortal } from './water.js';
 import { portalLink as taxPortal } from './taxes.js';
 
@@ -44,7 +44,7 @@ async function electricItems(t0) {
     const bills = (await loadElectric())?.bills;
     if (!bills?.length) return [];
     const last = bills.at(-1), lastDue = last.due || last.end;
-    const nextDue = addMonths(lastDue, 1), detailsOn = addMonths(last.end, 1);
+    const nextDue = addMonths(lastDue, 1), detailsOn = electricDetailsOn(last);
     const where = 'Electric', href = '#utilities/electric';
     if (t0 >= nextDue) return [{ level: 'aging', where, href, text: `<strong>New statement to add</strong> · the next one was due around ${esc(dLong(nextDue))} ${electricPortal}` }];
     if (detailsOn < nextDue && t0 >= detailsOn) return [{ level: 'aging', where, href, text: `<strong>This month's bill details should be available</strong> (since ${esc(dLong(detailsOn))}) ${electricPortal}` }];
