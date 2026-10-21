@@ -1,11 +1,12 @@
-// House: one page per house (#<id>, its area tabs #<id>/heating, /septic, /inside, /outside, each with sub-pages
-// #<id>/<area>/records etc.) plus "＋ Add house" (#new); the menu is built from house.json.
+// House: one page per house (#<id>, its tabs #<id>/heating, /septic, /inside, /outside; Heating/Cooling's pills
+// #<id>/heating/mini-split etc., its first pill being #<id>/heating) plus "＋ Add house" (#new); the menu is built
+// from house.json.
 // Uses the same folder as Bills Etc (the browser remembers it for the whole site); the data lives in inputs/house/.
 import * as fs from '../../bills-etc/js/fs.js';
 import { esc } from '../../bills-etc/js/util.js';
 import { refreshStatus, askForFolder } from '../../shared/js/folder.js';
 import { setupPhoneCopy } from '../../shared/js/phonecopy.js';
-import { loadHouses, AREAS, areaViews } from './house.js';
+import { loadHouses, AREAS } from './house.js';
 import { renderHouse, renderNewHouse, hasUnsavedEdits, forget } from './views/house.js';
 
 const viewEl = document.getElementById('view');
@@ -40,12 +41,12 @@ async function route(force = false) {
         const list = await loadHouses();
         const [want, part, sub] = hash.slice(1).split('/');
         const h = list.find(x => x.id === want) || (want === 'new' ? null : list[0]);
-        const area = h && h.id === want ? AREAS.find(a => a.id === part) : null;
-        const view = area && areaViews(area).some(v => v.id === sub) ? sub : '';
-        currentHash = '#' + (h ? h.id : 'new') + (area ? '/' + area.id : '') + (view ? '/' + view : '');
+        const tab = h && h.id === want ? AREAS.find(a => a.id === part) : null;
+        const page = tab?.parts ? tab.parts.find(p => p.id === sub) || tab.parts[0] : tab;
+        currentHash = '#' + (h ? h.id : 'new') + (tab ? '/' + tab.id : '') + (page && page !== tab && page !== tab.parts[0] ? '/' + page.id : '');
         if (location.hash !== currentHash) history.replaceState(null, '', currentHash);
         drawNav(list, h ? h.id : 'new');
-        if (h) await renderHouse(viewEl, list, h, listChanged, area?.id, view);
+        if (h) await renderHouse(viewEl, list, h, listChanged, tab, page);
         else renderNewHouse(viewEl, list, listChanged);
     } catch (e) {
         console.error(e);

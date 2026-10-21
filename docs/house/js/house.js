@@ -1,6 +1,6 @@
 // House: the list (each house's information, service companies, and per area its information) in
 // inputs/house/house.json, plus one records CSV per house and area next to it (and a maintenance CSV for areas with
-// a Maintenance table). inputs/ is kept out of git.
+// a Maintenance table). An area is one page: a tab, or one part (pill) of a tab. inputs/ is kept out of git.
 import * as fs from '../../bills-etc/js/fs.js';
 import { parseCSV, toCSV } from '../../bills-etc/js/csv.js';
 import { newestFirst } from '../../shared/js/recordtable.js';
@@ -13,17 +13,28 @@ export const HOUSE_PATH = `${HOUSE_DIR}/house.json`;
 export const FIELDS = ['Address', 'Year Built', 'Style', 'Bedrooms', 'Bathrooms', 'Square Footage', 'Lot Size', 'Stories',
     'Basement', 'Garage', 'Purchase Date', 'Purchase Price', 'Notes'];
 
-// The tabs after the Overview: each has its own information (starting fields below), photos and records table.
+// The tabs after the Overview. Each is a page with its own information (starting fields below), photos and records
+// table — or, with `parts`, a row of pills (like Utilities → Electric's Bills / Mini-Splits), each part such a page.
+// Parts keep their data under their own id, so part and tab ids must all differ.
 // actions: offered in the records table's Action column (anything else can be typed).
-// improvements: the tab also has a Future improvements section (views/improvements.js).
-// maintenance: the tab also has a Maintenance table and a banner per MAINTENANCE_SYSTEMS entry at the top.
+// improvements: the page also has a Future improvements section (views/improvements.js).
+// maintenance: the page also has a Maintenance table; with `due`, a banner at the top that's green once there's an
+// entry dated this year, red from the 1st of due.month (1 = January) while there's none, and green before then.
 export const AREAS = [
-    { id: 'heating', label: 'Heating/Cooling',
-        fields: ['Heating System', 'Fuel', 'Boiler / Furnace Make', 'Model', 'Installed', 'Oil Tank Size', 'Cooling System',
-            'Mini-split Units', 'Filter Size', 'Thermostats', 'Notes'],
-        actions: ['Boiler / furnace service', 'Oil filter', 'Nozzle', 'Chimney cleaning', 'Mini-split cleaning', 'Filter change',
-            'Thermostat', 'Repair'],
-        improvements: true, maintenance: true },
+    { id: 'heating', label: 'Heating/Cooling', parts: [
+        { id: 'oil-furnace', label: 'Oil furnace', icon: '🔥',
+            fields: ['Heating System', 'Fuel', 'Boiler / Furnace Make', 'Model', 'Installed', 'Oil Tank Size', 'Thermostats', 'Notes'],
+            actions: ['Boiler / furnace service', 'Oil filter', 'Nozzle', 'Chimney cleaning', 'Thermostat', 'Repair'],
+            maintenance: true, due: { what: 'Oil furnace maintenance', month: 9 } },
+        { id: 'mini-split', label: 'Mini-split', icon: '❄️',
+            fields: ['Cooling System', 'Mini-split Units', 'Installed', 'Filter Size', 'Notes'],
+            actions: ['Mini-split cleaning', 'Filter change', 'Repair'],
+            maintenance: true, due: { what: 'Mini-split maintenance', month: 5 } },
+        { id: 'water-heater', label: 'Water heater', icon: '🚿',
+            fields: ['Hot Water', 'Water Heater Tank', 'Installed', 'Notes'],
+            actions: ['Flush tank', 'Element / thermostat', 'Anode rod', 'Replace', 'Repair'],
+            maintenance: true, improvements: true },
+    ] },
     { id: 'septic', label: 'Septic',
         fields: ['Tank Size', 'Tank Material', 'Tank Location', 'Leach Field Location', 'Installed', 'Pump Every', 'Notes'],
         actions: ['Pumped', 'Inspection', 'Effluent filter cleaned', 'Baffle repair', 'Riser / cover', 'Repair'] },
@@ -38,21 +49,8 @@ export const AREAS = [
             'Deck', 'Pest control', 'Repair'] },
 ];
 
-// An area tab's sub-pages, shown as pills under the tabs (like Utilities → Electric's Bills / Mini-Splits):
-// #<house>/<area> is the first, the others #<house>/<area>/<id>.
-export const areaViews = a => [
-    { id: '', label: 'ℹ️ Information' },
-    ...(a.maintenance ? [{ id: 'maintenance', label: '🔧 Maintenance' }] : []),
-    { id: 'records', label: '📋 Records' },
-    ...(a.improvements ? [{ id: 'improvements', label: '💡 Improvements' }] : []),
-];
-
-// The Maintenance table's System choices. Each gets a banner: green once it has an entry dated this year; red from the
-// 1st of dueMonth (1 = January) while it still has none; green before then.
-export const MAINTENANCE_SYSTEMS = [
-    { name: 'Oil furnace', what: 'Oil furnace maintenance', dueMonth: 9 },
-    { name: 'Mini-splits', what: 'Mini-split maintenance', dueMonth: 5 },
-];
+/** Every page with data of its own (an area below): the parts of tabs that have them, else the tab itself. */
+export const AREA_PAGES = AREAS.flatMap(t => t.parts || [t]);
 
 // Offered in a future improvement's Status (anything else can be typed). 'Done' ones are shown crossed out.
 export const IMPROVEMENT_STATUSES = ['Idea', 'Researching', 'Getting quotes', 'Planned', 'In progress', 'Done'];
@@ -122,7 +120,6 @@ export const maintenancePath = (h, a) => `${HOUSE_DIR}/${h.id}-${a.id}-maintenan
 
 export const maintenanceColumns = h => [
     { name: 'Date', kind: 'date' },
-    { name: 'System', kind: 'choice' },
     { name: 'Done By', kind: 'suggest', suggestions: doneBy(h) },
     { name: 'Description', kind: 'text' },
     { name: 'Cost', kind: 'money' },
@@ -147,20 +144,13 @@ export const loadMaintenance = (h, a, track = true) => readRows(maintenancePath(
 export const saveMaintenance = (h, a, rows) => writeRows(maintenancePath(h, a), maintenanceColumns(h), rows);
 
 /**
- * The banners at the top of a tab with a Maintenance table, one per system (MAINTENANCE_SYSTEMS), from the rows with
- * a YYYY-MM-DD Date: [{ system, level, done, last }] — level 'done' (green) when it has an entry dated this year,
- * else 'due' (red) from the 1st of its dueMonth, else 'later' (green); done = this year's latest entry, last = the
- * latest entry ever (either may be missing).
+ * The banner at the top of a page with maintenance `due` (see AREAS), from the rows with a YYYY-MM-DD Date:
+ * { level, done, last } — level 'done' (green) when there's an entry dated this year, else 'due' (red) from the 1st of
+ * due.month, else 'later' (green); done = this year's latest entry, last = the latest entry ever (either may be missing).
  * Uses nothing outside itself: the phone copy (shared/js/phonecopy.js) embeds it as text.
  */
-export function maintenanceStatus(rows, systems, today = new Date()) {
-    const year = String(today.getFullYear());
-    return systems.map(s => {
-        const mine = rows.filter(r => /^\d{4}-\d{2}-\d{2}$/.test(r.Date || '')
-            && String(r.System || '').trim().toLowerCase() === s.name.toLowerCase())
-            .sort((a, b) => b.Date.localeCompare(a.Date));
-        const done = mine.find(r => r.Date.slice(0, 4) === year);
-        const level = done ? 'done' : today.getMonth() + 1 >= s.dueMonth ? 'due' : 'later';
-        return { system: s, level, done, last: mine[0] };
-    });
+export function maintenanceStatus(rows, due, today = new Date()) {
+    const dated = rows.filter(r => /^\d{4}-\d{2}-\d{2}$/.test(r.Date || '')).sort((a, b) => b.Date.localeCompare(a.Date));
+    const done = dated.find(r => r.Date.slice(0, 4) === String(today.getFullYear()));
+    return { level: done ? 'done' : today.getMonth() + 1 >= due.month ? 'due' : 'later', done, last: dated[0] };
 }

@@ -71,15 +71,16 @@ export async function collectData(progress = () => {}) {
     const houses = [];
     for (const h of await house.loadHouses(false)) {
         const areas = [];
-        for (const a of house.AREAS) {
+        for (const t of house.AREAS) for (const a of t.parts || [t]) {
             areas.push({
                 label: a.label,
+                tab: t.parts ? t.label : '', // a part (pill) of this tab
                 info: house.areaInfo(h, a),
                 improvements: house.areaImprovements(h, a),
                 maintenance: a.maintenance ? {
                     columns: house.maintenanceColumns(h).map(c => ({ name: c.name, kind: c.kind })),
                     rows: await house.loadMaintenance(h, a, false),
-                    systems: house.MAINTENANCE_SYSTEMS,
+                    due: a.due || null,
                 } : null,
                 photos: await images(house.photosDir(h, a), tick),
                 records: { columns: house.recordColumns(h, a).map(c => ({ name: c.name, kind: c.kind })), rows: await house.loadRecords(h, a, false) },
@@ -275,14 +276,15 @@ function viewer(D, ageText, houseAge, appointmentStatus, maintenanceStatus) { //
     }
 
     function drawArea(h, a) {
-        main.insertAdjacentHTML('beforeend', `<h1>${esc(a.label)}</h1><p class="muted">${esc(h.name)}</p>`);
+        main.insertAdjacentHTML('beforeend', `<h1>${esc(a.label)}</h1><p class="muted">${esc(h.name)}${a.tab ? ` · ${esc(a.tab)}` : ''}</p>`);
         const m = a.maintenance;
-        if (m) {
-            const month = n => new Date(2000, n - 1, 1).toLocaleString('en-US', { month: 'long' });
-            main.insertAdjacentHTML('beforeend', maintenanceStatus(m.rows, m.systems).map(({ system: s, level, done, last }) => level === 'done'
-                ? `<div class="banner ok"><b>${esc(s.what)} done this year:</b> ${esc(showDate(done.Date))}${done.Description ? ` — ${esc(done.Description)}` : ''}</div>`
-                : `<div class="banner ${level === 'due' ? 'bad' : 'ok'}"><b>${esc(s.what)} ${level === 'due' ? 'is due' : `is due by ${month(s.dueMonth)}`}.</b>
-                    No “${esc(s.name)}” entry yet this year.${last ? ` Last done ${esc(showDate(last.Date))}.` : ''}</div>`).join(''));
+        if (m?.due) {
+            const { level, done, last } = maintenanceStatus(m.rows, m.due);
+            const by = new Date(2000, m.due.month - 1, 1).toLocaleString('en-US', { month: 'long' });
+            main.insertAdjacentHTML('beforeend', level === 'done'
+                ? `<div class="banner ok"><b>${esc(m.due.what)} done this year:</b> ${esc(showDate(done.Date))}${done.Description ? ` — ${esc(done.Description)}` : ''}</div>`
+                : `<div class="banner ${level === 'due' ? 'bad' : 'ok'}"><b>${esc(m.due.what)} ${level === 'due' ? 'is due' : `is due by ${by}`}.</b>
+                    Nothing logged yet this year.${last ? ` Last done ${esc(showDate(last.Date))}.` : ''}</div>`);
         }
         section('Information', true, infoList(a.info));
         if (a.photos.length) section(`Photos (${a.photos.length})`, false, gallery(a.photos));
