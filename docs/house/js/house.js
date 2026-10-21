@@ -38,6 +38,15 @@ export const AREAS = [
             'Deck', 'Pest control', 'Repair'] },
 ];
 
+// An area tab's sub-pages, shown as pills under the tabs (like Utilities → Electric's Bills / Mini-Splits):
+// #<house>/<area> is the first, the others #<house>/<area>/<id>.
+export const areaViews = a => [
+    { id: '', label: 'ℹ️ Information' },
+    ...(a.maintenance ? [{ id: 'maintenance', label: '🔧 Maintenance' }] : []),
+    { id: 'records', label: '📋 Records' },
+    ...(a.improvements ? [{ id: 'improvements', label: '💡 Improvements' }] : []),
+];
+
 // The Maintenance table's System choices. Each gets a banner: green once it has an entry dated this year; red from the
 // 1st of dueMonth (1 = January) while it still has none; green before then.
 export const MAINTENANCE_SYSTEMS = [
