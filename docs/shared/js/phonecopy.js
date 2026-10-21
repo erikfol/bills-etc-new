@@ -194,7 +194,7 @@ function viewer(D, ageText, houseAge, appointmentStatus, maintenanceStatus) { //
     function records(el, cols, rows, { empty = 'Nothing here yet.' } = {}) {
         const dates = cols.filter(c => c.kind === 'date' || c.kind === 'end');
         const first = dates[0]?.name;
-        const moneyCol = cols.find(c => c.kind === 'money');
+        const moneyCols = cols.filter(c => c.kind === 'money'), moneyCol = moneyCols[0]; // the first is shown in each card's heading
         el.innerHTML = `<div class="tools"><input type="search" placeholder="Search" aria-label="Search">
             <select aria-label="Order"><option value="desc">Newest first</option><option value="asc">Oldest first</option></select></div>
             <div class="cards"></div><div class="total"></div>`;
@@ -204,7 +204,8 @@ function viewer(D, ageText, houseAge, appointmentStatus, maintenanceStatus) { //
             const when = dates.map(c => (c.kind === 'end' ? (r[c.name] ? showDate(r[c.name]) : 'ongoing') : showDate(r[c.name]))).filter(Boolean).join(' – ');
             const tags = cols.filter(c => (c.kind === 'choice' || c.kind === 'suggest') && r[c.name]).map(c => `<span class="tag">${esc(r[c.name])}</span>`).join('');
             const cost = moneyCol && !Number.isNaN(num(r[moneyCol.name])) ? `<span class="cost">${money(num(r[moneyCol.name]))}</span>` : '';
-            const nums = cols.filter(c => c.kind === 'number' && r[c.name]).map(c => `<div class="sub">${esc(c.name)}: ${esc(Number.isNaN(num(r[c.name])) ? r[c.name] : num(r[c.name]).toLocaleString('en-US'))}</div>`).join('');
+            const nums = cols.filter(c => c.kind === 'number' && r[c.name]).map(c => `<div class="sub">${esc(c.name)}: ${esc(Number.isNaN(num(r[c.name])) ? r[c.name] : num(r[c.name]).toLocaleString('en-US'))}</div>`).join('')
+                + moneyCols.slice(1).filter(c => !Number.isNaN(num(r[c.name]))).map(c => `<div class="sub">${esc(c.name)}: ${money(num(r[c.name]))}</div>`).join('');
             const texts = cols.filter(c => c.kind === 'text' && r[c.name]).map((c, i) => i === 0
                 ? `<div class="desc">${esc(r[c.name])}</div>` : `<div class="note"><b>${esc(c.name)}:</b> ${esc(r[c.name])}</div>`).join('');
             return `<div class="card"><div class="card-head"><span class="when">${esc(when || 'No date')}</span>${tags}${cost}</div>${nums}${texts}</div>`;
@@ -217,8 +218,9 @@ function viewer(D, ageText, houseAge, appointmentStatus, maintenanceStatus) { //
                 shown.sort((a, b) => (!a[first] || !b[first]) ? (!a[first]) - (!b[first]) : sign * a[first].localeCompare(b[first]));
             }
             list.innerHTML = shown.length ? shown.map(card).join('') : `<p class="muted">${rows.length ? 'No matches.' : esc(empty)}</p>`;
-            total.innerHTML = moneyCol && shown.length
-                ? `Total of ${shown.length} shown: <b>${money(shown.reduce((t, r) => t + (Number.isNaN(num(r[moneyCol.name])) ? 0 : num(r[moneyCol.name])), 0))}</b>` : '';
+            const sum = c => money(shown.reduce((t, r) => t + (Number.isNaN(num(r[c.name])) ? 0 : num(r[c.name])), 0));
+            total.innerHTML = moneyCol && shown.length ? `Total of ${shown.length} shown: ${moneyCols.length === 1 ? `<b>${sum(moneyCol)}</b>`
+                : moneyCols.map(c => `${esc(c.name)} <b>${sum(c)}</b>`).join(' · ')}` : '';
         };
         q.oninput = draw;
         order.onchange = draw;
