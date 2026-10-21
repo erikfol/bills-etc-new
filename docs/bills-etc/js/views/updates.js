@@ -13,7 +13,7 @@ import { depositsDue, BALANCES_STALE_DAYS } from './savings.js';
 import { amountDue, staleCards, VERY_STALE_DAYS } from './loans.js';
 import { portalLink as electricPortal, electricDetailsOn } from './utilities.js';
 import { portalLink as waterPortal } from './water.js';
-import { portalLink as taxPortal } from './taxes.js';
+import { portalLink as taxPortal, taxDetailsOn } from './taxes.js';
 
 const DAY = 864e5;
 const days = n => `${n} day${n === 1 ? '' : 's'}`;
@@ -91,7 +91,7 @@ async function taxItems(t0) {
     const last = bills.at(-1), lastBilled = last.billed || last.due;
     if (!lastBilled) return [];
     const next = last.half === 1 ? `${last.year} 2nd half` : `${last.year + 1} 1st half`;
-    const expected = addMonths(lastBilled, 6), detailsOn = addMonths(expected, -1);
+    const expected = addMonths(lastBilled, 6), detailsOn = taxDetailsOn(last);
     const where = 'Property Taxes', href = '#utilities/taxes';
     if (t0 >= expected) return [{ level: 'aging', where, href, text: `<strong>New bill to add (${esc(next)})</strong> · it was billed around ${esc(dLong(expected))} ${taxPortal}` }];
     if (t0 >= detailsOn) return [{ level: 'aging', where, href, text: `<strong>${esc(next)} details should be available</strong> (since ${esc(dLong(detailsOn))}) ${taxPortal}` }];
