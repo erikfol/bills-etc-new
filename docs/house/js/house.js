@@ -77,11 +77,19 @@ export const AREAS = [
 export const FUTURE_UPDATES = AREAS.find(t => t.id === 'updates').parts.find(p => p.id === 'future-updates');
 
 // The Projects tab's projects, kept on the house in house.json as areas.projects.items:
-// [{ id, title, status, text (plan & notes), specs: [{ label, value }], costs: [{ Item, Estimate, Source, Notes }] }];
+// [{ id, title, status, text (plan & notes), materials: [{ Item, Quantity, 'Size / Spec', Source, Notes }],
+//    specs: [{ label, value }], costs: [{ Item, Estimate, Source, Notes }] }];
 // each project's photos and sketches in its own folder.
 export const houseProjects = h => h.areas?.projects?.items ?? [];
 export const projectDir = (h, p) => `${HOUSE_DIR}/projects/${h.id}-${p.id}`;
-export const PROJECT_SPECS = ['Dimensions', 'Materials', 'Notes']; // a new project's starting Measurements & specs fields
+export const PROJECT_SPECS = ['Dimensions', 'Notes']; // a new project's starting Measurements & specs fields
+export const MATERIAL_COLUMNS = [
+    { name: 'Item', kind: 'text' },
+    { name: 'Quantity', kind: 'suggest' },
+    { name: 'Size / Spec', kind: 'suggest' },
+    { name: 'Source', kind: 'suggest' },
+    { name: 'Notes', kind: 'text' },
+];
 export const COST_COLUMNS = [
     { name: 'Item', kind: 'text' },
     { name: 'Estimate', kind: 'money' },

@@ -79,7 +79,7 @@ export async function collectData(progress = () => {}) {
             if (a.projects) { // the Projects tab, each project with its images and the Future Updates linked to it
                 const future = await house.loadTable(h, house.FUTURE_UPDATES, false), projects = [];
                 for (const p of house.houseProjects(h)) projects.push({ title: p.title, status: p.status || '', text: p.text || '',
-                    specs: p.specs || [], costs: p.costs || [], images: await images(house.projectDir(h, p), tick),
+                    materials: p.materials || [], specs: p.specs || [], costs: p.costs || [], images: await images(house.projectDir(h, p), tick),
                     updates: future.filter(r => r.Project === p.title) });
                 areas.push({ label: a.label, tab: '', projects });
                 continue;
@@ -298,13 +298,14 @@ function viewer(D, ageText, houseAge, appointmentStatus, maintenanceStatus) { //
         <details class="guide"><summary>${/^done$/i.test(x.status || '') ? `<s>${esc(x.title)}</s>` : esc(x.title)}${x.status ? ` <span class="tag">${esc(x.status)}</span>` : ''}</summary>
             <div class="steps">${x.cost ? `<p><b>Estimated cost:</b> ${esc(x.cost)}</p>` : ''}${stepsHtml(x.text || '')}</div></details>`).join('');
 
-    /** One project: plan & notes, measurements & specs, cost estimates with their total, images, linked future updates. */
+    /** One project: plan & notes, materials, measurements & specs, cost estimates with their total, images, linked future updates. */
     const projectHtml = p => {
         const total = p.costs.reduce((t, r) => t + (Number.isNaN(num(r.Estimate)) ? 0 : num(r.Estimate)), 0);
         const specs = p.specs.filter(f => f.value);
         return `<details class="guide"><summary>${/^done$/i.test(p.status) ? `<s>${esc(p.title)}</s>` : esc(p.title)}${p.status ? ` <span class="tag">${esc(p.status)}</span>` : ''}</summary>
             <div class="steps"><p><b>Estimated total:</b> ${money(total)}</p>
                 ${p.text ? `<h3>Plan &amp; notes</h3>${stepsHtml(p.text)}` : ''}
+                ${p.materials.length ? `<h3>Materials</h3>${p.materials.map(r => `<div class="sub">${esc(r.Item || '—')}${[r.Quantity, r['Size / Spec']].filter(Boolean).length ? `: ${esc([r.Quantity, r['Size / Spec']].filter(Boolean).join(', '))}` : ''}${r.Source ? ` (${esc(r.Source)})` : ''}${r.Notes ? ` — ${esc(r.Notes)}` : ''}</div>`).join('')}` : ''}
                 ${specs.length ? `<h3>Measurements &amp; specs</h3>${infoList(specs)}` : ''}
                 ${p.costs.length ? `<h3>Cost estimates</h3>${p.costs.map(r => `<div class="sub">${esc(r.Item || '—')}: ${Number.isNaN(num(r.Estimate)) ? esc(r.Estimate || '') : money(num(r.Estimate))}${r.Source ? ` (${esc(r.Source)})` : ''}${r.Notes ? ` — ${esc(r.Notes)}` : ''}</div>`).join('')}` : ''}
                 ${p.updates.length ? `<h3>Future updates</h3>${p.updates.map(r => `<div class="sub">${esc(r.Update || '')}${r['Planned Date'] ? ` — planned ${esc(showDate(r['Planned Date']))}` : ''}</div>`).join('')}` : ''}

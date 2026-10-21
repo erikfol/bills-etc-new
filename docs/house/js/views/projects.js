@@ -1,22 +1,24 @@
 // The Projects tab: the list of house projects (#<house>/projects) and one page per project (#<house>/projects/<id>) to
-// plan it — status, plan & notes (headings, bullets, a [ ]/[x] step checklist), measurements & specs, cost estimates
-// (with a total), photos & sketches, and the Future updates linked to it (their Project column).
+// plan it — status, plan & notes (headings, bullets, a [ ]/[x] step checklist), materials, measurements & specs, cost
+// estimates (with a total), photos & sketches, and the Future updates linked to it (their Project column).
 import { esc, toast, money } from '../../../bills-etc/js/util.js';
 import { recordTable, showDate } from '../../../shared/js/recordtable.js';
 import { infoBox } from '../../../shared/js/infobox.js';
 import { renderGallery } from '../../../vehicles/js/views/gallery.js';
 import { textHtml } from '../../../vehicles/js/views/guides.js';
 import {
-    HOUSE_DIR, HOUSE_PATH, IMPROVEMENT_STATUSES, FUTURE_UPDATES, COST_COLUMNS, PROJECT_SPECS, houseProjects, projectDir,
+    HOUSE_DIR, HOUSE_PATH, IMPROVEMENT_STATUSES, FUTURE_UPDATES, MATERIAL_COLUMNS, COST_COLUMNS, PROJECT_SPECS, houseProjects, projectDir,
     saveHouses, loadTable, saveTable,
 } from '../house.js';
 
 let draft = null; // { start, read } while the project's heading or its plan is being edited
+let materials = null; // the Materials table
 let specs = null; // the Measurements & specs box
 let costs = null; // the Cost estimates table
 
-export const projectUnsaved = () => (!!draft && draft.read() !== draft.start) || !!specs?.hasUnsavedEdits() || !!costs?.hasUnsavedEdits();
-export const forgetProject = () => { draft = null; specs = null; costs = null; };
+export const projectUnsaved = () => (!!draft && draft.read() !== draft.start) || !!materials?.hasUnsavedEdits()
+    || !!specs?.hasUnsavedEdits() || !!costs?.hasUnsavedEdits();
+export const forgetProject = () => { draft = null; materials = null; specs = null; costs = null; };
 
 const isDone = p => /^done$/i.test((p.status || '').trim());
 const total = p => (p.costs || []).reduce((t, r) => t + (Number(r.Estimate) || 0), 0);
@@ -82,7 +84,7 @@ export function renderProjectList(el, list, h, top) {
             e.preventDefault();
             const title = f.title.value.trim();
             if (!title) return;
-            const p = { id: newId(items, title), title, status: 'Idea', text: '',
+            const p = { id: newId(items, title), title, status: 'Idea', text: '', materials: [],
                 specs: PROJECT_SPECS.map(label => ({ label, value: '' })), costs: [] };
             try {
                 await saveProjects(list, h, [...items, p]);
@@ -104,6 +106,7 @@ export async function renderProject(el, list, h, top, p) {
         <section><h2 id="p-title"></h2><div id="p-head"></div></section>
         <p class="lead">Kept in <code>${esc(HOUSE_PATH)}</code>; photos and sketches in <code>${esc(projectDir(h, p))}/</code>.</p>
         ${section('Plan & notes', 'p-plan')}
+        ${section('Materials', 'p-materials')}
         ${section('Measurements & specs', 'p-specs')}
         ${section('Cost estimates', 'p-costs')}
         ${section('Photos & sketches', 'p-photos')}
@@ -213,6 +216,13 @@ export async function renderProject(el, list, h, top, p) {
     };
     showPlan();
 
+    const places = (h.places || []).map(x => x.name); // offered as a Source
+    materials = recordTable(el.querySelector('#p-materials'), {
+        columns: MATERIAL_COLUMNS.map(c => (c.name === 'Source' ? { ...c, suggestions: places } : c)),
+        rows: p.materials || [],
+        save: rows => update({ materials: rows }),
+    });
+
     specs = infoBox(el.querySelector('#p-specs'), {
         info: p.specs || [],
         noun: 'project',
@@ -220,7 +230,7 @@ export async function renderProject(el, list, h, top, p) {
     });
 
     costs = recordTable(el.querySelector('#p-costs'), {
-        columns: COST_COLUMNS.map(c => (c.name === 'Source' ? { ...c, suggestions: (h.places || []).map(x => x.name) } : c)),
+        columns: COST_COLUMNS.map(c => (c.name === 'Source' ? { ...c, suggestions: places } : c)),
         rows: p.costs || [],
         save: async rows => { await update({ costs: rows }); showHead(); }, // the total
     });
