@@ -23,6 +23,7 @@ export const FIELDS = ['Address', 'Year Built', 'Style', 'Bedrooms', 'Bathrooms'
 // entry dated this year, red from the 1st of due.month (1 = January) while there's none, and green before then.
 // boxes: several information boxes instead of one [{ key, label, fields }], each kept under house.areas[<id>][key].
 // gallery: { label, noun } for the photos section (default Photos). records: false = no records table.
+// A tab with `table` (its columns) is just that one table, kept in <house>-<tab id>.csv.
 export const AREAS = [
     { id: 'financing', label: 'Financing', records: false, gallery: { label: 'Documents & photos', noun: 'image' },
         boxes: [
@@ -32,6 +33,13 @@ export const AREAS = [
                 'Seller Credit', 'Notes'] },
             { key: 'taxes', label: 'Value & Taxes', fields: ['Assessed Value', 'Property Tax', 'Notes'] },
         ] },
+    { id: 'updates', label: 'Updates', table: [
+        { name: 'Date', kind: 'date' },
+        { name: 'Update', kind: 'text' },
+        { name: 'Location', kind: 'suggest', suggestions: ['Whole house', 'Kitchen', 'Living room', 'Dining room', 'Bedroom',
+            'Bathroom', 'Basement', 'Garage', 'Attic', 'Outside', 'Yard'] },
+        { name: 'Additional Notes', kind: 'text' },
+    ] },
     { id: 'heating', label: 'Heating/Cooling', parts: [
         { id: 'oil-furnace', label: 'Oil furnace', icon: '🔥',
             fields: ['Heating System', 'Fuel', 'Boiler / Furnace Make', 'Model', 'Installed', 'Oil Tank Size', 'Thermostats', 'Notes'],
@@ -59,9 +67,6 @@ export const AREAS = [
         actions: ['Roof repair', 'Gutter cleaning', 'Painting / staining', 'Lawn / yard', 'Tree work', 'Snow removal', 'Driveway',
             'Deck', 'Pest control', 'Repair'] },
 ];
-
-/** Every page with data of its own (an area below): the parts of tabs that have them, else the tab itself. */
-export const AREA_PAGES = AREAS.flatMap(t => t.parts || [t]);
 
 // Offered in a future improvement's Status (anything else can be typed). 'Done' ones are shown crossed out.
 export const IMPROVEMENT_STATUSES = ['Idea', 'Researching', 'Getting quotes', 'Planned', 'In progress', 'Done'];
@@ -154,6 +159,9 @@ async function writeRows(path, cols, rows) {
 
 export const loadRecords = (h, a, track = true) => readRows(recordsPath(h, a), recordColumns(h, a), track);
 export const saveRecords = (h, a, rows) => writeRows(recordsPath(h, a), recordColumns(h, a), rows);
+export const tablePath = (h, t) => `${HOUSE_DIR}/${h.id}-${t.id}.csv`;
+export const loadTable = (h, t, track = true) => readRows(tablePath(h, t), t.table, track);
+export const saveTable = (h, t, rows) => writeRows(tablePath(h, t), t.table, rows);
 export const loadMaintenance = (h, a, track = true) => readRows(maintenancePath(h, a), maintenanceColumns(h), track);
 export const saveMaintenance = (h, a, rows) => writeRows(maintenancePath(h, a), maintenanceColumns(h), rows);
 

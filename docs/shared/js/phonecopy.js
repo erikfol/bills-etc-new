@@ -1,6 +1,6 @@
 // "📱 Phone copy" (Vehicles, House, Health and Pets top bars): writes one self-contained, read-only page — every vehicle
 // (information, service places, maintenance, photos, guides, notes), every house (information, service companies,
-// photos, and per area information, photos, maintenance with its due banners, records), every Health section and
+// photos, and per area information, photos, maintenance with its due banners, records; Updates), every Health section and
 // every pet (information, future appointments, photos, records) — into a folder you pick once, e.g. in Google Drive
 // so it syncs to your phone. Photos are shrunk and embedded, so the page is a single file that opens offline (Android
 // hands Chrome a single file, so a page can't load anything from next to itself).
@@ -72,6 +72,10 @@ export async function collectData(progress = () => {}) {
     for (const h of await house.loadHouses(false)) {
         const areas = [];
         for (const t of house.AREAS) for (const a of t.parts || [t]) {
+            if (a.table) { // a tab that's just one table (Updates)
+                areas.push({ label: a.label, table: { columns: a.table.map(c => ({ name: c.name, kind: c.kind })), rows: await house.loadTable(h, a, false) } });
+                continue;
+            }
             areas.push({
                 label: a.label,
                 tab: t.parts ? t.label : '', // a part (pill) of this tab
@@ -283,6 +287,7 @@ function viewer(D, ageText, houseAge, appointmentStatus, maintenanceStatus) { //
 
     function drawArea(h, a) {
         main.insertAdjacentHTML('beforeend', `<h1>${esc(a.label)}</h1><p class="muted">${esc(h.name)}${a.tab ? ` · ${esc(a.tab)}` : ''}</p>`);
+        if (a.table) return section(`Entries (${a.table.rows.length})`, true, el => records(el, a.table.columns, a.table.rows));
         const m = a.maintenance;
         if (m?.due) {
             const { level, done, last } = maintenanceStatus(m.rows, m.due);
