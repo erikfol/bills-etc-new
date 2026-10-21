@@ -23,7 +23,8 @@ export const FIELDS = ['Address', 'Year Built', 'Style', 'Bedrooms', 'Bathrooms'
 // entry dated this year, red from the 1st of due.month (1 = January) while there's none, and green before then.
 // boxes: several information boxes instead of one [{ key, label, fields }], each kept under house.areas[<id>][key].
 // gallery: { label, noun } for the photos section (default Photos). records: false = no records table.
-// A tab or part with `table` (its columns) is just that one table, kept in <house>-<its id>.csv.
+// A tab or part with `table` (its columns) is just that one table, kept in <house>-<its id>.csv; one with `cards`
+// ({ noun, list, hint }) is just cards like Future improvements (views/improvements.js), kept in house.json.
 const UPDATE_LOCATIONS = ['Whole house', 'Kitchen', 'Living room', 'Dining room', 'Bedroom', 'Bathroom', 'Basement', 'Garage',
     'Attic', 'Outside', 'Yard'];
 const UPDATE_COLUMNS = [
@@ -51,6 +52,8 @@ export const AREAS = [
         { id: 'updates-done', label: 'Updates Done', icon: '✅', table: UPDATE_COLUMNS },
         { id: 'future-updates', label: 'Future Updates', icon: '🗓️', table: FUTURE_UPDATE_COLUMNS },
     ] },
+    { id: 'projects', label: 'Projects',
+        cards: { noun: 'project', list: 'Projects', hint: "House projects you're planning or working on, with what they'd cost and the steps left." } },
     { id: 'heating', label: 'Heating/Cooling', parts: [
         { id: 'oil-furnace', label: 'Oil furnace', icon: '🔥',
             fields: ['Heating System', 'Fuel', 'Boiler / Furnace Make', 'Model', 'Installed', 'Oil Tank Size', 'Thermostats', 'Notes'],

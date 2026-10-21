@@ -2,7 +2,7 @@
 // companies, photos) and each area, each showing that area's information, photos and records table (Septic), or as
 // AREAS says: Financing has Mortgage, Closing and Value & Taxes boxes, documents and no records; Updates and
 // Heating/Cooling have pills — Updates Done / Future Updates, each just a table; Oil furnace / Mini-split / Water heater,
-// each with maintenance too (and a due banner, or Future improvements).
+// each with maintenance too (and a due banner, or Future improvements); Projects is just project cards.
 // Also the "Add house" page. Service companies and photos use the Vehicles views.
 import { esc, toast } from '../../../bills-etc/js/util.js';
 import { recordTable, closeFilterMenu, showDate } from '../../../shared/js/recordtable.js';
@@ -60,6 +60,7 @@ const maintenanceBanner = (a, rows) => {
  */
 export async function renderHouse(el, list, h, onListChanged, tab = null, page = null) {
     if (page?.table) return renderTableTab(el, h, tab, page);
+    if (page?.cards) return renderCardsTab(el, list, h, tab, page);
     if (tab) return renderArea(el, list, h, tab, page);
     el.innerHTML = `
         <h1 class="page">${esc(h.name)}</h1>
@@ -165,6 +166,16 @@ async function renderTableTab(el, h, tab, t) {
         rows,
         save: r => saveTable(h, t, r),
     });
+}
+
+/** A page that's just cards (Projects), like Future improvements. */
+function renderCardsTab(el, list, h, tab, t) {
+    el.innerHTML = `
+        <h1 class="page">${esc(h.name)}</h1>
+        ${menus(h, tab, t)}
+        <p class="lead">Kept in <code>${esc(HOUSE_PATH)}</code>.</p>
+        <section><h2>${esc(t.label)}</h2><div id="cards"></div></section>`;
+    renderImprovements(el.querySelector('#cards'), list, h, t);
 }
 
 /** The "＋ Add house" page (a second home, a camp, a rental…). */

@@ -1,9 +1,9 @@
 // "📱 Phone copy" (Vehicles, House, Health and Pets top bars): writes one self-contained, read-only page — every vehicle
 // (information, service places, maintenance, photos, guides, notes), every house (information, service companies,
-// photos, and per area information, photos, maintenance with its due banners, records; Updates), every Health section and
-// every pet (information, future appointments, photos, records) — into a folder you pick once, e.g. in Google Drive
-// so it syncs to your phone. Photos are shrunk and embedded, so the page is a single file that opens offline (Android
-// hands Chrome a single file, so a page can't load anything from next to itself).
+// photos, and per area information, photos, maintenance with its due banners, records; Updates; Projects), every
+// Health section and every pet (information, future appointments, photos, records) — into a folder you pick once,
+// e.g. in Google Drive so it syncs to your phone. Photos are shrunk and embedded, so the page is a single file that
+// opens offline (Android hands Chrome a single file, so a page can't load anything from next to itself).
 import * as fs from '../../bills-etc/js/fs.js';
 import { esc, toast } from '../../bills-etc/js/util.js';
 import { loadVehicles, loadMaintenance, maintenanceColumns, photosDir, guideDir, noteDir, TYPES } from '../../vehicles/js/vehicles.js';
@@ -74,6 +74,10 @@ export async function collectData(progress = () => {}) {
         for (const t of house.AREAS) for (const a of t.parts || [t]) {
             if (a.table) { // a page that's just one table (Updates Done, Future Updates)
                 areas.push({ label: a.label, tab: t.parts ? t.label : '', table: { columns: a.table.map(c => ({ name: c.name, kind: c.kind })), rows: await house.loadTable(h, a, false) } });
+                continue;
+            }
+            if (a.cards) { // a page that's just cards (Projects)
+                areas.push({ label: a.label, tab: t.parts ? t.label : '', cards: house.areaImprovements(h, a) });
                 continue;
             }
             areas.push({
@@ -285,9 +289,15 @@ function viewer(D, ageText, houseAge, appointmentStatus, maintenanceStatus) { //
         if (h.photos.length) section(`Photos (${h.photos.length})`, false, gallery(h.photos));
     }
 
+    /** Future improvements or projects: collapsed cards, Done ones crossed out. */
+    const cardsHtml = items => items.map(x => `
+        <details class="guide"><summary>${/^done$/i.test(x.status || '') ? `<s>${esc(x.title)}</s>` : esc(x.title)}${x.status ? ` <span class="tag">${esc(x.status)}</span>` : ''}</summary>
+            <div class="steps">${x.cost ? `<p><b>Estimated cost:</b> ${esc(x.cost)}</p>` : ''}${stepsHtml(x.text || '')}</div></details>`).join('');
+
     function drawArea(h, a) {
         main.insertAdjacentHTML('beforeend', `<h1>${esc(a.label)}</h1><p class="muted">${esc(h.name)}${a.tab ? ` · ${esc(a.tab)}` : ''}</p>`);
         if (a.table) return section(`Entries (${a.table.rows.length})`, true, el => records(el, a.table.columns, a.table.rows));
+        if (a.cards) return section(`${a.label} (${a.cards.length})`, true, a.cards.length ? cardsHtml(a.cards) : '<p class="muted">Nothing here yet.</p>');
         const m = a.maintenance;
         if (m?.due) {
             const { level, done, last } = maintenanceStatus(m.rows, m.due);
@@ -299,9 +309,7 @@ function viewer(D, ageText, houseAge, appointmentStatus, maintenanceStatus) { //
         }
         for (const b of a.boxes) section(a.boxes.length > 1 ? b.label : 'Information', true, infoList(withAge(b.info)));
         if (a.photos.length) section(`${a.photosLabel} (${a.photos.length})`, false, gallery(a.photos));
-        if (a.improvements?.length) section(`Future improvements (${a.improvements.length})`, false, a.improvements.map(x => `
-            <details class="guide"><summary>${/^done$/i.test(x.status || '') ? `<s>${esc(x.title)}</s>` : esc(x.title)}${x.status ? ` <span class="tag">${esc(x.status)}</span>` : ''}</summary>
-                <div class="steps">${x.cost ? `<p><b>Estimated cost:</b> ${esc(x.cost)}</p>` : ''}${stepsHtml(x.text || '')}</div></details>`).join(''));
+        if (a.improvements?.length) section(`Future improvements (${a.improvements.length})`, false, cardsHtml(a.improvements));
         if (m) section(`Maintenance (${m.rows.length})`, true, el => records(el, m.columns, m.rows));
         if (a.records) section(`Records (${a.records.rows.length})`, true, el => records(el, a.records.columns, a.records.rows));
     }

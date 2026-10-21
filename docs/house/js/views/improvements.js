@@ -1,6 +1,7 @@
-// An area's Future improvements (e.g. Heating/Cooling's heat pump water heater): upgrade ideas and plans, each collapsed
-// until its title is clicked, with a status, an estimated cost and free text (headings, bullets, a ☐ next-steps checklist).
-// Kept on the house in house.json as areas.<area id>.improvements: [{ id, title, status, cost, text }].
+// An area's Future improvements (e.g. the water heater's heat pump water heater), or the Projects tab's projects: cards,
+// each collapsed until its title is clicked, with a status, an estimated cost and free text (headings, bullets, a ☐
+// next-steps checklist). Kept on the house in house.json as areas.<area id>.improvements: [{ id, title, status, cost, text }].
+// The area's `cards` ({ noun, list, hint }) names them; without it they're Future improvements.
 import { esc, toast } from '../../../bills-etc/js/util.js';
 import { textHtml } from '../../../vehicles/js/views/guides.js';
 import { IMPROVEMENT_STATUSES, areaImprovements, saveHouses } from '../house.js';
@@ -19,15 +20,19 @@ const newId = (items, title) => {
 
 const isDone = x => /^done$/i.test((x.status || '').trim());
 
+const IMPROVEMENT_WORDS = { noun: 'improvement', list: 'Future improvements',
+    hint: "Upgrades you're thinking about or planning, with what they'd cost and what's left to do." };
+
 /** list: every house (saved back whole). openId: an improvement to show opened (e.g. one just saved). */
 export function renderImprovements(el, list, h, a, openId = null) {
     draft = null;
     const items = areaImprovements(h, a);
+    const w = a.cards || IMPROVEMENT_WORDS;
     el.innerHTML = `
         <div class="row table-tools">
-            <button type="button" class="small" id="i-add">＋ Add improvement</button>
-            <span class="muted edit-hint">${items.length ? 'Click one to open it.' : 'No future improvements yet.'}
-                Upgrades you're thinking about or planning, with what they'd cost and what's left to do.</span>
+            <button type="button" class="small" id="i-add">＋ Add ${esc(w.noun)}</button>
+            <span class="muted edit-hint">${items.length ? 'Click one to open it.' : `No ${esc(w.list.toLowerCase())} yet.`}
+                ${esc(w.hint)}</span>
         </div>
         <div>${items.map((x, i) => `
             <details class="guide${isDone(x) ? ' imp-done' : ''}" data-i="${i}"${x.id === openId ? ' open' : ''}>
@@ -62,7 +67,7 @@ export function renderImprovements(el, list, h, a, openId = null) {
 
     /** Edit form for an existing improvement (inside its body) or a new one (x = null, in #g-new). */
     const edit = (container, x) => {
-        if (draft && improvementsUnsaved() && !confirm('Discard your changes to the other improvement?')) return;
+        if (draft && improvementsUnsaved() && !confirm(`Discard your changes to the other ${w.noun}?`)) return;
         container.innerHTML = `
             <div class="guide-form">
                 <label class="field">Title<input type="text" data-f="title" value="${esc(x?.title || '')}"></label>
@@ -75,7 +80,7 @@ export function renderImprovements(el, list, h, a, openId = null) {
                     “[ ]” a step to do and “[x]” one that's done)</span>
                     <textarea data-f="text" rows="20">${esc(x?.text || '')}</textarea></label>
                 <div class="row">
-                    ${x ? '<button type="button" class="danger" data-remove>Remove this improvement</button>' : ''}
+                    ${x ? `<button type="button" class="danger" data-remove>Remove this ${esc(w.noun)}</button>` : ''}
                     <span class="spacer"></span>
                     <button type="button" data-cancel>Cancel</button>
                     <button type="button" class="primary" data-save>Save</button>
@@ -93,7 +98,7 @@ export function renderImprovements(el, list, h, a, openId = null) {
         container.querySelector('[data-save]').onclick = async () => {
             const d = JSON.parse(read());
             const title = d.title.trim();
-            if (!title) return toast('Give the improvement a title, then Save.', 'bad');
+            if (!title) return toast(`Give the ${w.noun} a title, then Save.`, 'bad');
             const fields = { title, status: d.status.trim(), cost: d.cost.trim(), text: d.text.replace(/\s+$/, '') };
             const updated = x ? { ...x, ...fields } : { id: newId(items, title), ...fields };
             if (!await save(x ? items.map(y => (y === x ? updated : y)) : [...items, updated])) return;
@@ -101,7 +106,7 @@ export function renderImprovements(el, list, h, a, openId = null) {
             renderImprovements(el, list, h, a, updated.id);
         };
         container.querySelector('[data-remove]')?.addEventListener('click', async () => {
-            if (!confirm(`Remove “${x.title}” from Future improvements?`)) return;
+            if (!confirm(`Remove “${x.title}” from ${w.list}?`)) return;
             if (!await save(items.filter(y => y !== x))) return;
             toast(`Removed “${x.title}”`, 'ok');
             renderImprovements(el, list, h, a);
