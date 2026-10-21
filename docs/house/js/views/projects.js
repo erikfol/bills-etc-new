@@ -1,6 +1,7 @@
 // The Projects tab: the list of house projects (#<house>/projects) and one page per project (#<house>/projects/<id>) to
-// plan it — status, plan & notes (headings, bullets, a [ ]/[x] step checklist), materials, measurements & specs, cost
-// estimates (with a total), photos & sketches, and the Future updates linked to it (their Project column).
+// plan it — status, plan & notes (headings, bullets, a [ ]/[x] step checklist), materials (with prices), measurements &
+// specs, cost estimates, photos & sketches, and the Future updates linked to it (their Project column). Its estimated
+// total is the materials' prices plus the cost estimates.
 import { esc, toast, money } from '../../../bills-etc/js/util.js';
 import { recordTable, showDate } from '../../../shared/js/recordtable.js';
 import { infoBox } from '../../../shared/js/infobox.js';
@@ -21,7 +22,9 @@ export const projectUnsaved = () => (!!draft && draft.read() !== draft.start) ||
 export const forgetProject = () => { draft = null; materials = null; specs = null; costs = null; };
 
 const isDone = p => /^done$/i.test((p.status || '').trim());
-const total = p => (p.costs || []).reduce((t, r) => t + (Number(r.Estimate) || 0), 0);
+const sum = (rows, col) => (rows || []).reduce((t, r) => t + (Number(r[col]) || 0), 0);
+const materialsTotal = p => sum(p.materials, 'Price'), costsTotal = p => sum(p.costs, 'Estimate');
+const total = p => materialsTotal(p) + costsTotal(p);
 const projectHref = (h, p) => `#${h.id}/projects/${p.id}`;
 
 /** '3 of 5 steps done' from the plan's [ ] / [x] lines, or ''. */
@@ -37,6 +40,9 @@ async function saveProjects(list, h, items) {
     await saveHouses(list.map(x => (x.id === h.id ? updated : x)));
     Object.assign(h, updated);
 }
+
+/** Rows for a table, every column filled in (rows saved before a column was added just lack it). */
+const filled = (rows, cols) => (rows || []).map(r => Object.fromEntries(cols.map(c => [c.name, r[c.name] ?? ''])));
 
 const newId = (items, title) => {
     const base = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'project';
@@ -126,7 +132,8 @@ export async function renderProject(el, list, h, top, p) {
                 <span class="muted edit-hint">Change the name or status, or remove the project.</span></div>
             <dl class="info-grid">
                 <div class="info-item"><dt>Status</dt><dd>${p.status ? `<span class="cat-badge">${esc(p.status)}</span>` : '<span class="muted">—</span>'}</dd></div>
-                <div class="info-item"><dt>Estimated total</dt><dd>${esc(money(total(p)))}</dd></div>
+                <div class="info-item"><dt>Estimated total</dt><dd>${esc(money(total(p)))}${total(p)
+                    ? `<div class="muted">materials ${esc(money(materialsTotal(p)))} + cost estimates ${esc(money(costsTotal(p)))}</div>` : ''}</dd></div>
                 <div class="info-item"><dt>Steps</dt><dd>${esc(steps(p) || 'None yet — add [ ] steps to the plan')}</dd></div>
             </dl>`;
         head.querySelector('[data-edit]').onclick = editHead;
@@ -219,8 +226,8 @@ export async function renderProject(el, list, h, top, p) {
     const places = (h.places || []).map(x => x.name); // offered as a Source
     materials = recordTable(el.querySelector('#p-materials'), {
         columns: MATERIAL_COLUMNS.map(c => (c.name === 'Source' ? { ...c, suggestions: places } : c)),
-        rows: p.materials || [],
-        save: rows => update({ materials: rows }),
+        rows: filled(p.materials, MATERIAL_COLUMNS),
+        save: async rows => { await update({ materials: rows }); showHead(); }, // the total
     });
 
     specs = infoBox(el.querySelector('#p-specs'), {
@@ -231,7 +238,7 @@ export async function renderProject(el, list, h, top, p) {
 
     costs = recordTable(el.querySelector('#p-costs'), {
         columns: COST_COLUMNS.map(c => (c.name === 'Source' ? { ...c, suggestions: places } : c)),
-        rows: p.costs || [],
+        rows: filled(p.costs, COST_COLUMNS),
         save: async rows => { await update({ costs: rows }); showHead(); }, // the total
     });
 
