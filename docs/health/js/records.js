@@ -25,9 +25,11 @@ export const SECTIONS = [
         { name: 'Additional Notes', kind: 'text' },
     ] },
     { id: 'eye', label: 'Eye', path: `${HEALTH_DIR}/eye.csv`, columns: [
-        { name: 'Start', kind: 'date' },
-        { name: 'End', kind: 'end' },
+        { name: 'Date', kind: 'date' },
         { name: 'Description', kind: 'text' },
+        { name: 'Location', kind: 'suggest' }, // the eye doctor's office, like Dental's
+        { name: 'Total Cost', kind: 'money' },
+        { name: 'Out of Pocket', kind: 'money' },
         { name: 'Additional Notes', kind: 'text' },
     ] },
 ];
