@@ -72,8 +72,8 @@ export async function collectData(progress = () => {}) {
     for (const h of await house.loadHouses(false)) {
         const areas = [];
         for (const t of house.AREAS) for (const a of t.parts || [t]) {
-            if (a.table) { // a tab that's just one table (Updates)
-                areas.push({ label: a.label, table: { columns: a.table.map(c => ({ name: c.name, kind: c.kind })), rows: await house.loadTable(h, a, false) } });
+            if (a.table) { // a page that's just one table (Updates Done, Future Updates)
+                areas.push({ label: a.label, tab: t.parts ? t.label : '', table: { columns: a.table.map(c => ({ name: c.name, kind: c.kind })), rows: await house.loadTable(h, a, false) } });
                 continue;
             }
             areas.push({

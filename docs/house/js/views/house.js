@@ -1,7 +1,7 @@
 // One house's page, with menus like Utilities → Electric: underlined tabs for the Overview (house information, service
 // companies, photos) and each area (Financing, Septic, Other Inside, Other Outside), each showing that area's
 // information, photos and records table (Financing: Mortgage, Closing and Value & Taxes boxes, documents, no records;
-// Updates: just a table); Heating/Cooling's
+// Updates: pills Updates Done and Future Updates, each just a table); Heating/Cooling's
 // tab has pills instead (Oil furnace, Mini-split, Water heater), each such a page with maintenance too (and a due
 // banner, or Future improvements, where AREAS says).
 // Also the "Add house" page. Service companies and photos use the Vehicles views.
@@ -60,7 +60,7 @@ const maintenanceBanner = (a, rows) => {
  * tab: the AREAS tab shown (none for the Overview); page: the area shown — the tab itself, or one of its parts.
  */
 export async function renderHouse(el, list, h, onListChanged, tab = null, page = null) {
-    if (tab?.table) return renderTableTab(el, h, tab);
+    if (page?.table) return renderTableTab(el, h, tab, page);
     if (tab) return renderArea(el, list, h, tab, page);
     el.innerHTML = `
         <h1 class="page">${esc(h.name)}</h1>
@@ -152,13 +152,13 @@ async function renderArea(el, list, h, tab, a) {
     });
 }
 
-/** A tab that's just one table (Updates). */
-async function renderTableTab(el, h, t) {
+/** A page that's just one table (tab t, or its part — Updates Done, Future Updates). */
+async function renderTableTab(el, h, tab, t) {
     el.innerHTML = '<p class="muted">Loading…</p>';
     const rows = await loadTable(h, t);
     el.innerHTML = `
         <h1 class="page">${esc(h.name)}</h1>
-        ${menus(h, t)}
+        ${menus(h, tab, t)}
         <p class="lead">Kept in <code>${esc(tablePath(h, t))}</code>.</p>
         <section><h2>${esc(t.label)}</h2><div id="records"></div></section>`;
     table = recordTable(el.querySelector('#records'), {

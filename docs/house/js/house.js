@@ -23,7 +23,14 @@ export const FIELDS = ['Address', 'Year Built', 'Style', 'Bedrooms', 'Bathrooms'
 // entry dated this year, red from the 1st of due.month (1 = January) while there's none, and green before then.
 // boxes: several information boxes instead of one [{ key, label, fields }], each kept under house.areas[<id>][key].
 // gallery: { label, noun } for the photos section (default Photos). records: false = no records table.
-// A tab with `table` (its columns) is just that one table, kept in <house>-<tab id>.csv.
+// A tab or part with `table` (its columns) is just that one table, kept in <house>-<its id>.csv.
+const UPDATE_COLUMNS = [
+    { name: 'Date', kind: 'date' },
+    { name: 'Update', kind: 'text' },
+    { name: 'Location', kind: 'suggest', suggestions: ['Whole house', 'Kitchen', 'Living room', 'Dining room', 'Bedroom',
+        'Bathroom', 'Basement', 'Garage', 'Attic', 'Outside', 'Yard'] },
+    { name: 'Additional Notes', kind: 'text' },
+];
 export const AREAS = [
     { id: 'financing', label: 'Financing', records: false, gallery: { label: 'Documents & photos', noun: 'image' },
         boxes: [
@@ -33,12 +40,9 @@ export const AREAS = [
                 'Seller Credit', 'Notes'] },
             { key: 'taxes', label: 'Value & Taxes', fields: ['Assessed Value', 'Property Tax', 'Notes'] },
         ] },
-    { id: 'updates', label: 'Updates', table: [
-        { name: 'Date', kind: 'date' },
-        { name: 'Update', kind: 'text' },
-        { name: 'Location', kind: 'suggest', suggestions: ['Whole house', 'Kitchen', 'Living room', 'Dining room', 'Bedroom',
-            'Bathroom', 'Basement', 'Garage', 'Attic', 'Outside', 'Yard'] },
-        { name: 'Additional Notes', kind: 'text' },
+    { id: 'updates', label: 'Updates', parts: [
+        { id: 'updates-done', label: 'Updates Done', icon: '✅', table: UPDATE_COLUMNS },
+        { id: 'future-updates', label: 'Future Updates', icon: '🗓️', table: UPDATE_COLUMNS },
     ] },
     { id: 'heating', label: 'Heating/Cooling', parts: [
         { id: 'oil-furnace', label: 'Oil furnace', icon: '🔥',
