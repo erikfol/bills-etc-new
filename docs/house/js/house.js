@@ -68,15 +68,6 @@ export const AREAS = [
     { id: 'septic', label: 'Septic',
         fields: ['Tank Size', 'Tank Material', 'Tank Location', 'Leach Field Location', 'Installed', 'Pump Every', 'Notes'],
         actions: ['Pumped', 'Inspection', 'Effluent filter cleaned', 'Baffle repair', 'Riser / cover', 'Repair'] },
-    { id: 'inside', label: 'Other Inside',
-        fields: ['Water Heater', 'Water Source', 'Well Pump', 'Water Treatment', 'Electrical Panel', 'Main Breaker',
-            'Appliances', 'Smoke / CO Detectors', 'Notes'],
-        actions: ['Plumbing', 'Electrical', 'Water heater', 'Water test', 'Appliance repair', 'Painting', 'Flooring',
-            'Smoke / CO detectors', 'Repair'] },
-    { id: 'outside', label: 'Other Outside',
-        fields: ['Roof', 'Roof Installed', 'Siding', 'Gutters', 'Windows', 'Foundation', 'Driveway', 'Deck / Porch', 'Generator', 'Notes'],
-        actions: ['Roof repair', 'Gutter cleaning', 'Painting / staining', 'Lawn / yard', 'Tree work', 'Snow removal', 'Driveway',
-            'Deck', 'Pest control', 'Repair'] },
 ];
 
 // Offered in a future improvement's Status (anything else can be typed). 'Done' ones are shown crossed out.

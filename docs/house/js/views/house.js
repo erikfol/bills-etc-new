@@ -1,9 +1,8 @@
 // One house's page, with menus like Utilities → Electric: underlined tabs for the Overview (house information, service
-// companies, photos) and each area (Financing, Septic, Other Inside, Other Outside), each showing that area's
-// information, photos and records table (Financing: Mortgage, Closing and Value & Taxes boxes, documents, no records;
-// Updates: pills Updates Done and Future Updates, each just a table); Heating/Cooling's
-// tab has pills instead (Oil furnace, Mini-split, Water heater), each such a page with maintenance too (and a due
-// banner, or Future improvements, where AREAS says).
+// companies, photos) and each area, each showing that area's information, photos and records table (Septic), or as
+// AREAS says: Financing has Mortgage, Closing and Value & Taxes boxes, documents and no records; Updates and
+// Heating/Cooling have pills — Updates Done / Future Updates, each just a table; Oil furnace / Mini-split / Water heater,
+// each with maintenance too (and a due banner, or Future improvements).
 // Also the "Add house" page. Service companies and photos use the Vehicles views.
 import { esc, toast } from '../../../bills-etc/js/util.js';
 import { recordTable, closeFilterMenu, showDate } from '../../../shared/js/recordtable.js';
