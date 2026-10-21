@@ -32,9 +32,9 @@ const menus = (h, tab = null, page = null) => {
         + (tab?.parts ? `<nav class="pillnav">${tab.parts.map((p, i) => link([tab.id, i ? p.id : ''], `${p.icon} ${p.label}`, p === page)).join('')}</nav>` : '');
 };
 
-/** After the Year Built field: the age today (worked out, not saved). */
+/** After a Year Built (house) or Manufactured (e.g. the boiler) field: the age today (worked out, not saved). */
 const ageItem = f => {
-    if (!/built/i.test(f.label) || !f.value) return '';
+    if (!/built|manufactured/i.test(f.label) || !f.value) return '';
     const age = houseAge(f.value);
     return age ? `<div class="info-item"><dt>Age</dt><dd>${esc(age)}</dd></div>` : '';
 };
@@ -124,6 +124,7 @@ async function renderArea(el, list, h, tab, a) {
     info = infoBox(el.querySelector('#info'), {
         info: areaInfo(h, a),
         noun: 'house',
+        extra: ageItem,
         save: async newInfo => {
             const updated = { ...h, areas: { ...h.areas, [a.id]: { ...h.areas?.[a.id], info: newInfo } } };
             await saveHouses(list.map(x => (x.id === h.id ? updated : x)));

@@ -267,10 +267,12 @@ function viewer(D, ageText, houseAge, appointmentStatus, maintenanceStatus) { //
         if (v.photos.length) section(`Photos (${v.photos.length})`, false, gallery(v.photos));
     }
 
+    /** An Age line after a Year Built (house) or Manufactured (e.g. the boiler) field, as in House. */
+    const withAge = info => info.flatMap(f => (/built|manufactured/i.test(f.label) && f.value && houseAge(f.value) ? [f, { label: 'Age', value: houseAge(f.value) }] : [f]));
+
     function drawHouse(h) {
         main.insertAdjacentHTML('beforeend', `<h1>${esc(h.name)}</h1><p class="muted">House · the areas are in the page list above</p>`);
-        const info = h.info.flatMap(f => (/built/i.test(f.label) && f.value && houseAge(f.value) ? [f, { label: 'Age', value: houseAge(f.value) }] : [f]));
-        section('Information', true, infoList(info));
+        section('Information', true, infoList(withAge(h.info)));
         if (h.places.length) section(`Service companies (${h.places.length})`, false, placesHtml(h.places));
         if (h.photos.length) section(`Photos (${h.photos.length})`, false, gallery(h.photos));
     }
@@ -286,7 +288,7 @@ function viewer(D, ageText, houseAge, appointmentStatus, maintenanceStatus) { //
                 : `<div class="banner ${level === 'due' ? 'bad' : 'ok'}"><b>${esc(m.due.what)} ${level === 'due' ? 'is due' : `is due by ${by}`}.</b>
                     Nothing logged yet this year.${last ? ` Last done ${esc(showDate(last.Date))}.` : ''}</div>`);
         }
-        section('Information', true, infoList(a.info));
+        section('Information', true, infoList(withAge(a.info)));
         if (a.photos.length) section(`Photos (${a.photos.length})`, false, gallery(a.photos));
         if (a.improvements?.length) section(`Future improvements (${a.improvements.length})`, false, a.improvements.map(x => `
             <details class="guide"><summary>${/^done$/i.test(x.status || '') ? `<s>${esc(x.title)}</s>` : esc(x.title)}${x.status ? ` <span class="tag">${esc(x.status)}</span>` : ''}</summary>
