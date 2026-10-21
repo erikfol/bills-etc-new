@@ -41,6 +41,7 @@ export const newestFirst = columns => {
  *   rows:    [{ [name]: string }]
  *   save:    async rows => void (rows already trimmed and without blank entries)
  *   choices: { [name]: { list: string[], noun: 'location', add: async name => void } } for 'choice' columns
+ *            (without add the list is fixed: no "＋ New …" option)
  * Returns { hasUnsavedEdits() }.
  */
 export function recordTable(container, { columns: cols, rows: initial, save, choices = {} }) {
@@ -128,7 +129,7 @@ export function recordTable(container, { columns: cols, rows: initial, save, cho
         const list = !v || all.includes(v) ? all : [v, ...all];
         return `<option value=""${v ? '' : ' selected'}>—</option>`
             + list.map(l => `<option${l === v ? ' selected' : ''}>${esc(l)}</option>`).join('')
-            + `<option value="${NEW_CHOICE}">＋ New ${esc(choices[c.name].noun)}…</option>`;
+            + (choices[c.name].add ? `<option value="${NEW_CHOICE}">＋ New ${esc(choices[c.name].noun)}…</option>` : '');
     };
     // Values offered by a 'suggest' column: what's been used before, most-used first, then its suggestions.
     const suggestions = c => {

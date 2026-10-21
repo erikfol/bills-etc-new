@@ -1,23 +1,29 @@
 // One house's page, in tabs: Overview (house information, service companies, photos), then one tab per area
 // (Heating/Cooling, Septic, Other Inside, Other Outside) with that area's information, photos and records table
-// (Heating/Cooling also has Future improvements). Also the "Add house" page. Service companies and photos use the
+// (Heating/Cooling also has Future improvements, and a Maintenance table with a due banner per system at the top).
+// Also the "Add house" page. Service companies and photos use the
 // Vehicles views.
 import { esc, toast } from '../../../bills-etc/js/util.js';
-import { recordTable, closeFilterMenu } from '../../../shared/js/recordtable.js';
+import { recordTable, closeFilterMenu, showDate } from '../../../shared/js/recordtable.js';
 import { infoBox } from '../../../shared/js/infobox.js';
 import { renderGallery, releaseGalleries } from '../../../vehicles/js/views/gallery.js';
 import { renderPlaces, placesUnsaved, forgetPlaces } from '../../../vehicles/js/views/places.js';
 import { renderImprovements, improvementsUnsaved, forgetImprovements } from './improvements.js';
 import {
     HOUSE_PATH, AREAS, STORE, areaInfo, saveHouses, houseAge, photosDir, newHouse, recordsPath, recordColumns, loadRecords, saveRecords,
+    MAINTENANCE_SYSTEMS, maintenancePath, maintenanceColumns, loadMaintenance, saveMaintenance, maintenanceStatus,
 } from '../house.js';
 
 let table = null;
+let maint = null; // the Maintenance table
 let info = null; // the information box
 
-export const hasUnsavedEdits = () => !!table?.hasUnsavedEdits() || !!info?.hasUnsavedEdits()
+export const hasUnsavedEdits = () => !!table?.hasUnsavedEdits() || !!maint?.hasUnsavedEdits() || !!info?.hasUnsavedEdits()
     || placesUnsaved() || improvementsUnsaved();
-export const forget = () => { table = null; info = null; closeFilterMenu(); releaseGalleries(); forgetPlaces(); forgetImprovements(); };
+export const forget = () => {
+    table = null; maint = null; info = null;
+    closeFilterMenu(); releaseGalleries(); forgetPlaces(); forgetImprovements();
+};
 
 /** The tabs under a house's name. */
 const tabs = (h, part) => {
@@ -31,6 +37,18 @@ const ageItem = f => {
     const age = houseAge(f.value);
     return age ? `<div class="info-item"><dt>Age</dt><dd>${esc(age)}</dd></div>` : '';
 };
+
+const monthName = m => new Date(2000, m - 1, 1).toLocaleString('en-US', { month: 'long' });
+
+/** One banner per system: green when done this year, red once its due month has come with nothing logged this year. */
+const maintenanceBanners = rows => maintenanceStatus(rows, MAINTENANCE_SYSTEMS).map(({ system: s, level, done, last }) => {
+    const entry = r => [showDate(r.Date), r.Description, r['Done By'] && `by ${r['Done By']}`].filter(Boolean).map(esc).join(' — ');
+    const lastText = last ? ` Last done ${esc(showDate(last.Date))}.` : '';
+    if (level === 'done') return `<div class="banner ok"><strong>${esc(s.what)} done this year:</strong> ${entry(done)}</div>`;
+    if (level === 'due') return `<div class="banner bad"><strong>${esc(s.what)} is due.</strong> No “${esc(s.name)}” entry yet this year
+        (due by ${monthName(s.dueMonth)}) — add one under Maintenance once it's done.${lastText}</div>`;
+    return `<div class="banner ok"><strong>${esc(s.what)} is due by ${monthName(s.dueMonth)}.</strong> No “${esc(s.name)}” entry yet this year.${lastText}</div>`;
+}).join('');
 
 /**
  * list: every house (saved back whole); onListChanged(goTo) re-draws the menu and opens #goTo.
@@ -83,14 +101,16 @@ export async function renderHouse(el, list, h, onListChanged, part) {
     });
 }
 
-/** One area's tab: its information, photos and records table. */
+/** One area's tab: its information, photos and records table (plus maintenance and its banners where the area has them). */
 async function renderArea(el, list, h, a) {
     el.innerHTML = '<p class="muted">Loading…</p>';
-    const rows = await loadRecords(h, a);
+    const [rows, maintRows] = await Promise.all([loadRecords(h, a), a.maintenance ? loadMaintenance(h, a) : []]);
     el.innerHTML = `
         <h1 class="page">${esc(h.name)}</h1>
-        <p class="lead">Information in <code>${esc(HOUSE_PATH)}</code>, records in <code>${esc(recordsPath(h, a))}</code>.</p>
+        <p class="lead">Information in <code>${esc(HOUSE_PATH)}</code>, ${a.maintenance
+            ? `maintenance in <code>${esc(maintenancePath(h, a))}</code>, ` : ''}records in <code>${esc(recordsPath(h, a))}</code>.</p>
         ${tabs(h, a.id)}
+        ${a.maintenance ? '<div id="maint-banners"></div>' : ''}
         <section>
             <h2>${esc(a.label)} information</h2>
             <div id="info"></div>
@@ -102,6 +122,10 @@ async function renderArea(el, list, h, a) {
         ${a.improvements ? `<section>
             <h2>Future improvements</h2>
             <div id="improvements"></div>
+        </section>` : ''}
+        ${a.maintenance ? `<section>
+            <h2>Maintenance</h2>
+            <div id="maintenance"></div>
         </section>` : ''}
         <section>
             <h2>Records</h2>
@@ -120,6 +144,16 @@ async function renderArea(el, list, h, a) {
         el.querySelector('#photos').innerHTML = `<div class="banner bad">Couldn't load photos: ${esc(err.message)}</div>`;
     });
     if (a.improvements) renderImprovements(el.querySelector('#improvements'), list, h, a);
+    if (a.maintenance) {
+        const drawBanners = r => { el.querySelector('#maint-banners').innerHTML = maintenanceBanners(r); };
+        drawBanners(maintRows);
+        maint = recordTable(el.querySelector('#maintenance'), {
+            columns: maintenanceColumns(h),
+            rows: maintRows,
+            choices: { System: { list: MAINTENANCE_SYSTEMS.map(s => s.name), noun: 'system' } },
+            save: async r => { await saveMaintenance(h, a, r); drawBanners(r); },
+        });
+    }
     table = recordTable(el.querySelector('#records'), {
         columns: recordColumns(h, a),
         rows,

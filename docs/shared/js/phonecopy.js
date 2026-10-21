@@ -1,9 +1,9 @@
 // "📱 Phone copy" (Vehicles, House, Health and Pets top bars): writes one self-contained, read-only page — every vehicle
 // (information, service places, maintenance, photos, guides, notes), every house (information, service companies,
-// photos, and per area information, photos, records), every Health section and every pet (information, future appointments,
-// photos, records) — into a folder you pick once,
-// e.g. in Google Drive so it syncs to your phone. Photos are shrunk and embedded, so the page is a single file that
-// opens offline (Android hands Chrome a single file, so a page can't load anything from next to itself).
+// photos, and per area information, photos, maintenance with its due banners, records), every Health section and
+// every pet (information, future appointments, photos, records) — into a folder you pick once, e.g. in Google Drive
+// so it syncs to your phone. Photos are shrunk and embedded, so the page is a single file that opens offline (Android
+// hands Chrome a single file, so a page can't load anything from next to itself).
 import * as fs from '../../bills-etc/js/fs.js';
 import { esc, toast } from '../../bills-etc/js/util.js';
 import { loadVehicles, loadMaintenance, maintenanceColumns, photosDir, guideDir, noteDir, TYPES } from '../../vehicles/js/vehicles.js';
@@ -76,6 +76,11 @@ export async function collectData(progress = () => {}) {
                 label: a.label,
                 info: house.areaInfo(h, a),
                 improvements: house.areaImprovements(h, a),
+                maintenance: a.maintenance ? {
+                    columns: house.maintenanceColumns(h).map(c => ({ name: c.name, kind: c.kind })),
+                    rows: await house.loadMaintenance(h, a, false),
+                    systems: house.MAINTENANCE_SYSTEMS,
+                } : null,
                 photos: await images(house.photosDir(h, a), tick),
                 records: { columns: house.recordColumns(h, a).map(c => ({ name: c.name, kind: c.kind })), rows: await house.loadRecords(h, a, false) },
             });
@@ -105,13 +110,13 @@ export function buildHtml(data) {
 <header><div class="brand">Vehicles, House, Health &amp; Pets</div><select id="page" aria-label="Page"></select></header>
 <main id="main"><p class="muted">This page needs JavaScript. On Android, open it with Chrome.</p></main>
 <div id="lightbox" hidden><button id="lb-prev" aria-label="Previous">‹</button><img alt=""><button id="lb-next" aria-label="Next">›</button><div id="lb-cap"></div></div>
-<script>(${viewer.toString()})(${json}, ${ageText.toString()}, ${house.houseAge.toString()}, ${appointmentStatus.toString()});</script>
+<script>(${viewer.toString()})(${json}, ${ageText.toString()}, ${house.houseAge.toString()}, ${appointmentStatus.toString()}, ${house.maintenanceStatus.toString()});</script>
 </body>
 </html>`;
 }
 
 // ── The viewer (runs inside the phone page; must not use anything from this module) ──────────────────────────
-function viewer(D, ageText, houseAge, appointmentStatus) { // pets.js ageText + appointmentStatus and house.js houseAge, embedded so they count from the day the page is opened
+function viewer(D, ageText, houseAge, appointmentStatus, maintenanceStatus) { // pets.js ageText + appointmentStatus and house.js houseAge + maintenanceStatus, embedded so they count from the day the page is opened
     const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
     const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     const showDate = v => { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(v || ''); return m ? `${MON[+m[2] - 1]} ${+m[3]}, ${m[1]}` : (v || ''); };
@@ -271,11 +276,20 @@ function viewer(D, ageText, houseAge, appointmentStatus) { // pets.js ageText + 
 
     function drawArea(h, a) {
         main.insertAdjacentHTML('beforeend', `<h1>${esc(a.label)}</h1><p class="muted">${esc(h.name)}</p>`);
+        const m = a.maintenance;
+        if (m) {
+            const month = n => new Date(2000, n - 1, 1).toLocaleString('en-US', { month: 'long' });
+            main.insertAdjacentHTML('beforeend', maintenanceStatus(m.rows, m.systems).map(({ system: s, level, done, last }) => level === 'done'
+                ? `<div class="banner ok"><b>${esc(s.what)} done this year:</b> ${esc(showDate(done.Date))}${done.Description ? ` — ${esc(done.Description)}` : ''}</div>`
+                : `<div class="banner ${level === 'due' ? 'bad' : 'ok'}"><b>${esc(s.what)} ${level === 'due' ? 'is due' : `is due by ${month(s.dueMonth)}`}.</b>
+                    No “${esc(s.name)}” entry yet this year.${last ? ` Last done ${esc(showDate(last.Date))}.` : ''}</div>`).join(''));
+        }
         section('Information', true, infoList(a.info));
         if (a.photos.length) section(`Photos (${a.photos.length})`, false, gallery(a.photos));
         if (a.improvements?.length) section(`Future improvements (${a.improvements.length})`, false, a.improvements.map(x => `
             <details class="guide"><summary>${/^done$/i.test(x.status || '') ? `<s>${esc(x.title)}</s>` : esc(x.title)}${x.status ? ` <span class="tag">${esc(x.status)}</span>` : ''}</summary>
                 <div class="steps">${x.cost ? `<p><b>Estimated cost:</b> ${esc(x.cost)}</p>` : ''}${stepsHtml(x.text || '')}</div></details>`).join(''));
+        if (m) section(`Maintenance (${m.rows.length})`, true, el => records(el, m.columns, m.rows));
         section(`Records (${a.records.rows.length})`, true, el => records(el, a.records.columns, a.records.rows));
     }
 
