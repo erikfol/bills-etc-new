@@ -1,7 +1,8 @@
 // One house's page, with menus like Utilities → Electric: underlined tabs for the Overview (house information, service
-// companies, photos) and each area (Septic, Other Inside, Other Outside), each showing that area's information, photos
-// and records table; Heating/Cooling's tab has pills instead (Oil furnace, Mini-split, Water heater), each such a page
-// with maintenance too (and a due banner, or Future improvements, where AREAS says).
+// companies, photos) and each area (Financing, Septic, Other Inside, Other Outside), each showing that area's
+// information, photos and records table (Financing: Mortgage and Closing boxes, documents, no records); Heating/Cooling's
+// tab has pills instead (Oil furnace, Mini-split, Water heater), each such a page with maintenance too (and a due
+// banner, or Future improvements, where AREAS says).
 // Also the "Add house" page. Service companies and photos use the Vehicles views.
 import { esc, toast } from '../../../bills-etc/js/util.js';
 import { recordTable, closeFilterMenu, showDate } from '../../../shared/js/recordtable.js';
@@ -10,18 +11,18 @@ import { renderGallery, releaseGalleries } from '../../../vehicles/js/views/gall
 import { renderPlaces, placesUnsaved, forgetPlaces } from '../../../vehicles/js/views/places.js';
 import { renderImprovements, improvementsUnsaved, forgetImprovements } from './improvements.js';
 import {
-    HOUSE_PATH, AREAS, STORE, areaInfo, saveHouses, houseAge, photosDir, newHouse, recordsPath, recordColumns, loadRecords, saveRecords,
+    HOUSE_PATH, AREAS, STORE, areaBoxes, areaInfo, saveHouses, houseAge, photosDir, newHouse, recordsPath, recordColumns, loadRecords, saveRecords,
     maintenancePath, maintenanceColumns, loadMaintenance, saveMaintenance, maintenanceStatus,
 } from '../house.js';
 
 let table = null;
 let maint = null; // the Maintenance table
-let info = null; // the information box
+let infos = []; // the information boxes
 
-export const hasUnsavedEdits = () => !!table?.hasUnsavedEdits() || !!maint?.hasUnsavedEdits() || !!info?.hasUnsavedEdits()
+export const hasUnsavedEdits = () => !!table?.hasUnsavedEdits() || !!maint?.hasUnsavedEdits() || infos.some(b => b.hasUnsavedEdits())
     || placesUnsaved() || improvementsUnsaved();
 export const forget = () => {
-    table = null; maint = null; info = null;
+    table = null; maint = null; infos = [];
     closeFilterMenu(); releaseGalleries(); forgetPlaces(); forgetImprovements();
 };
 
@@ -75,7 +76,7 @@ export async function renderHouse(el, list, h, onListChanged, tab = null, page =
             <h2>Photos</h2>
             <div id="photos"></div>
         </section>`;
-    info = infoBox(el.querySelector('#info'), {
+    infos = [infoBox(el.querySelector('#info'), {
         info: h.info,
         name: h.name,
         noun: 'house',
@@ -92,11 +93,11 @@ export async function renderHouse(el, list, h, onListChanged, tab = null, page =
             try {
                 await saveHouses(list.filter(x => x.id !== h.id));
             } catch (err) { return toast(`Couldn't save: ${err.message}`, 'bad'); }
-            info = null;
+            infos = [];
             toast(`Removed “${h.name}”`, 'ok');
             onListChanged(list.find(x => x.id !== h.id)?.id || 'new');
         },
-    });
+    })];
     renderPlaces(el.querySelector('#places'), list, h, STORE);
     renderGallery(el.querySelector('#photos'), photosDir(h), { noun: 'photo' }).catch(err => {
         el.querySelector('#photos').innerHTML = `<div class="banner bad">Couldn't load photos: ${esc(err.message)}</div>`;
@@ -106,33 +107,35 @@ export async function renderHouse(el, list, h, onListChanged, tab = null, page =
 /** One area's page (a tab, or a part of one): its information, photos and records table, plus what AREAS gives it. */
 async function renderArea(el, list, h, tab, a) {
     el.innerHTML = '<p class="muted">Loading…</p>';
-    const [rows, maintRows] = await Promise.all([loadRecords(h, a), a.maintenance ? loadMaintenance(h, a) : []]);
+    const hasRecords = a.records !== false, boxes = areaBoxes(a), gallery = a.gallery || { label: 'Photos', noun: 'photo' };
+    const [rows, maintRows] = await Promise.all([hasRecords ? loadRecords(h, a) : [], a.maintenance ? loadMaintenance(h, a) : []]);
     const section = (title, id) => `<section><h2>${esc(title)}</h2><div id="${id}"></div></section>`;
+    const kept = [['Information', HOUSE_PATH], a.maintenance && ['maintenance', maintenancePath(h, a)], hasRecords && ['records', recordsPath(h, a)],
+        ].filter(Boolean).map(([what, path]) => `${what} in <code>${esc(path)}</code>`).join(', ');
     el.innerHTML = `
         <h1 class="page">${esc(h.name)}</h1>
         ${menus(h, tab, a)}
         ${a.due ? '<div id="maint-banner"></div>' : ''}
-        <p class="lead">Information in <code>${esc(HOUSE_PATH)}</code>, ${a.maintenance
-            ? `maintenance in <code>${esc(maintenancePath(h, a))}</code>, ` : ''}records in <code>${esc(recordsPath(h, a))}</code>.</p>
-        ${section(`${a.label} information`, 'info')}
-        ${section('Photos', 'photos')}
+        <p class="lead">${kept}.</p>
+        ${boxes.map((b, i) => section(b.label, `info-${i}`)).join('')}
+        ${section(gallery.label, 'photos')}
         ${a.improvements ? section('Future improvements', 'improvements') : ''}
         ${a.maintenance ? section('Maintenance', 'maintenance') : ''}
-        ${section('Records', 'records')}`;
+        ${hasRecords ? section('Records', 'records') : ''}`;
     const drawBanner = r => { if (a.due) el.querySelector('#maint-banner').innerHTML = maintenanceBanner(a, r); };
     drawBanner(maintRows);
-    info = infoBox(el.querySelector('#info'), {
-        info: areaInfo(h, a),
+    infos = boxes.map((b, i) => infoBox(el.querySelector(`#info-${i}`), {
+        info: areaInfo(h, a, b),
         noun: 'house',
         extra: ageItem,
         save: async newInfo => {
-            const updated = { ...h, areas: { ...h.areas, [a.id]: { ...h.areas?.[a.id], info: newInfo } } };
+            const updated = { ...h, areas: { ...h.areas, [a.id]: { ...h.areas?.[a.id], [b.key]: newInfo } } };
             await saveHouses(list.map(x => (x.id === h.id ? updated : x)));
             Object.assign(h, updated);
         },
-    });
-    renderGallery(el.querySelector('#photos'), photosDir(h, a), { noun: 'photo' }).catch(err => {
-        el.querySelector('#photos').innerHTML = `<div class="banner bad">Couldn't load photos: ${esc(err.message)}</div>`;
+    }));
+    renderGallery(el.querySelector('#photos'), photosDir(h, a), { noun: gallery.noun }).catch(err => {
+        el.querySelector('#photos').innerHTML = `<div class="banner bad">Couldn't load ${esc(gallery.noun)}s: ${esc(err.message)}</div>`;
     });
     if (a.improvements) renderImprovements(el.querySelector('#improvements'), list, h, a);
     if (a.maintenance) maint = recordTable(el.querySelector('#maintenance'), {
@@ -140,7 +143,7 @@ async function renderArea(el, list, h, tab, a) {
         rows: maintRows,
         save: async r => { await saveMaintenance(h, a, r); drawBanner(r); },
     });
-    table = recordTable(el.querySelector('#records'), {
+    if (hasRecords) table = recordTable(el.querySelector('#records'), {
         columns: recordColumns(h, a),
         rows,
         save: r => saveRecords(h, a, r),
@@ -151,8 +154,8 @@ async function renderArea(el, list, h, tab, a) {
 export function renderNewHouse(el, list, onListChanged) {
     el.innerHTML = `
         <h1 class="page">Add a house</h1>
-        <p class="lead">It gets its own page with information, service companies and photos, plus Heating/Cooling, Septic,
-            Other Inside and Other Outside tabs.</p>
+        <p class="lead">It gets its own page with information, service companies and photos, plus
+            ${esc(AREAS.map(a => a.label).join(', ').replace(/, ([^,]*)$/, ' and $1'))} tabs.</p>
         <section>
             <form id="new-form" class="new-vehicle">
                 <label class="field">Name (shown in the menu)<input type="text" name="name" required placeholder="e.g. Camp"></label>

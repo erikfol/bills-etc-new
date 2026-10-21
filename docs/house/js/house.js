@@ -20,7 +20,16 @@ export const FIELDS = ['Address', 'Year Built', 'Style', 'Bedrooms', 'Bathrooms'
 // improvements: the page also has a Future improvements section (views/improvements.js).
 // maintenance: the page also has a Maintenance table; with `due`, a banner at the top that's green once there's an
 // entry dated this year, red from the 1st of due.month (1 = January) while there's none, and green before then.
+// boxes: several information boxes instead of one [{ key, label, fields }], each kept under house.areas[<id>][key].
+// gallery: { label, noun } for the photos section (default Photos). records: false = no records table.
 export const AREAS = [
+    { id: 'financing', label: 'Financing', records: false, gallery: { label: 'Documents & photos', noun: 'image' },
+        boxes: [
+            { key: 'info', label: 'Mortgage', fields: ['Purchase Date', 'House Cost', 'Down Payment', 'Loan Amount', 'Rate', 'Term',
+                'Monthly Principal & Interest', 'Escrow Monthly', 'Monthly Payment', 'Lender / Servicer', 'Notes'] },
+            { key: 'closing', label: 'Closing', fields: ['Closed On', 'Cash to Close', 'Closing Costs', 'Down Payment', 'Deposit',
+                'Seller Credit', 'Notes'] },
+        ] },
     { id: 'heating', label: 'Heating/Cooling', parts: [
         { id: 'oil-furnace', label: 'Oil furnace', icon: '🔥',
             fields: ['Heating System', 'Fuel', 'Boiler / Furnace Make', 'Model', 'Installed', 'Oil Tank Size', 'Thermostats', 'Notes'],
@@ -60,8 +69,11 @@ export const areaImprovements = (h, a) => h.areas?.[a.id]?.improvements ?? [];
 
 const blank = fields => fields.map(label => ({ label, value: '' }));
 
-/** An area's information on house `h` (its starting fields until saved). */
-export const areaInfo = (h, a) => h.areas?.[a.id]?.info ?? blank(a.fields);
+/** An area's information boxes: its `boxes`, or one box of its `fields`. */
+export const areaBoxes = a => a.boxes || [{ key: 'info', label: `${a.label} information`, fields: a.fields }];
+
+/** One information box of an area on house `h` (its starting fields until saved). */
+export const areaInfo = (h, a, box = areaBoxes(a)[0]) => h.areas?.[a.id]?.[box.key] ?? blank(box.fields);
 
 // Used until house.json is first saved.
 const STARTING_HOUSES = [{ id: 'home', name: 'Home', info: blank(FIELDS) }];

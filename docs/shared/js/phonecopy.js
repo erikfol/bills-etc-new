@@ -75,15 +75,17 @@ export async function collectData(progress = () => {}) {
             areas.push({
                 label: a.label,
                 tab: t.parts ? t.label : '', // a part (pill) of this tab
-                info: house.areaInfo(h, a),
+                boxes: house.areaBoxes(a).map(b => ({ label: b.label, info: house.areaInfo(h, a, b) })),
                 improvements: house.areaImprovements(h, a),
                 maintenance: a.maintenance ? {
                     columns: house.maintenanceColumns(h).map(c => ({ name: c.name, kind: c.kind })),
                     rows: await house.loadMaintenance(h, a, false),
                     due: a.due || null,
                 } : null,
+                photosLabel: a.gallery?.label || 'Photos',
                 photos: await images(house.photosDir(h, a), tick),
-                records: { columns: house.recordColumns(h, a).map(c => ({ name: c.name, kind: c.kind })), rows: await house.loadRecords(h, a, false) },
+                records: a.records === false ? null
+                    : { columns: house.recordColumns(h, a).map(c => ({ name: c.name, kind: c.kind })), rows: await house.loadRecords(h, a, false) },
             });
         }
         houses.push({ name: h.name, info: h.info || [], places: h.places || [], photos: await images(house.photosDir(h), tick), areas });
@@ -290,13 +292,13 @@ function viewer(D, ageText, houseAge, appointmentStatus, maintenanceStatus) { //
                 : `<div class="banner ${level === 'due' ? 'bad' : 'ok'}"><b>${esc(m.due.what)} ${level === 'due' ? 'is due' : `is due by ${by}`}.</b>
                     Nothing logged yet this year.${last ? ` Last done ${esc(showDate(last.Date))}.` : ''}</div>`);
         }
-        section('Information', true, infoList(withAge(a.info)));
-        if (a.photos.length) section(`Photos (${a.photos.length})`, false, gallery(a.photos));
+        for (const b of a.boxes) section(a.boxes.length > 1 ? b.label : 'Information', true, infoList(withAge(b.info)));
+        if (a.photos.length) section(`${a.photosLabel} (${a.photos.length})`, false, gallery(a.photos));
         if (a.improvements?.length) section(`Future improvements (${a.improvements.length})`, false, a.improvements.map(x => `
             <details class="guide"><summary>${/^done$/i.test(x.status || '') ? `<s>${esc(x.title)}</s>` : esc(x.title)}${x.status ? ` <span class="tag">${esc(x.status)}</span>` : ''}</summary>
                 <div class="steps">${x.cost ? `<p><b>Estimated cost:</b> ${esc(x.cost)}</p>` : ''}${stepsHtml(x.text || '')}</div></details>`).join(''));
         if (m) section(`Maintenance (${m.rows.length})`, true, el => records(el, m.columns, m.rows));
-        section(`Records (${a.records.rows.length})`, true, el => records(el, a.records.columns, a.records.rows));
+        if (a.records) section(`Records (${a.records.rows.length})`, true, el => records(el, a.records.columns, a.records.rows));
     }
 
     function drawHealth(h) {
