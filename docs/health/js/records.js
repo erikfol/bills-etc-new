@@ -17,7 +17,7 @@ export const SECTIONS = [
         { name: 'Additional Notes', kind: 'text' },
     ] },
     { id: 'dental', label: 'Dental', path: `${HEALTH_DIR}/dental.csv`, columns: [
-        { name: 'Start', kind: 'date' },
+        { name: 'Date', kind: 'date' },
         { name: 'Description', kind: 'text' },
         { name: 'Location', kind: 'suggest' }, // the dental office (offers the ones used before), not General Health's body locations
         { name: 'Total Cost', kind: 'money' },
@@ -25,7 +25,7 @@ export const SECTIONS = [
         { name: 'Additional Notes', kind: 'text' },
     ] },
     { id: 'eye', label: 'Eye', path: `${HEALTH_DIR}/eye.csv`, columns: [
-        { name: 'Date', kind: 'date' },
+        { name: 'Start', kind: 'date' },
         { name: 'End', kind: 'end' },
         { name: 'Description', kind: 'text' },
         { name: 'Additional Notes', kind: 'text' },
