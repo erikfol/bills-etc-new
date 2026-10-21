@@ -10,8 +10,9 @@ export const HOUSE_DIR = 'inputs/house';
 export const HOUSE_PATH = `${HOUSE_DIR}/house.json`;
 
 // The Overview's information fields a new house starts with (any can be renamed or removed).
+// (Purchase, mortgage, value and taxes are on the Financing tab.)
 export const FIELDS = ['Address', 'Year Built', 'Style', 'Bedrooms', 'Bathrooms', 'Square Footage', 'Lot Size', 'Stories',
-    'Basement', 'Garage', 'Purchase Date', 'Purchase Price', 'Notes'];
+    'Basement', 'Garage', 'Notes'];
 
 // The tabs after the Overview. Each is a page with its own information (starting fields below), photos and records
 // table — or, with `parts`, a row of pills (like Utilities → Electric's Bills / Mini-Splits), each part such a page.
@@ -29,6 +30,7 @@ export const AREAS = [
                 'Monthly Principal & Interest', 'Escrow Monthly', 'Monthly Payment', 'Lender / Servicer', 'Notes'] },
             { key: 'closing', label: 'Closing', fields: ['Closed On', 'Cash to Close', 'Closing Costs', 'Down Payment', 'Deposit',
                 'Seller Credit', 'Notes'] },
+            { key: 'taxes', label: 'Value & Taxes', fields: ['Assessed Value', 'Property Tax', 'Notes'] },
         ] },
     { id: 'heating', label: 'Heating/Cooling', parts: [
         { id: 'oil-furnace', label: 'Oil furnace', icon: '🔥',
