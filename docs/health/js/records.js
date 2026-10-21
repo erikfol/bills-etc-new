@@ -25,7 +25,7 @@ export const SECTIONS = [
         { name: 'Additional Notes', kind: 'text' },
     ] },
     { id: 'eye', label: 'Eye', path: `${HEALTH_DIR}/eye.csv`, columns: [
-        { name: 'Start', kind: 'date' },
+        { name: 'Date', kind: 'date' },
         { name: 'End', kind: 'end' },
         { name: 'Description', kind: 'text' },
         { name: 'Additional Notes', kind: 'text' },
