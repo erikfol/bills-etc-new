@@ -18,8 +18,8 @@ export const FIELDS = ['Address', 'Year Built', 'Style', 'Bedrooms', 'Bathrooms'
 // Parts keep their data under their own id, so part and tab ids must all differ.
 // actions: offered in the records table's Action column (anything else can be typed).
 // improvements: the page also has a Future improvements section (views/improvements.js).
-// maintenance: the page also has a Maintenance table; with `due`, a banner at the top that's green once there's an
-// entry dated this year, red from the 1st of due.month (1 = January) while there's none, and green before then.
+// maintenance: the page also has a Maintenance table, and can show a due banner at the top; `banner` gives its
+// starting settings (see bannerSettings — House → ⚙ Settings changes them per house).
 // maintenanceNote: a line shown at the top of the Maintenance section.
 // boxes: several information boxes instead of one [{ key, label, fields }], each kept under house.areas[<id>][key].
 // gallery: { label, noun } for the photos section (default Photos). records: false = no records table.
@@ -58,23 +58,24 @@ export const AREAS = [
         { id: 'oil-furnace', label: 'Oil furnace', icon: '🔥',
             fields: ['Heating System', 'Fuel', 'Boiler / Furnace Make', 'Model', 'Installed', 'Oil Tank Size', 'Thermostats', 'Notes'],
             actions: ['Boiler / furnace service', 'Oil filter', 'Nozzle', 'Chimney cleaning', 'Thermostat', 'Repair'],
-            maintenance: true, due: { what: 'Oil furnace maintenance', month: 9 },
+            maintenance: true, banner: { show: true, what: 'Oil furnace maintenance', month: 9 },
             maintenanceNote: 'Must be cleaned every year by professional' },
         { id: 'mini-split', label: 'Mini-split', icon: '❄️',
             fields: ['Cooling System', 'Mini-split Units', 'Installed', 'Filter Size', 'Notes'],
             actions: ['Mini-split cleaning', 'Filter change', 'Repair'],
-            maintenance: true, due: { what: 'Mini-split maintenance', month: 5 },
+            maintenance: true, banner: { show: true, what: 'Mini-split maintenance', month: 5 },
             maintenanceNote: 'Must be cleaned every year by professional' },
         { id: 'water-heater', label: 'Water heater', icon: '🚿',
             fields: ['Hot Water', 'Water Heater Tank', 'Installed', 'Notes'],
             actions: ['Flush tank', 'Element / thermostat', 'Anode rod', 'Replace', 'Repair'],
-            maintenance: true, improvements: true,
+            maintenance: true, improvements: true, banner: { what: 'Water heater draining' },
             maintenanceNote: 'Must be drained every year, can be done DIY' },
     ] },
     { id: 'septic', label: 'Septic',
         fields: ['Tank Size', 'Tank Material', 'Tank Location', 'Leach Field Location', 'Installed', 'Pump Every', 'Notes'],
         actions: ['Pumped', 'Inspection', 'Effluent filter cleaned', 'Baffle repair', 'Riser / cover', 'Repair'],
-        maintenance: true, maintenanceNote: 'Must be pumped every 7 years by a professional' },
+        maintenance: true, banner: { what: 'Septic pumping', every: 7 },
+        maintenanceNote: 'Must be pumped every 7 years by a professional' },
 ];
 
 /** Updates → Future Updates, whose Project column links a planned update to a project. */
@@ -209,14 +210,31 @@ export const saveTable = (h, t, rows) => writeRows(tablePath(h, t), t.table, row
 export const loadMaintenance = (h, a, track = true) => readRows(maintenancePath(h, a), maintenanceColumns(h), track);
 export const saveMaintenance = (h, a, rows) => writeRows(maintenancePath(h, a), maintenanceColumns(h), rows);
 
+/** Pages with a Maintenance table (each can show a due banner). */
+export const MAINTENANCE_PAGES = AREAS.flatMap(t => t.parts || [t]).filter(a => a.maintenance);
+
 /**
- * The banner at the top of a page with maintenance `due` (see AREAS), from the rows with a YYYY-MM-DD Date:
- * { level, done, last } — level 'done' (green) when there's an entry dated this year, else 'due' (red) from the 1st of
- * due.month, else 'later' (green); done = this year's latest entry, last = the latest entry ever (either may be missing).
+ * The due banner settings of maintenance page `a` on house `h`: what's saved under House → ⚙ Settings
+ * (house.banners[<page id>]) over the page's starting `banner`. { show, what (the banner's name), every (years),
+ * month (due by, 1 = January), warn (days before it's due to turn yellow, 0 = never), since ('YYYY-MM' to count from
+ * while nothing's logged) }.
+ */
+export const bannerSettings = (h, a) => ({ show: false, what: `${a.label} maintenance`, every: 1, month: 1, warn: 0, since: '',
+    ...a.banner, ...h.banners?.[a.id] });
+
+/**
+ * A due banner from the maintenance rows with a YYYY-MM-DD Date and its settings `b` (bannerSettings): it's due by the
+ * 1st of b.month, b.every years after the year of the last entry (or of b.since while there's none; with neither, this
+ * year for a yearly one). { level, due (Date), last } — level 'due' (red) from then, 'soon' (yellow) b.warn days before,
+ * else 'ok' (green); last = the latest entry (may be missing).
  * Uses nothing outside itself: the phone copy (shared/js/phonecopy.js) embeds it as text.
  */
-export function maintenanceStatus(rows, due, today = new Date()) {
-    const dated = rows.filter(r => /^\d{4}-\d{2}-\d{2}$/.test(r.Date || '')).sort((a, b) => b.Date.localeCompare(a.Date));
-    const done = dated.find(r => r.Date.slice(0, 4) === String(today.getFullYear()));
-    return { level: done ? 'done' : today.getMonth() + 1 >= due.month ? 'due' : 'later', done, last: dated[0] };
+export function maintenanceStatus(rows, b, today = new Date()) {
+    const last = rows.filter(r => /^\d{4}-\d{2}-\d{2}$/.test(r.Date || '')).sort((x, y) => y.Date.localeCompare(x.Date))[0];
+    const every = Math.max(1, Math.round(+b.every) || 1);
+    const from = last?.Date || (/^\d{4}-\d{2}/.test(b.since || '') ? b.since : '');
+    const due = new Date((from ? +from.slice(0, 4) : today.getFullYear() - every) + every, (+b.month || 1) - 1, 1);
+    const day = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    const warnFrom = new Date(due.getFullYear(), due.getMonth(), due.getDate() - (+b.warn || 0));
+    return { level: day >= due ? 'due' : +b.warn > 0 && day >= warnFrom ? 'soon' : 'ok', due, last };
 }

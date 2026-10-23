@@ -92,7 +92,7 @@ export async function collectData(progress = () => {}) {
                 maintenance: a.maintenance ? {
                     columns: house.maintenanceColumns(h).map(c => ({ name: c.name, kind: c.kind })),
                     rows: await house.loadMaintenance(h, a, false),
-                    due: a.due || null,
+                    banner: house.bannerSettings(h, a).show ? house.bannerSettings(h, a) : null, // its due banner (House → ⚙ Settings)
                     note: a.maintenanceNote || '',
                 } : null,
                 photosLabel: a.gallery?.label || 'Photos',
@@ -319,13 +319,15 @@ function viewer(D, ageText, houseAge, appointmentStatus, maintenanceStatus) { //
         if (a.table) return section(`Entries (${a.table.rows.length})`, true, el => records(el, a.table.columns, a.table.rows));
         if (a.projects) return section(`${a.label} (${a.projects.length})`, true, a.projects.length ? a.projects.map(projectHtml).join('') : '<p class="muted">Nothing here yet.</p>');
         const m = a.maintenance;
-        if (m?.due) {
-            const { level, done, last } = maintenanceStatus(m.rows, m.due);
-            const by = new Date(2000, m.due.month - 1, 1).toLocaleString('en-US', { month: 'long' });
-            main.insertAdjacentHTML('beforeend', level === 'done'
-                ? `<div class="banner ok"><b>${esc(m.due.what)} done this year:</b> ${esc(showDate(done.Date))}${done.Description ? ` — ${esc(done.Description)}` : ''}</div>`
-                : `<div class="banner ${level === 'due' ? 'bad' : 'ok'}"><b>${esc(m.due.what)} ${level === 'due' ? 'is due' : `is due by ${by}`}.</b>
-                    Nothing logged yet this year.${last ? ` Last done ${esc(showDate(last.Date))}.` : ''}</div>`);
+        if (m?.banner) { // like House's (views/settings.js maintenanceBanner): red once due, yellow when it's coming up, else green
+            const b = m.banner, { level, due, last } = maintenanceStatus(m.rows, b);
+            const by = due.toLocaleString('en-US', { month: 'long', year: 'numeric' });
+            const since = b.since ? new Date(+b.since.slice(0, 4), +b.since.slice(5, 7) - 1, 1).toLocaleString('en-US', { month: 'short', year: 'numeric' }) : '';
+            const before = last ? `Last done ${esc(showDate(last.Date))}` : since ? `Nothing logged yet; counting from ${esc(since)}` : 'Nothing logged yet';
+            main.insertAdjacentHTML('beforeend', level === 'due' ? `<div class="banner bad"><b>${esc(b.what)} is due.</b> ${before} (due by ${by}).</div>`
+                : level === 'soon' ? `<div class="banner soon"><b>${esc(b.what)} is due by ${by}.</b> ${before}.</div>`
+                : last ? `<div class="banner ok"><b>${esc(b.what)} done ${esc(showDate(last.Date))}</b>${last.Description ? ` — ${esc(last.Description)}` : ''}. Next due by ${by}.</div>`
+                : `<div class="banner ok"><b>${esc(b.what)} is due by ${by}.</b> ${before}.</div>`);
         }
         for (const b of a.boxes) section(a.boxes.length > 1 ? b.label : 'Information', true, infoList(withAge(b.info)));
         if (a.photos.length) section(`${a.photosLabel} (${a.photos.length})`, false, gallery(a.photos));

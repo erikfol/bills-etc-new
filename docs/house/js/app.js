@@ -1,13 +1,13 @@
 // House: one page per house (#<id>, its tabs #<id>/financing, /heating etc.; a tab's pills #<id>/heating/mini-split
-// etc., its first pill being #<id>/heating; a project's page #<id>/projects/<project id>) plus "＋ Add house" (#new);
-// the menu is built from house.json.
+// etc., its first pill being #<id>/heating; a project's page #<id>/projects/<project id>; ⚙ Settings #<id>/settings)
+// plus "＋ Add house" (#new); the menu is built from house.json.
 // Uses the same folder as Bills Etc (the browser remembers it for the whole site); the data lives in inputs/house/.
 import * as fs from '../../bills-etc/js/fs.js';
 import { esc } from '../../bills-etc/js/util.js';
 import { refreshStatus, askForFolder } from '../../shared/js/folder.js';
 import { setupPhoneCopy } from '../../shared/js/phonecopy.js';
 import { loadHouses, AREAS, houseProjects } from './house.js';
-import { renderHouse, renderNewHouse, hasUnsavedEdits, forget } from './views/house.js';
+import { renderHouse, renderHouseSettings, renderNewHouse, hasUnsavedEdits, forget } from './views/house.js';
 
 const viewEl = document.getElementById('view');
 const navEl = document.getElementById('nav');
@@ -41,14 +41,16 @@ async function route(force = false) {
         const list = await loadHouses();
         const [want, part, sub] = hash.slice(1).split('/');
         const h = list.find(x => x.id === want) || (want === 'new' ? null : list[0]);
+        const settings = !!h && h.id === want && part === 'settings';
         const tab = h && h.id === want ? AREAS.find(a => a.id === part) : null;
         const page = tab?.parts ? tab.parts.find(p => p.id === sub) || tab.parts[0] : tab;
         const project = page?.projects ? houseProjects(h).find(p => p.id === sub) : null;
         currentHash = '#' + (h ? h.id : 'new') + (tab ? '/' + tab.id : '') + (page && page !== tab && page !== tab.parts[0] ? '/' + page.id : '')
-            + (project ? '/' + project.id : '');
+            + (project ? '/' + project.id : '') + (settings ? '/settings' : '');
         if (location.hash !== currentHash) history.replaceState(null, '', currentHash);
         drawNav(list, h ? h.id : 'new');
-        if (h) await renderHouse(viewEl, list, h, listChanged, tab, page, project);
+        if (h && settings) await renderHouseSettings(viewEl, list, h);
+        else if (h) await renderHouse(viewEl, list, h, listChanged, tab, page, project);
         else renderNewHouse(viewEl, list, listChanged);
     } catch (e) {
         console.error(e);
