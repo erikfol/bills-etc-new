@@ -1,4 +1,4 @@
-// Health: General Health / Dental / Eye pages (#general, #dental, #eye). Uses the same folder as Bills Etc
+// Health: General Health / Dental / Eye / HSA pages (#general, #dental, #eye, #hsa). Uses the same folder as Bills Etc
 // (the browser remembers it for the whole site); the records live in inputs/health/.
 import * as fs from '../../bills-etc/js/fs.js';
 import { esc } from '../../bills-etc/js/util.js';

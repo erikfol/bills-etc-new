@@ -1,4 +1,4 @@
-// One Health section (General Health, Dental, Eye): the shared record table over the section's CSV.
+// One Health section (General Health, Dental, Eye, HSA): the shared record table over the section's CSV.
 import { esc } from '../../../bills-etc/js/util.js';
 import { recordTable, closeFilterMenu } from '../../../shared/js/recordtable.js';
 import { loadRecords, saveRecords, loadLocations, saveLocations } from '../records.js';

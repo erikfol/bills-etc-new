@@ -31,6 +31,15 @@ export const SECTIONS = [
         { name: 'Out of Pocket', kind: 'money' },
         { name: 'Additional Notes', kind: 'text' },
     ] },
+    { id: 'hsa', label: 'Health Savings Account (HSA)', path: `${HEALTH_DIR}/hsa.csv`, columns: [
+        { name: 'Date', kind: 'date' },
+        { name: 'Type', kind: 'suggest', suggestions: ['Contribution', 'Employer contribution', 'Payment', 'Reimbursement', 'Interest', 'Fee'] },
+        { name: 'Description', kind: 'text' },
+        { name: 'Location', kind: 'suggest' }, // who was paid (doctor, dentist, pharmacy); blank for money put in
+        { name: 'Money In', kind: 'money' },
+        { name: 'Money Out', kind: 'money' },
+        { name: 'Additional Notes', kind: 'text' },
+    ] },
 ];
 
 const names = section => section.columns.map(c => c.name);
