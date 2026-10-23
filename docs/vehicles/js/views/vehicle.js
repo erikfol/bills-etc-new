@@ -1,6 +1,6 @@
 // One vehicle's page, in three tabs: Overview (information, current mileage for cars, service places, photos,
-// maintenance table), Guides
-// (long how-to notes with reference images) and Notes (a dated log). Also the "Add vehicle" page.
+// maintenance table), Guides (long how-to notes with reference images) and Notes (a dated log). Also the "Add vehicle"
+// page.
 import { esc, toast } from '../../../bills-etc/js/util.js';
 import { recordTable, closeFilterMenu, showDate } from '../../../shared/js/recordtable.js';
 import { infoBox } from '../../../shared/js/infobox.js';
@@ -10,7 +10,7 @@ import { renderGuides, guidesUnsaved, forgetGuides } from './guides.js';
 import { renderNotes, notesUnsaved, forgetNotes } from './notes.js';
 import {
     TYPES, VEHICLES_PATH, saveVehicles, photosDir, newVehicle, maintenancePath, maintenanceColumns, loadMaintenance, saveMaintenance,
-    hasMileageLog, mileagePath, MILEAGE_COLUMNS, loadMileage, saveMileage, latestMileage,
+    hasMileageLog, mileagePath, MILEAGE_COLUMNS, loadMileage, saveMileage, latestMileage, mileageRate,
 } from '../vehicles.js';
 
 let table = null;
@@ -23,13 +23,18 @@ export const forget = () => {
     table = null; mileage = null; info = null; closeFilterMenu(); releaseGalleries(); forgetPlaces(); forgetGuides(); forgetNotes();
 };
 
-/** "52,340 miles · Oct 23, 2026" from the newest reading in the log. */
-const currentMileage = rows => {
+/** The newest reading in the log (64,870 miles, Oct 23, 2026) and the miles a month and a year it works out to. */
+const currentMileage = (v, rows) => {
     const r = latestMileage(rows);
     if (!r) return '<p class="muted">Nothing logged yet. Press Edit to add a reading.</p>';
-    const n = Number(r.Mileage);
-    return `<p class="current-mileage"><strong>${esc(Number.isNaN(n) ? r.Mileage : n.toLocaleString('en-US'))} miles</strong>
-        <span class="muted">· ${esc(showDate(r.Date))}</span></p>`;
+    const rate = mileageRate(v, rows);
+    const n = x => (Number.isNaN(Number(x)) ? String(x) : Number(x).toLocaleString('en-US'));
+    const stat = (label, value, sub) => `<div class="info-item"><dt>${label}</dt><dd class="mileage-stat">${esc(value)}</dd>${
+        sub ? `<dd class="muted mileage-sub">${esc(sub)}</dd>` : ''}</div>`;
+    return `<dl class="info-grid mileage-stats">${stat('Latest reading', `${n(r.Mileage)} miles`, showDate(r.Date))}${rate.why
+        ? stat('Miles per month / year', '—', rate.why)
+        : stat('Miles per month', `≈ ${n(rate.perMonth)}`) + stat('Miles per year', `≈ ${n(rate.perYear)}`)}</dl>${rate.why ? ''
+        : `<p class="muted mileage-sub">Averages from the purchase (${esc(rate.from)}) to the latest reading.</p>`}`;
 };
 
 /** The tabs under a vehicle's name. */
@@ -112,11 +117,11 @@ export async function renderVehicle(el, list, v, onListChanged, part) {
     });
     if (miles) {
         const now = el.querySelector('#miles-now');
-        now.innerHTML = currentMileage(miles);
+        now.innerHTML = currentMileage(v, miles);
         mileage = recordTable(el.querySelector('#miles'), {
             columns: MILEAGE_COLUMNS,
             rows: miles,
-            save: async rows => { await saveMileage(v, rows); now.innerHTML = currentMileage(rows); },
+            save: async rows => { await saveMileage(v, rows); now.innerHTML = currentMileage(v, rows); },
         });
     }
     renderPlaces(el.querySelector('#places'), list, v);

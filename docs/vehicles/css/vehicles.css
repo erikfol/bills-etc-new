@@ -16,7 +16,11 @@
 .info-edit td.remove { width: 1%; white-space: nowrap; }
 .info-edit td.remove button { padding: 3px 9px; }
 .new-vehicle { display: flex; flex-direction: column; gap: 12px; max-width: 420px; }
-.current-mileage { font-size: 1.15em; margin: 0 0 4px; } /* the newest reading, above the mileage log */
+/* Current mileage: the newest reading and the miles a month and a year, above the mileage log */
+.mileage-stats { margin-bottom: 6px; }
+.info-item dd.mileage-stat { font-size: 1.25em; font-weight: 600; }
+.mileage-sub { font-size: 0.85em; margin-top: 2px; }
+p.mileage-sub { margin: 0 0 10px; }
 .mileage-log .record-table, .mileage-log .table-wrap { max-width: 460px; } /* just Date and Mileage */
 
 /* Photos */

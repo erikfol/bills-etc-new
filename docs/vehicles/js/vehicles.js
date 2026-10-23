@@ -112,3 +112,34 @@ export const saveMileage = (v, rows) => saveRows(mileagePath(v), MILEAGE_COLUMNS
 /** The newest dated reading ({ Date, Mileage }), or null. */
 export const latestMileage = rows => rows.filter(r => /^\d{4}-\d{2}-\d{2}$/.test(r.Date || '') && r.Mileage !== '')
     .sort((a, b) => b.Date.localeCompare(a.Date))[0] || null;
+
+const infoValue = (v, label) => (v.info || []).find(f => f.label.trim().toLowerCase() === label.toLowerCase())?.value.trim() || '';
+const milesOf = x => Number(String(x ?? '').replace(/,/g, '').trim() || NaN);
+
+/** A day typed into the information ('2018-09-05', 'Sep 05 2018'), or null. */
+function parseDay(text) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text);
+    const d = m ? new Date(+m[1], +m[2] - 1, +m[3]) : new Date(text);
+    return text && !Number.isNaN(d.getTime()) ? d : null;
+}
+
+/**
+ * Miles put on a month and a year, on average, from the purchase (the information's Purchase Date, at 0 miles — bought
+ * new — or its Purchase Mileage if it has one) to the newest reading: { perMonth, perYear, from: 'bought new, Sep 5,
+ * 2018' }, { why } when it can't be worked out, or null with no readings.
+ */
+export function mileageRate(v, rows) {
+    const last = latestMileage(rows);
+    if (!last) return null;
+    const bought = parseDay(infoValue(v, 'Purchase Date'));
+    if (!bought) return { why: 'Needs a Purchase Date in Vehicle information' };
+    const start = milesOf(infoValue(v, 'Purchase Mileage')) || 0;
+    const [y, m, d] = last.Date.split('-').map(Number);
+    const days = (Date.UTC(y, m - 1, d) - Date.UTC(bought.getFullYear(), bought.getMonth(), bought.getDate())) / 864e5;
+    const miles = milesOf(last.Mileage) - start;
+    if (Number.isNaN(miles) || days < 28) return { why: 'Needs a reading at least a month after the purchase' };
+    const perYear = miles / days * 365.25;
+    const day = bought.toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    return { perMonth: Math.round(perYear / 12), perYear: Math.round(perYear),
+        from: start ? `bought at ${start.toLocaleString('en-US')} miles, ${day}` : `bought new, ${day}` };
+}

@@ -8,6 +8,7 @@ import * as fs from '../../bills-etc/js/fs.js';
 import { esc, toast } from '../../bills-etc/js/util.js';
 import {
     loadVehicles, loadMaintenance, maintenanceColumns, photosDir, guideDir, noteDir, TYPES, hasMileageLog, loadMileage, MILEAGE_COLUMNS,
+    latestMileage, mileageRate,
 } from '../../vehicles/js/vehicles.js';
 import { SECTIONS, loadRecords } from '../../health/js/records.js';
 import * as house from '../../house/js/house.js';
@@ -59,12 +60,13 @@ export async function collectData(progress = () => {}) {
         const notes = [];
         for (const n of v.notes || []) notes.push({ date: n.date || '', title: n.title || '', text: n.text || '', images: await images(noteDir(v, n), tick) });
         notes.sort((a, b) => b.date.localeCompare(a.date));
+        const miles = hasMileageLog(v) ? await loadMileage(v, false) : null;
         vehicles.push({
             name: v.name,
             type: TYPES[v.type]?.label || 'Vehicle',
             info: v.info || [],
             places: v.places || [],
-            mileage: hasMileageLog(v) ? { columns: MILEAGE_COLUMNS, rows: await loadMileage(v, false) } : null,
+            mileage: miles && { columns: MILEAGE_COLUMNS, rows: miles, latest: latestMileage(miles), rate: mileageRate(v, miles) },
             maintenance: { columns: maintenanceColumns(v).map(c => ({ name: c.name, kind: c.kind })), rows: await loadMaintenance(v, false) },
             photos: await images(photosDir(v), tick),
             guides,
@@ -269,10 +271,12 @@ function viewer(D, ageText, houseAge, appointmentStatus, maintenanceStatus) { //
     function drawVehicle(v) {
         main.insertAdjacentHTML('beforeend', `<h1>${esc(v.name)}</h1><p class="muted">${esc(v.type)}</p>`);
         section('Information', true, infoList(v.info));
-        if (v.mileage) section('Current mileage', true, el => { // the newest dated reading, then the log
-            const r = v.mileage.rows.filter(x => /^\d{4}-\d{2}-\d{2}$/.test(x.Date || '') && x.Mileage !== '').sort((a, b) => b.Date.localeCompare(a.Date))[0];
-            el.innerHTML = `<p>${r ? `<b>${esc(Number.isNaN(num(r.Mileage)) ? r.Mileage : num(r.Mileage).toLocaleString('en-US'))} miles</b> <span class="muted">· ${esc(showDate(r.Date))}</span>`
-                : '<span class="muted">Nothing logged yet.</span>'}</p><div></div>`;
+        if (v.mileage) section('Current mileage', true, el => { // the newest reading and the miles a month and a year it works out to, then the log
+            const { latest: r, rate } = v.mileage, n = x => (Number.isNaN(num(x)) ? String(x) : num(x).toLocaleString('en-US'));
+            el.innerHTML = `${r ? `<p><b>${esc(n(r.Mileage))} miles</b> <span class="muted">· ${esc(showDate(r.Date))}</span></p>${rate.why
+                ? `<p class="muted">Miles per month / year: ${esc(rate.why)}</p>`
+                : `<p>≈ <b>${esc(n(rate.perMonth))}</b> miles a month · ≈ <b>${esc(n(rate.perYear))}</b> a year <span class="muted">(since ${esc(rate.from)})</span></p>`}`
+                : '<p class="muted">Nothing logged yet.</p>'}<div></div>`;
             records(el.lastElementChild, v.mileage.columns, v.mileage.rows);
         });
         if (v.places.length) section(`Service places (${v.places.length})`, false, placesHtml(v.places));
