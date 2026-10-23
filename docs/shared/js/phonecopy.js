@@ -93,6 +93,7 @@ export async function collectData(progress = () => {}) {
                     columns: house.maintenanceColumns(h).map(c => ({ name: c.name, kind: c.kind })),
                     rows: await house.loadMaintenance(h, a, false),
                     due: a.due || null,
+                    note: a.maintenanceNote || '',
                 } : null,
                 photosLabel: a.gallery?.label || 'Photos',
                 photos: await images(house.photosDir(h, a), tick),
@@ -329,7 +330,11 @@ function viewer(D, ageText, houseAge, appointmentStatus, maintenanceStatus) { //
         for (const b of a.boxes) section(a.boxes.length > 1 ? b.label : 'Information', true, infoList(withAge(b.info)));
         if (a.photos.length) section(`${a.photosLabel} (${a.photos.length})`, false, gallery(a.photos));
         if (a.improvements?.length) section(`Future improvements (${a.improvements.length})`, false, cardsHtml(a.improvements));
-        if (m) section(`Maintenance (${m.rows.length})`, true, el => records(el, m.columns, m.rows));
+        if (m) section(`Maintenance (${m.rows.length})`, true, el => {
+            if (!m.note) return records(el, m.columns, m.rows);
+            el.innerHTML = `<p class="section-note">📌 ${esc(m.note)}</p><div></div>`;
+            records(el.lastElementChild, m.columns, m.rows);
+        });
         if (a.records) section(`Records (${a.records.rows.length})`, true, el => records(el, a.records.columns, a.records.rows));
     }
 
@@ -386,6 +391,7 @@ input, select { font:inherit; font-size:15px; padding:8px 10px; border:1px solid
 .sub { font-size:.88em; color:var(--muted); }
 .desc { margin-top:2px; white-space:pre-wrap; }
 .note { margin-top:4px; font-size:.88em; color:var(--muted); white-space:pre-wrap; }
+.section-note { margin:0 0 10px; padding:8px 12px; border-left:3px solid var(--accent); background:var(--tag); border-radius:0 6px 6px 0; }
 .total { text-align:right; margin-top:6px; }
 .place { border-top:1px solid var(--line); padding:10px 0; }
 .place:first-child { border-top:0; padding-top:0; }

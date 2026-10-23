@@ -20,6 +20,7 @@ export const FIELDS = ['Address', 'Year Built', 'Style', 'Bedrooms', 'Bathrooms'
 // improvements: the page also has a Future improvements section (views/improvements.js).
 // maintenance: the page also has a Maintenance table; with `due`, a banner at the top that's green once there's an
 // entry dated this year, red from the 1st of due.month (1 = January) while there's none, and green before then.
+// maintenanceNote: a line shown at the top of the Maintenance section.
 // boxes: several information boxes instead of one [{ key, label, fields }], each kept under house.areas[<id>][key].
 // gallery: { label, noun } for the photos section (default Photos). records: false = no records table.
 // A tab or part with `table` (its columns) is just that one table, kept in <house>-<its id>.csv. The tab with
@@ -57,15 +58,18 @@ export const AREAS = [
         { id: 'oil-furnace', label: 'Oil furnace', icon: '🔥',
             fields: ['Heating System', 'Fuel', 'Boiler / Furnace Make', 'Model', 'Installed', 'Oil Tank Size', 'Thermostats', 'Notes'],
             actions: ['Boiler / furnace service', 'Oil filter', 'Nozzle', 'Chimney cleaning', 'Thermostat', 'Repair'],
-            maintenance: true, due: { what: 'Oil furnace maintenance', month: 9 } },
+            maintenance: true, due: { what: 'Oil furnace maintenance', month: 9 },
+            maintenanceNote: 'Must be cleaned every year by professional' },
         { id: 'mini-split', label: 'Mini-split', icon: '❄️',
             fields: ['Cooling System', 'Mini-split Units', 'Installed', 'Filter Size', 'Notes'],
             actions: ['Mini-split cleaning', 'Filter change', 'Repair'],
-            maintenance: true, due: { what: 'Mini-split maintenance', month: 5 } },
+            maintenance: true, due: { what: 'Mini-split maintenance', month: 5 },
+            maintenanceNote: 'Must be cleaned every year by professional' },
         { id: 'water-heater', label: 'Water heater', icon: '🚿',
             fields: ['Hot Water', 'Water Heater Tank', 'Installed', 'Notes'],
             actions: ['Flush tank', 'Element / thermostat', 'Anode rod', 'Replace', 'Repair'],
-            maintenance: true, improvements: true },
+            maintenance: true, improvements: true,
+            maintenanceNote: 'Must be drained every year, can be done DIY' },
     ] },
     { id: 'septic', label: 'Septic',
         fields: ['Tank Size', 'Tank Material', 'Tank Location', 'Leach Field Location', 'Installed', 'Pump Every', 'Notes'],

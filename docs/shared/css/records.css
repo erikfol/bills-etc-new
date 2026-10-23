@@ -14,6 +14,8 @@
 .record-table .changed { background: #fffbea !important; border-color: #f5e1a4 !important; }
 .record-table td.remove, .record-table td.move { width: 1%; white-space: nowrap; }
 .record-table td.remove button { padding: 3px 9px; }
+/* A standing note at the top of a section (House maintenance: how often it's due and who does it) */
+.section-note { margin: 0 0 12px; padding: 8px 12px; border-left: 3px solid var(--blue); background: var(--head); border-radius: 0 6px 6px 0; }
 /* ↑ ↓ buttons in edit lists (shared/js/infobox.js), first in each row of a table being edited */
 .move-btns { display: inline-flex; gap: 4px; margin-right: 6px; vertical-align: middle; }
 .move-btns button { padding: 3px 9px; }

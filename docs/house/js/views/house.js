@@ -128,7 +128,8 @@ async function renderArea(el, list, h, tab, a) {
         ${boxes.map((b, i) => section(b.label, `info-${i}`)).join('')}
         ${section(gallery.label, 'photos')}
         ${a.improvements ? section('Future improvements', 'improvements') : ''}
-        ${a.maintenance ? section('Maintenance', 'maintenance') : ''}
+        ${a.maintenance ? `<section><h2>Maintenance</h2>${a.maintenanceNote ? `<p class="section-note">📌 ${esc(a.maintenanceNote)}</p>` : ''}
+            <div id="maintenance"></div></section>` : ''}
         ${hasRecords ? section('Records', 'records') : ''}`;
     const drawBanner = r => { if (a.due) el.querySelector('#maint-banner').innerHTML = maintenanceBanner(a, r); };
     drawBanner(maintRows);
