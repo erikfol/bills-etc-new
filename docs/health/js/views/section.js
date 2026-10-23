@@ -1,6 +1,6 @@
 // One Health section (General Health, Dental, Eye, HSA): the shared record table over the section's CSV, and for a
-// section with an account (the HSA) a box above it with the account's title, sign-in hint and website, like the
-// header of a Loan/CC card.
+// section with an account (the HSA) the account's title, sign-in hint and website above the table in the same box,
+// like the header of a Loan/CC card.
 import { esc, toast } from '../../../bills-etc/js/util.js';
 import { recordTable, closeFilterMenu } from '../../../shared/js/recordtable.js';
 import { loadRecords, saveRecords, loadLocations, saveLocations, loadAccount, saveAccount } from '../records.js';
@@ -18,8 +18,7 @@ export async function renderSection(el, section) {
     el.innerHTML = `
         <h1 class="page">${esc(section.label)}</h1>
         <p class="lead">Saved in <code>${esc(section.path)}</code>${account ? ` (the account in <code>${esc(section.account)}</code>)` : ''} in your folder.</p>
-        ${account ? '<section id="account"></section>' : ''}
-        <section id="records"></section>`;
+        <section>${account ? '<div id="account" class="acct-box"></div>' : ''}<div id="records"></div></section>`;
     if (account) renderAccount(el.querySelector('#account'), section, account);
     const location = { list: locations, noun: 'location', add: name => saveLocations([...location.list, name]) };
     table = recordTable(el.querySelector('#records'), {

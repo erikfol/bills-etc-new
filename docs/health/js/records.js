@@ -35,6 +35,7 @@ export const SECTIONS = [
         { name: 'Date', kind: 'date' },
         { name: 'Type', kind: 'suggest', suggestions: ['Deposit', 'Charge'] }, // or anything typed in
         { name: 'Description', kind: 'text' },
+        { name: 'Amount', kind: 'money' },
         { name: 'Additional Notes', kind: 'text' },
     ] },
 ];

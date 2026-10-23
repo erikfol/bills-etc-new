@@ -42,5 +42,6 @@ td.move .move-btns { margin-right: 0; }
     padding: 10px 12px; box-shadow: 0 6px 20px rgba(0,0,0,0.15); font-size: 0.9em;
 }
 
-/* Health → HSA: the account's sign-in hint under its title (like a Loan/CC card's notes) */
+/* Health → HSA: the account's title, sign-in hint (like a Loan/CC card's notes) and link, above the table in its box */
+.acct-box { margin-bottom: 16px; }
 .acct-hint { color: var(--muted); margin: -4px 0 0; overflow-wrap: anywhere; }
