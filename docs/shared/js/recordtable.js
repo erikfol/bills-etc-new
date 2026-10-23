@@ -174,10 +174,10 @@ export function recordTable(container, { columns: cols, rows: initial, save, cho
         };
         const lists = editCols.filter(c => c.kind === 'suggest').map(c =>
             `<datalist id="${dlId(c)}">${suggestions(c).map(v => `<option value="${esc(v)}">`).join('')}</datalist>`).join('');
-        tbl.innerHTML = `<thead><tr>${editCols.map(c => `<th>${esc(c.name)}${c.kind === 'end' ? ' <span class="muted">(blank = ongoing)</span>' : ''}</th>`).join('')}<th>${lists}</th></tr></thead>
-            <tbody>${state.draft.map((r, i) => `<tr>${editCols.map(c => `<td>${input(c, i, r[c.name])}</td>`).join('')}
-                <td class="remove">${reorder ? moveButtons() : ''}<button type="button" class="danger" data-remove="${i}" title="Remove this entry" aria-label="Remove this entry">✕</button></td></tr>`).join('')
-                || `<tr><td colspan="${editCols.length + 1}" class="muted">No entries. Press ＋ Add entry.</td></tr>`}</tbody>`;
+        tbl.innerHTML = `<thead><tr>${reorder ? '<th></th>' : ''}${editCols.map(c => `<th>${esc(c.name)}${c.kind === 'end' ? ' <span class="muted">(blank = ongoing)</span>' : ''}</th>`).join('')}<th>${lists}</th></tr></thead>
+            <tbody>${state.draft.map((r, i) => `<tr>${reorder ? `<td class="move">${moveButtons()}</td>` : ''}${editCols.map(c => `<td>${input(c, i, r[c.name])}</td>`).join('')}
+                <td class="remove"><button type="button" class="danger" data-remove="${i}" title="Remove this entry" aria-label="Remove this entry">✕</button></td></tr>`).join('')
+                || `<tr><td colspan="${editCols.length + (reorder ? 2 : 1)}" class="muted">No entries. Press ＋ Add entry.</td></tr>`}</tbody>`;
         markChanged();
     };
 
