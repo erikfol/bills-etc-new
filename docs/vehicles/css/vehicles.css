@@ -16,6 +16,8 @@
 .info-edit td.remove { width: 1%; white-space: nowrap; }
 .info-edit td.remove button { padding: 3px 9px; }
 .new-vehicle { display: flex; flex-direction: column; gap: 12px; max-width: 420px; }
+.current-mileage { font-size: 1.15em; margin: 0 0 4px; } /* the newest reading, above the mileage log */
+.mileage-log .record-table, .mileage-log .table-wrap { max-width: 460px; } /* just Date and Mileage */
 
 /* Photos */
 .photo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; }

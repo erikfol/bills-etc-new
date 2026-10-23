@@ -86,15 +86,29 @@ export const maintenanceColumns = v => [
     { name: 'Additional Notes', kind: 'text' },
 ];
 
-export async function loadMaintenance(v, track = true) {
-    const text = track ? await readTracked(maintenancePath(v)) : await fs.readText(maintenancePath(v));
+/** A CSV's rows with just these columns ([] if there's no file yet). */
+async function loadRows(path, cols, track) {
+    const text = track ? await readTracked(path) : await fs.readText(path);
     if (text === null) return [];
-    const names = maintenanceColumns(v).map(c => c.name);
+    const names = cols.map(c => c.name);
     return parseCSV(text).rows.map(r => Object.fromEntries(names.map(c => [c, r[c] ?? ''])));
 }
 
-export async function saveMaintenance(v, rows) {
-    const cols = maintenanceColumns(v);
-    await writeTracked(maintenancePath(v), toCSV(cols.map(c => c.name), rows));
+async function saveRows(path, cols, rows) {
+    await writeTracked(path, toCSV(cols.map(c => c.name), rows));
     window.dispatchEvent(new Event('data-saved')); // the phone copy (shared/js/phonecopy.js) updates itself
 }
+
+export const loadMaintenance = (v, track = true) => loadRows(maintenancePath(v), maintenanceColumns(v), track);
+export const saveMaintenance = (v, rows) => saveRows(maintenancePath(v), maintenanceColumns(v), rows);
+
+// Cars also keep a mileage log (Date, Mileage) whenever it's read off the dash; the latest is the current mileage.
+export const hasMileageLog = v => v.type === 'car';
+export const mileagePath = v => `${VEHICLES_DIR}/${v.id}-mileage.csv`;
+export const MILEAGE_COLUMNS = [{ name: 'Date', kind: 'date' }, { name: 'Mileage', kind: 'number' }];
+export const loadMileage = (v, track = true) => loadRows(mileagePath(v), MILEAGE_COLUMNS, track);
+export const saveMileage = (v, rows) => saveRows(mileagePath(v), MILEAGE_COLUMNS, rows);
+
+/** The newest dated reading ({ Date, Mileage }), or null. */
+export const latestMileage = rows => rows.filter(r => /^\d{4}-\d{2}-\d{2}$/.test(r.Date || '') && r.Mileage !== '')
+    .sort((a, b) => b.Date.localeCompare(a.Date))[0] || null;

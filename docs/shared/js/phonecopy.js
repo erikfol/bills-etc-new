@@ -1,12 +1,14 @@
 // "📱 Phone copy" (Vehicles, House, Health and Pets top bars): writes one self-contained, read-only page — every vehicle
-// (information, service places, maintenance, photos, guides, notes), every house (information, service companies,
-// photos, and per area information, photos, maintenance with its due banners, records; Updates; Projects), every
+// (information, current mileage for cars, service places, maintenance, photos, guides, notes), every house
+// (information, service companies, photos, and per area information, photos, maintenance with its due banners, records; Updates; Projects), every
 // Health section and every pet (information, future appointments, photos, records) — into a folder you pick once,
 // e.g. in Google Drive so it syncs to your phone. Photos are shrunk and embedded, so the page is a single file that
 // opens offline (Android hands Chrome a single file, so a page can't load anything from next to itself).
 import * as fs from '../../bills-etc/js/fs.js';
 import { esc, toast } from '../../bills-etc/js/util.js';
-import { loadVehicles, loadMaintenance, maintenanceColumns, photosDir, guideDir, noteDir, TYPES } from '../../vehicles/js/vehicles.js';
+import {
+    loadVehicles, loadMaintenance, maintenanceColumns, photosDir, guideDir, noteDir, TYPES, hasMileageLog, loadMileage, MILEAGE_COLUMNS,
+} from '../../vehicles/js/vehicles.js';
 import { SECTIONS, loadRecords } from '../../health/js/records.js';
 import * as house from '../../house/js/house.js';
 import { loadPets, ageText, RECORD_COLUMNS, loadRecords as loadPetRecords, photosDir as petPhotosDir,
@@ -62,6 +64,7 @@ export async function collectData(progress = () => {}) {
             type: TYPES[v.type]?.label || 'Vehicle',
             info: v.info || [],
             places: v.places || [],
+            mileage: hasMileageLog(v) ? { columns: MILEAGE_COLUMNS, rows: await loadMileage(v, false) } : null,
             maintenance: { columns: maintenanceColumns(v).map(c => ({ name: c.name, kind: c.kind })), rows: await loadMaintenance(v, false) },
             photos: await images(photosDir(v), tick),
             guides,
@@ -266,6 +269,12 @@ function viewer(D, ageText, houseAge, appointmentStatus, maintenanceStatus) { //
     function drawVehicle(v) {
         main.insertAdjacentHTML('beforeend', `<h1>${esc(v.name)}</h1><p class="muted">${esc(v.type)}</p>`);
         section('Information', true, infoList(v.info));
+        if (v.mileage) section('Current mileage', true, el => { // the newest dated reading, then the log
+            const r = v.mileage.rows.filter(x => /^\d{4}-\d{2}-\d{2}$/.test(x.Date || '') && x.Mileage !== '').sort((a, b) => b.Date.localeCompare(a.Date))[0];
+            el.innerHTML = `<p>${r ? `<b>${esc(Number.isNaN(num(r.Mileage)) ? r.Mileage : num(r.Mileage).toLocaleString('en-US'))} miles</b> <span class="muted">· ${esc(showDate(r.Date))}</span>`
+                : '<span class="muted">Nothing logged yet.</span>'}</p><div></div>`;
+            records(el.lastElementChild, v.mileage.columns, v.mileage.rows);
+        });
         if (v.places.length) section(`Service places (${v.places.length})`, false, placesHtml(v.places));
         section(`Maintenance (${v.maintenance.rows.length})`, true, el => records(el, v.maintenance.columns, v.maintenance.rows));
         if (v.notes.length) section(`Notes (${v.notes.length})`, false, el => {

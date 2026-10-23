@@ -1,7 +1,8 @@
-// One vehicle's page, in three tabs: Overview (information, service places, photos, maintenance table), Guides
+// One vehicle's page, in three tabs: Overview (information, current mileage for cars, service places, photos,
+// maintenance table), Guides
 // (long how-to notes with reference images) and Notes (a dated log). Also the "Add vehicle" page.
 import { esc, toast } from '../../../bills-etc/js/util.js';
-import { recordTable, closeFilterMenu } from '../../../shared/js/recordtable.js';
+import { recordTable, closeFilterMenu, showDate } from '../../../shared/js/recordtable.js';
 import { infoBox } from '../../../shared/js/infobox.js';
 import { renderGallery, releaseGalleries } from './gallery.js';
 import { renderPlaces, placesUnsaved, forgetPlaces } from './places.js';
@@ -9,14 +10,27 @@ import { renderGuides, guidesUnsaved, forgetGuides } from './guides.js';
 import { renderNotes, notesUnsaved, forgetNotes } from './notes.js';
 import {
     TYPES, VEHICLES_PATH, saveVehicles, photosDir, newVehicle, maintenancePath, maintenanceColumns, loadMaintenance, saveMaintenance,
+    hasMileageLog, mileagePath, MILEAGE_COLUMNS, loadMileage, saveMileage, latestMileage,
 } from '../vehicles.js';
 
 let table = null;
+let mileage = null; // the mileage log (cars)
 let info = null; // the information box
 
-export const hasUnsavedEdits = () => !!table?.hasUnsavedEdits() || !!info?.hasUnsavedEdits()
+export const hasUnsavedEdits = () => !!table?.hasUnsavedEdits() || !!mileage?.hasUnsavedEdits() || !!info?.hasUnsavedEdits()
     || placesUnsaved() || guidesUnsaved() || notesUnsaved();
-export const forget = () => { table = null; info = null; closeFilterMenu(); releaseGalleries(); forgetPlaces(); forgetGuides(); forgetNotes(); };
+export const forget = () => {
+    table = null; mileage = null; info = null; closeFilterMenu(); releaseGalleries(); forgetPlaces(); forgetGuides(); forgetNotes();
+};
+
+/** "52,340 miles · Oct 23, 2026" from the newest reading in the log. */
+const currentMileage = rows => {
+    const r = latestMileage(rows);
+    if (!r) return '<p class="muted">Nothing logged yet. Press Edit to add a reading.</p>';
+    const n = Number(r.Mileage);
+    return `<p class="current-mileage"><strong>${esc(Number.isNaN(n) ? r.Mileage : n.toLocaleString('en-US'))} miles</strong>
+        <span class="muted">· ${esc(showDate(r.Date))}</span></p>`;
+};
 
 /** The tabs under a vehicle's name. */
 const tabs = (v, part) => {
@@ -47,15 +61,21 @@ export async function renderVehicle(el, list, v, onListChanged, part) {
     }
     el.innerHTML = '<p class="muted">Loading…</p>';
     const rows = await loadMaintenance(v);
+    const miles = hasMileageLog(v) ? await loadMileage(v) : null;
     el.innerHTML = `
         <h1 class="page" id="v-name"></h1>
         <p class="lead">${esc(TYPES[v.type]?.label || 'Vehicle')} · information in <code>${esc(VEHICLES_PATH)}</code>,
-            maintenance in <code>${esc(maintenancePath(v))}</code>.</p>
+            ${miles ? `mileage in <code>${esc(mileagePath(v))}</code>, ` : ''}maintenance in <code>${esc(maintenancePath(v))}</code>.</p>
         ${tabs(v, part)}
         <section>
             <h2>Vehicle information</h2>
             <div id="info"></div>
         </section>
+        ${miles ? `<section>
+            <h2>Current mileage</h2>
+            <div id="miles-now"></div>
+            <div id="miles" class="mileage-log"></div>
+        </section>` : ''}
         <section>
             <h2>Service places</h2>
             <div id="places"></div>
@@ -90,6 +110,15 @@ export async function renderVehicle(el, list, v, onListChanged, part) {
             onListChanged(list.find(x => x.id !== v.id)?.id || 'new');
         },
     });
+    if (miles) {
+        const now = el.querySelector('#miles-now');
+        now.innerHTML = currentMileage(miles);
+        mileage = recordTable(el.querySelector('#miles'), {
+            columns: MILEAGE_COLUMNS,
+            rows: miles,
+            save: async rows => { await saveMileage(v, rows); now.innerHTML = currentMileage(rows); },
+        });
+    }
     renderPlaces(el.querySelector('#places'), list, v);
     renderGallery(el.querySelector('#photos'), photosDir(v), { noun: 'photo' }).catch(err => {
         el.querySelector('#photos').innerHTML = `<div class="banner bad">Couldn't load photos: ${esc(err.message)}</div>`;
