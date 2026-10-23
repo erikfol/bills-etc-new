@@ -115,7 +115,8 @@ export async function collectData(progress = () => {}) {
     for (const s of SECTIONS) {
         // the account's title and website only: its sign-in hint stays off the phone copy (the file lives on Google Drive)
         const a = s.account ? await loadAccount(s, false) : null;
-        health.push({ label: s.label, columns: s.columns, rows: await loadRecords(s, false),
+        const rows = await loadRecords(s, false);
+        health.push({ label: s.label, columns: s.columns, rows, balance: s.balance ? s.balance(rows) : null,
             account: a && (a.title || a.url) ? { title: a.title || '', linkText: a.linkText || '', url: a.url || '' } : null });
     }
     const pets = [];
@@ -364,9 +365,10 @@ function viewer(D, ageText, houseAge, appointmentStatus, maintenanceStatus) { //
 
     function drawHealth(h) {
         main.insertAdjacentHTML('beforeend', `<h1>${esc(h.label)}</h1>`);
-        const a = h.account;
-        if (a) main.insertAdjacentHTML('beforeend', `<div class="sec acct">${a.title ? `<b>${esc(a.title)}</b>` : ''}
-            ${/^https?:\/\//i.test(a.url) ? `<a href="${esc(a.url)}" target="_blank" rel="noopener">${esc(a.linkText || 'Website')} ↗</a>` : ''}</div>`);
+        const a = h.account || {}, b = h.balance;
+        if (h.account || b) main.insertAdjacentHTML('beforeend', `<div class="sec acct"><div>${a.title ? `<b>${esc(a.title)}</b>` : ''}
+            ${b ? `<div class="sub">Total balance <b class="${b.balance < 0 ? 'neg' : 'pos'}">${money(b.balance)}</b> (${money(b.deposits)} deposits − ${money(b.charges)} charges)</div>` : ''}</div>
+            ${/^https?:\/\//i.test(a.url || '') ? `<a href="${esc(a.url)}" target="_blank" rel="noopener">${esc(a.linkText || 'Website')} ↗</a>` : ''}</div>`);
         section(`Entries (${h.rows.length})`, true, el => records(el, h.columns, h.rows));
     }
 
@@ -425,6 +427,7 @@ input, select { font:inherit; font-size:15px; padding:8px 10px; border:1px solid
 .place h3 { font-size:1em; }
 .place p { margin:4px 0; }
 .sec.acct { padding:12px 14px; display:flex; flex-wrap:wrap; gap:8px 14px; align-items:center; justify-content:space-between; }
+.sec.acct .pos { color:#27ae60; } .sec.acct .neg { color:#e74c3c; } .sec.acct .sub b { font-size:1.1em; }
 .place.crossed { opacity:0.6; }
 a { color:var(--accent); }
 a.btn { display:inline-block; text-decoration:none; border:1px solid var(--line); border-radius:8px; padding:6px 12px; }

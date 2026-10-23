@@ -1,7 +1,7 @@
 // One Health section (General Health, Dental, Eye, HSA): the shared record table over the section's CSV, and for a
-// section with an account (the HSA) the account's title, sign-in hint and website above the table in the same box,
-// like the header of a Loan/CC card.
-import { esc, toast } from '../../../bills-etc/js/util.js';
+// section with an account (the HSA) the account's title, sign-in hint and website and its total balance above the
+// table in the same box, like a Loan/CC card.
+import { esc, toast, money } from '../../../bills-etc/js/util.js';
 import { recordTable, closeFilterMenu } from '../../../shared/js/recordtable.js';
 import { loadRecords, saveRecords, loadLocations, saveLocations, loadAccount, saveAccount } from '../records.js';
 
@@ -18,16 +18,26 @@ export async function renderSection(el, section) {
     el.innerHTML = `
         <h1 class="page">${esc(section.label)}</h1>
         <p class="lead">Saved in <code>${esc(section.path)}</code>${account ? ` (the account in <code>${esc(section.account)}</code>)` : ''} in your folder.</p>
-        <section>${account ? '<div id="account" class="acct-box"></div>' : ''}<div id="records"></div></section>`;
+        <section>${account ? '<div id="account" class="acct-box"></div>' : ''}${section.balance ? '<div id="balance"></div>' : ''}<div id="records"></div></section>`;
     if (account) renderAccount(el.querySelector('#account'), section, account);
+    const balanceEl = el.querySelector('#balance');
+    const showBalance = rows => { if (balanceEl) balanceEl.innerHTML = balanceCard(section.balance(rows)); };
+    showBalance(rows);
     const location = { list: locations, noun: 'location', add: name => saveLocations([...location.list, name]) };
     table = recordTable(el.querySelector('#records'), {
         columns: section.columns,
         rows,
-        save: rows => saveRecords(section, rows),
+        save: async rows => { await saveRecords(section, rows); showBalance(rows); },
         choices: { Location: location },
     });
 }
+
+/** The "Total balance" card (like Bills Etc → Loan/CC → Credit Cards), over every entry whatever the table's filters. */
+const balanceCard = b => `
+    <div class="cards kpis balance-cards"><div class="card"><div class="label">Total balance</div>
+        <div class="value" style="color:var(${b.balance < 0 ? '--red' : '--green'})">${esc(money(b.balance))}</div>
+        <div class="sub cmp"><span class="muted">${esc(money(b.deposits))} deposits − ${esc(money(b.charges))} charges${b.other
+            ? `<br>${b.other} entr${b.other === 1 ? 'y' : 'ies'} of another type not counted` : ''}</span></div></div></div>`;
 
 /** 'flores247.com' → 'https://flores247.com'; '' stays ''; null if it isn't a web address. */
 function cleanUrl(url) {

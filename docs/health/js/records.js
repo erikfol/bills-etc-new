@@ -31,7 +31,7 @@ export const SECTIONS = [
         { name: 'Out of Pocket', kind: 'money' },
         { name: 'Additional Notes', kind: 'text' },
     ] },
-    { id: 'hsa', label: 'Health Savings Account (HSA)', path: `${HEALTH_DIR}/hsa.csv`, account: `${HEALTH_DIR}/hsa.json`, columns: [
+    { id: 'hsa', label: 'Health Savings Account (HSA)', path: `${HEALTH_DIR}/hsa.csv`, account: `${HEALTH_DIR}/hsa.json`, balance: accountBalance, columns: [
         { name: 'Date', kind: 'date' },
         { name: 'Type', kind: 'suggest', suggestions: ['Deposit', 'Charge'] }, // or anything typed in
         { name: 'Description', kind: 'text' },
@@ -41,6 +41,26 @@ export const SECTIONS = [
 ];
 
 const names = section => section.columns.map(c => c.name);
+
+/**
+ * The HSA's total balance: a Deposit adds its Amount and a Charge takes it away (the Type decides, so a charge typed
+ * as -50 still counts as 50 out). Entries of any other Type could be either, so they aren't counted.
+ * Returns { balance, deposits, charges, other } — other: how many entries with an amount were left out.
+ */
+function accountBalance(rows) {
+    const t = { balance: 0, deposits: 0, charges: 0, other: 0 };
+    for (const r of rows) {
+        const s = String(r.Amount ?? '').replace(/[$,]/g, '').trim();
+        const n = s === '' ? NaN : Math.abs(Number(s));
+        if (Number.isNaN(n)) continue;
+        const type = (r.Type || '').trim().toLowerCase();
+        if (type === 'deposit') t.deposits += n;
+        else if (type === 'charge') t.charges += n;
+        else t.other++;
+    }
+    t.balance = t.deposits - t.charges;
+    return t;
+}
 
 /**
  * Rows of a section's file ([] when it doesn't exist yet); columns the file lacks read as blank.
