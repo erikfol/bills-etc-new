@@ -1,7 +1,7 @@
 // The Projects tab: the list of house projects (#<house>/projects) and one page per project (#<house>/projects/<id>) to
 // plan it — status, plan & notes (headings, bullets, a [ ]/[x] step checklist), materials (with prices), measurements &
 // specs, cost estimates, photos & sketches, and the Future updates linked to it (their Project column). Its estimated
-// total is the materials' prices plus the cost estimates.
+// total is the materials (each one's price times its quantity) plus the cost estimates.
 import { esc, toast, money } from '../../../bills-etc/js/util.js';
 import { recordTable, showDate } from '../../../shared/js/recordtable.js';
 import { infoBox } from '../../../shared/js/infobox.js';
@@ -9,7 +9,7 @@ import { renderGallery } from '../../../vehicles/js/views/gallery.js';
 import { textHtml } from '../../../vehicles/js/views/guides.js';
 import {
     HOUSE_DIR, HOUSE_PATH, IMPROVEMENT_STATUSES, FUTURE_UPDATES, MATERIAL_COLUMNS, COST_COLUMNS, PROJECT_SPECS, houseProjects, projectDir,
-    saveHouses, loadTable, saveTable,
+    materialCost, saveHouses, loadTable, saveTable,
 } from '../house.js';
 
 let draft = null; // { start, read } while the project's heading or its plan is being edited
@@ -23,7 +23,8 @@ export const forgetProject = () => { draft = null; materials = null; specs = nul
 
 const isDone = p => /^done$/i.test((p.status || '').trim());
 const sum = (rows, col) => (rows || []).reduce((t, r) => t + (Number(r[col]) || 0), 0);
-const materialsTotal = p => sum(p.materials, 'Price'), costsTotal = p => sum(p.costs, 'Estimate');
+const materialsTotal = p => (p.materials || []).reduce((t, r) => t + (Number(materialCost(r)) || 0), 0); // price × quantity
+const costsTotal = p => sum(p.costs, 'Estimate');
 const total = p => materialsTotal(p) + costsTotal(p);
 const projectHref = (h, p) => `#${h.id}/projects/${p.id}`;
 
@@ -225,7 +226,9 @@ export async function renderProject(el, list, h, top, p) {
 
     const places = (h.places || []).map(x => x.name); // offered as a Source
     materials = recordTable(el.querySelector('#p-materials'), {
-        columns: MATERIAL_COLUMNS.map(c => (c.name === 'Source' ? { ...c, suggestions: places } : c)),
+        columns: MATERIAL_COLUMNS.flatMap(c => (c.name === 'Source' ? [{ ...c, suggestions: places }]
+            : c.name === 'Price' ? [{ ...c, total: false }, { name: 'Total', kind: 'money', calc: materialCost }] // price × quantity
+            : [c])),
         rows: filled(p.materials, MATERIAL_COLUMNS),
         save: async rows => { await update({ materials: rows }); showHead(); }, // the total
     });

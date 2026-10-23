@@ -77,13 +77,14 @@ export const AREAS = [
 export const FUTURE_UPDATES = AREAS.find(t => t.id === 'updates').parts.find(p => p.id === 'future-updates');
 
 // The Projects tab's projects, kept on the house in house.json as areas.projects.items:
-// [{ id, title, status, text (plan & notes), materials: [{ Item, Quantity, 'Size / Spec', Price, Source, Notes }],
+// [{ id, title, status, text (plan & notes), materials: [{ Brand, Item, Quantity, 'Size / Spec', Price (each), Source, Notes }],
 //    specs: [{ label, value }], costs: [{ Item, Estimate, Source, Notes }] }];
 // each project's photos and sketches in its own folder.
 export const houseProjects = h => h.areas?.projects?.items ?? [];
 export const projectDir = (h, p) => `${HOUSE_DIR}/projects/${h.id}-${p.id}`;
 export const PROJECT_SPECS = ['Dimensions', 'Notes']; // a new project's starting Measurements & specs fields
 export const MATERIAL_COLUMNS = [
+    { name: 'Brand', kind: 'suggest' },
     { name: 'Item', kind: 'text' },
     { name: 'Quantity', kind: 'suggest' },
     { name: 'Size / Spec', kind: 'suggest' },
@@ -91,6 +92,21 @@ export const MATERIAL_COLUMNS = [
     { name: 'Source', kind: 'suggest' },
     { name: 'Notes', kind: 'text' },
 ];
+
+/** A material's quantity as a number ('3', '2 bags', '1.5', '3/4', '1 1/2'); blank or no number counts as 1. */
+export function quantityOf(v) {
+    const m = /^\s*(\d+(?:\.\d+)?)(?:\s+(\d+)\/(\d+)|\/(\d+))?/.exec(String(v ?? '').replace(/,/g, ''));
+    if (!m) return 1;
+    if (m[4]) return +m[4] ? +m[1] / +m[4] : +m[1];
+    return +m[1] + (m[2] && +m[3] ? +m[2] / +m[3] : 0);
+}
+
+/** What a material costs: its price times its quantity, or '' when it has no price. */
+export const materialCost = r => {
+    const price = String(r.Price ?? '').trim();
+    return price === '' || Number.isNaN(Number(price)) ? '' : Number(price) * quantityOf(r.Quantity);
+};
+
 export const COST_COLUMNS = [
     { name: 'Item', kind: 'text' },
     { name: 'Estimate', kind: 'money' },

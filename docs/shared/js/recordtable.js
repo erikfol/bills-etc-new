@@ -37,7 +37,9 @@ export const newestFirst = columns => {
  *   columns: [{ name, kind }] — kind: 'date' (YYYY-MM-DD), 'end' (date; blank = ongoing), 'number',
  *            'money' (stored as a plain number, shown as $1,234.56; a Total line sums the rows shown),
  *            'choice' (dropdown, see choices; c.href(value) → a link for it in the read-only view, or null),
- *            'suggest' (free text offering values already used + c.suggestions), 'text' (multi-line)
+ *            'suggest' (free text offering values already used + c.suggestions), 'text' (multi-line);
+ *            c.calc(row) → a worked-out value: shown in the read-only view (and in a money Total), never edited or saved;
+ *            c.total: false leaves a money column out of the Total line
  *   rows:    [{ [name]: string }]
  *   save:    async rows => void (rows already trimmed and without blank entries)
  *   choices: { [name]: { list: string[], noun: 'location', add: async name => void } } for 'choice' columns
@@ -46,6 +48,8 @@ export const newestFirst = columns => {
  */
 export function recordTable(container, { columns: cols, rows: initial, save, choices = {} }) {
     const tableNo = ++tableCount;
+    const editCols = cols.filter(c => !c.calc); // the columns that are typed in and saved
+    const valueOf = (c, r) => (c.calc ? c.calc(r) : r[c.name]);
     const state = { rows: initial, draft: null, original: null };
     const dlId = c => `dl-${tableNo}-${cols.indexOf(c)}`;
     container.innerHTML = `
@@ -67,7 +71,7 @@ export function recordTable(container, { columns: cols, rows: initial, save, cho
 
     // Read-only view: Excel-style sort and filter on every column (the Finance Table's menu).
     const column = c => {
-        const get = r => r[c.name] ?? '';
+        const get = r => valueOf(c, r) ?? '';
         const base = { id: c.name, label: c.name };
         if (c.kind === 'date') return {
             ...base, value: get, text: showDate, tdClass: () => 'date',
@@ -122,8 +126,8 @@ export function recordTable(container, { columns: cols, rows: initial, save, cho
     // Under a table with money columns: their totals over the rows currently shown (so filtering by Action or a year
     // gives what that cost).
     const totalRow = visible => !visible.length ? '' : `<tr class="total-row">${cols.map((c, i) => {
-        if (c.kind !== 'money') return `<td>${i === 0 ? `<strong>Total</strong> <span class="muted">(${visible.length} shown)</span>` : ''}</td>`;
-        const total = visible.reduce((t, r) => { const n = numberOf(r[c.name]); return t + (typeof n === 'number' && !Number.isNaN(n) ? n : 0); }, 0);
+        if (c.kind !== 'money' || c.total === false) return `<td>${i === 0 ? `<strong>Total</strong> <span class="muted">(${visible.length} shown)</span>` : ''}</td>`;
+        const total = visible.reduce((t, r) => { const n = numberOf(valueOf(c, r)); return t + (typeof n === 'number' && !Number.isNaN(n) ? n : 0); }, 0);
         return `<td class="amt"><strong>${esc(money(total))}</strong></td>`;
     }).join('')}</tr>`;
 
@@ -152,12 +156,12 @@ export function recordTable(container, { columns: cols, rows: initial, save, cho
             if (c.kind === 'suggest') return `<input type="text" list="${dlId(c)}" ${attrs} value="${esc(v)}">`;
             return `<textarea ${attrs} rows="1">${esc(v)}</textarea>`;
         };
-        const lists = cols.filter(c => c.kind === 'suggest').map(c =>
+        const lists = editCols.filter(c => c.kind === 'suggest').map(c =>
             `<datalist id="${dlId(c)}">${suggestions(c).map(v => `<option value="${esc(v)}">`).join('')}</datalist>`).join('');
-        tbl.innerHTML = `<thead><tr>${cols.map(c => `<th>${esc(c.name)}${c.kind === 'end' ? ' <span class="muted">(blank = ongoing)</span>' : ''}</th>`).join('')}<th>${lists}</th></tr></thead>
-            <tbody>${state.draft.map((r, i) => `<tr>${cols.map(c => `<td>${input(c, i, r[c.name])}</td>`).join('')}
+        tbl.innerHTML = `<thead><tr>${editCols.map(c => `<th>${esc(c.name)}${c.kind === 'end' ? ' <span class="muted">(blank = ongoing)</span>' : ''}</th>`).join('')}<th>${lists}</th></tr></thead>
+            <tbody>${state.draft.map((r, i) => `<tr>${editCols.map(c => `<td>${input(c, i, r[c.name])}</td>`).join('')}
                 <td class="remove"><button type="button" class="danger" data-remove="${i}" title="Remove this entry" aria-label="Remove this entry">✕</button></td></tr>`).join('')
-                || `<tr><td colspan="${cols.length + 1}" class="muted">No entries. Press ＋ Add entry.</td></tr>`}</tbody>`;
+                || `<tr><td colspan="${editCols.length + 1}" class="muted">No entries. Press ＋ Add entry.</td></tr>`}</tbody>`;
         markChanged();
     };
 
@@ -219,7 +223,7 @@ export function recordTable(container, { columns: cols, rows: initial, save, cho
     });
 
     container.querySelector('[data-add]').onclick = () => {
-        state.draft.unshift({ ...Object.fromEntries(cols.map(c => [c.name, ''])), _from: null });
+        state.draft.unshift({ ...Object.fromEntries(editCols.map(c => [c.name, ''])), _from: null });
         drawEdit();
         tbl.querySelector('[data-k]')?.focus();
     };
@@ -228,13 +232,13 @@ export function recordTable(container, { columns: cols, rows: initial, save, cho
         showRead();
     };
     container.querySelector('[data-save]').onclick = async () => {
-        const blank = r => cols.every(c => !String(r[c.name]).trim());
-        const rows = state.draft.filter(r => !blank(r)).map(r => Object.fromEntries(cols.map(c => [c.name, String(r[c.name]).trim()])));
+        const blank = r => editCols.every(c => !String(r[c.name]).trim());
+        const rows = state.draft.filter(r => !blank(r)).map(r => Object.fromEntries(editCols.map(c => [c.name, String(r[c.name]).trim()])));
         const label = r => `“${r.Description || r.Action || 'An entry'}”`;
         const start = firstDate?.name, end = cols.find(c => c.kind === 'end')?.name;
         const backwards = end && rows.find(r => r[start] && r[end] && r[end] < r[start]);
         if (backwards) return toast(`${label(backwards)} ends before it starts — fix the dates, then Save.`, 'bad');
-        for (const c of cols.filter(c => c.kind === 'number' || c.kind === 'money')) {
+        for (const c of editCols.filter(c => c.kind === 'number' || c.kind === 'money')) {
             const bad = rows.find(r => Number.isNaN(numberOf(r[c.name])));
             if (bad) return toast(`${label(bad)}: ${c.name} “${bad[c.name]}” isn't a number — fix it, then Save.`, 'bad');
             for (const r of rows) r[c.name] = String(numberOf(r[c.name])); // '52,340' is stored as 52340, '$1,250' as 1250
