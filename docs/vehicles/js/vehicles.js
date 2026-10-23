@@ -123,6 +123,27 @@ function parseDay(text) {
     return text && !Number.isNaN(d.getTime()) ? d : null;
 }
 
+/** The purchase as a reading ({ day, miles, from: 'bought new, Sep 5, 2018' }), or null without a Purchase Date. */
+function purchase(v) {
+    const bought = parseDay(infoValue(v, 'Purchase Date'));
+    if (!bought) return null;
+    const miles = milesOf(infoValue(v, 'Purchase Mileage')) || 0; // 0: bought new
+    const day = bought.toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    return { day: Date.UTC(bought.getFullYear(), bought.getMonth(), bought.getDate()) / 864e5, miles,
+        from: miles ? `bought at ${miles.toLocaleString('en-US')} miles, ${day}` : `bought new, ${day}` };
+}
+
+/** A dated reading as { day, miles }. */
+const point = r => { const [y, m, d] = r.Date.split('-').map(Number); return { day: Date.UTC(y, m - 1, d) / 864e5, miles: milesOf(r.Mileage) }; };
+
+/** Miles a month and a year, on average, from point `a` to point `b`, or null if they're under `minDays` apart. */
+function rate(a, b, minDays) {
+    const days = b.day - a.day, miles = b.miles - a.miles;
+    if (Number.isNaN(miles) || days < minDays) return null;
+    const perYear = miles / days * 365.25;
+    return { perMonth: Math.round(perYear / 12), perYear: Math.round(perYear) };
+}
+
 /**
  * Miles put on a month and a year, on average, from the purchase (the information's Purchase Date, at 0 miles — bought
  * new — or its Purchase Mileage if it has one) to the newest reading: { perMonth, perYear, from: 'bought new, Sep 5,
@@ -131,15 +152,25 @@ function parseDay(text) {
 export function mileageRate(v, rows) {
     const last = latestMileage(rows);
     if (!last) return null;
-    const bought = parseDay(infoValue(v, 'Purchase Date'));
-    if (!bought) return { why: 'Needs a Purchase Date in Vehicle information' };
-    const start = milesOf(infoValue(v, 'Purchase Mileage')) || 0;
-    const [y, m, d] = last.Date.split('-').map(Number);
-    const days = (Date.UTC(y, m - 1, d) - Date.UTC(bought.getFullYear(), bought.getMonth(), bought.getDate())) / 864e5;
-    const miles = milesOf(last.Mileage) - start;
-    if (Number.isNaN(miles) || days < 28) return { why: 'Needs a reading at least a month after the purchase' };
-    const perYear = miles / days * 365.25;
-    const day = bought.toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-    return { perMonth: Math.round(perYear / 12), perYear: Math.round(perYear),
-        from: start ? `bought at ${start.toLocaleString('en-US')} miles, ${day}` : `bought new, ${day}` };
+    const p = purchase(v);
+    if (!p) return { why: 'Needs a Purchase Date in Vehicle information' };
+    const r = rate(p, point(last), 28);
+    return r ? { ...r, from: p.from } : { why: 'Needs a reading at least a month after the purchase' };
 }
+
+/**
+ * The mileage log's worked-out columns (shown, never saved): for each reading, the miles a month and a year since the
+ * reading before it — the oldest one since the purchase. rows() gives the log as it is now.
+ */
+export const mileageRateColumns = (v, rows) => {
+    const since = r => {
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(r.Date || '') || r.Mileage === '') return null;
+        const before = latestMileage(rows().filter(x => (x.Date || '') < r.Date));
+        const from = before ? point(before) : purchase(v);
+        return from && rate(from, point(r), 1);
+    };
+    return [
+        { name: 'Miles per month', kind: 'number', calc: r => since(r)?.perMonth ?? '' },
+        { name: 'Miles per year', kind: 'number', calc: r => since(r)?.perYear ?? '' },
+    ];
+};

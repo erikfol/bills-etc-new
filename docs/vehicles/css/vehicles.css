@@ -21,7 +21,7 @@
 .info-item dd.mileage-stat { font-size: 1.25em; font-weight: 600; }
 .mileage-sub { font-size: 0.85em; margin-top: 2px; }
 p.mileage-sub { margin: 0 0 10px; }
-.mileage-log .record-table, .mileage-log .table-wrap { max-width: 460px; } /* just Date and Mileage */
+.mileage-log .record-table, .mileage-log .table-wrap { max-width: 640px; } /* Date, Mileage and the two worked out */
 
 /* Photos */
 .photo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; }

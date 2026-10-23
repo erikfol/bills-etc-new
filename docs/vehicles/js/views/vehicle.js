@@ -10,7 +10,7 @@ import { renderGuides, guidesUnsaved, forgetGuides } from './guides.js';
 import { renderNotes, notesUnsaved, forgetNotes } from './notes.js';
 import {
     TYPES, VEHICLES_PATH, saveVehicles, photosDir, newVehicle, maintenancePath, maintenanceColumns, loadMaintenance, saveMaintenance,
-    hasMileageLog, mileagePath, MILEAGE_COLUMNS, loadMileage, saveMileage, latestMileage, mileageRate,
+    hasMileageLog, mileagePath, MILEAGE_COLUMNS, loadMileage, saveMileage, latestMileage, mileageRate, mileageRateColumns,
 } from '../vehicles.js';
 
 let table = null;
@@ -33,8 +33,10 @@ const currentMileage = (v, rows) => {
         sub ? `<dd class="muted mileage-sub">${esc(sub)}</dd>` : ''}</div>`;
     return `<dl class="info-grid mileage-stats">${stat('Latest reading', `${n(r.Mileage)} miles`, showDate(r.Date))}${rate.why
         ? stat('Miles per month / year', '—', rate.why)
-        : stat('Miles per month', `≈ ${n(rate.perMonth)}`) + stat('Miles per year', `≈ ${n(rate.perYear)}`)}</dl>${rate.why ? ''
-        : `<p class="muted mileage-sub">Averages from the purchase (${esc(rate.from)}) to the latest reading.</p>`}`;
+        : stat('Miles per month', `≈ ${n(rate.perMonth)}`) + stat('Miles per year', `≈ ${n(rate.perYear)}`)}</dl>
+        <p class="muted mileage-sub">${rate.why ? '' : `Averages from the purchase (${esc(rate.from)}) to the latest reading. `}In
+            the table, each reading's miles per month and year are since the reading before it (the oldest one's since the
+            purchase).</p>`;
 };
 
 /** The tabs under a vehicle's name. */
@@ -118,10 +120,11 @@ export async function renderVehicle(el, list, v, onListChanged, part) {
     if (miles) {
         const now = el.querySelector('#miles-now');
         now.innerHTML = currentMileage(v, miles);
+        let log = miles; // as last saved, for the worked-out columns
         mileage = recordTable(el.querySelector('#miles'), {
-            columns: MILEAGE_COLUMNS,
+            columns: [...MILEAGE_COLUMNS, ...mileageRateColumns(v, () => log)],
             rows: miles,
-            save: async rows => { await saveMileage(v, rows); now.innerHTML = currentMileage(v, rows); },
+            save: async rows => { await saveMileage(v, rows); log = rows; now.innerHTML = currentMileage(v, rows); },
         });
     }
     renderPlaces(el.querySelector('#places'), list, v);
