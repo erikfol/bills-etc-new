@@ -1,6 +1,7 @@
 // House → ⚙ Settings (#<house>/settings): the maintenance due banners — for each page with a Maintenance table, whether
-// it shows one, its name, how often it's due (every N years, by a month), when it turns yellow, and the month to count
-// from while nothing's logged. Kept per house in house.json as banners: { <page id>: settings } (see bannerSettings).
+// it shows one, its name, and when it turns green (logged), yellow (so long before red) and red (the 1st of a month, if
+// it isn't logged that year / N years after it was last logged), with the next date each happens; and the month to
+// count from while nothing's logged. Kept per house in house.json as banners: { <page id>: settings } (see bannerSettings).
 // Also the banner itself (maintenanceBanner), which those pages show at the top.
 import { esc, toast } from '../../../bills-etc/js/util.js';
 import { showDate } from '../../../shared/js/recordtable.js';
@@ -12,12 +13,34 @@ export const settingsUnsaved = () => !!draft && draft.read() !== draft.start;
 export const forgetSettings = () => { draft = null; };
 
 const MONTHS = [...Array(12)].map((_, i) => new Date(2000, i, 1).toLocaleString('en-US', { month: 'long' }));
-const WARN = [[0, 'Never'], [14, '2 weeks before'], [30, '1 month before'], [61, '2 months before'], [91, '3 months before'],
-    [182, '6 months before']]; // days before it's due
-const warnText = d => WARN.find(([v]) => v === +d)?.[1] || `${+d} days before`;
+const WARN = [['', 'Never'], ['2w', '2 weeks before red'], ['1m', '1 month before red'], ['2m', '2 months before red'],
+    ['3m', '3 months before red'], ['6m', '6 months before red']]; // see maintenanceStatus
+const warnText = w => WARN.find(([v]) => v === String(w || ''))?.[1] || `${w} before red`;
+/** How often it's due, as the end of "Turns red: <Month> 1, …". */
+const everyText = n => (+n > 1 ? `${+n} years after it was last logged` : "if it isn't logged that year");
+const EVERY = [...Array(10)].map((_, i) => [i + 1, everyText(i + 1)]);
 const monthYear = ym => { const [y, m] = String(ym).split('-').map(Number); return m ? `${MONTHS[m - 1].slice(0, 3)} ${y}` : String(ym); };
 const dueBy = d => d.toLocaleString('en-US', { month: 'long', year: 'numeric' });
-const everyText = n => (+n > 1 ? `Every ${+n} years` : 'Every year');
+const day = d => d.toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+
+/**
+ * When banner settings `b` (with Maintenance entries `rows`) turn each colour, in words, and the next date it happens
+ * (or that it's that colour now): { green, yellow, red, now: { green, yellow, red } }.
+ */
+function colours(b, rows) {
+    const { level, due, yellow } = maintenanceStatus(rows, b);
+    return {
+        green: +b.every > 1 ? "When it's logged" : "When it's logged for the year",
+        yellow: warnText(b.warn),
+        red: `${MONTHS[(+b.month || 1) - 1]} 1, ${everyText(b.every)}`,
+        now: {
+            green: level === 'ok' ? 'Green now' : '',
+            yellow: !yellow ? '' : level === 'soon' ? `Yellow now (since ${day(yellow)})` : level === 'ok' ? `Next: ${day(yellow)}` : '',
+            red: level === 'due' ? `Red now (since ${day(due)})` : `Next: ${day(due)}`,
+        },
+    };
+}
+const note = t => (t ? `<div class="muted settings-when">${esc(t)}</div>` : '');
 
 /** A maintenance page's due banner (b: its bannerSettings, rows: its Maintenance entries). */
 export function maintenanceBanner(b, rows) {
@@ -59,9 +82,11 @@ export async function renderSettings(el, list, h, top) {
             ${maintenanceBanner(settings[a.id], rows[a.id])}`).join('') || '<p class="muted">No banners are shown.</p>'}`;
     };
     const saved = () => Object.fromEntries(MAINTENANCE_PAGES.map(a => [a.id, bannerSettings(h, a)]));
-    const hint = `A banner at the top of a page with a Maintenance table: green while it's done or not due yet, yellow
-        when it's coming up, red once it's due. It's due by the 1st of the month, every so many years after the last
-        Maintenance entry.`;
+    const hint = `A banner at the top of a page with a Maintenance table. Turns green, yellow and red say when it changes
+        to each colour ("logged" = an entry in that page's Maintenance table); under each is the next date that happens
+        for this house. It's also green before the yellow date.`;
+    const HEAD = '<th>Page</th><th>Banner</th><th>Name</th><th>Turns green</th><th>Turns yellow</th><th>Turns red</th>'
+        + `<th>Count from<div class="muted settings-when">while nothing's logged</div></th>`;
 
     const show = () => {
         draft = null;
@@ -70,13 +95,15 @@ export async function renderSettings(el, list, h, top) {
             <div class="row table-tools"><button type="button" class="small" data-edit>✎ Edit</button>
                 <span class="muted edit-hint">${hint}</span></div>
             <div class="table-wrap"><table class="settings-table">
-                <thead><tr><th>Page</th><th>Banner</th><th>Name</th><th>Due</th><th>Turns yellow</th><th>While nothing's logged</th></tr></thead>
+                <thead><tr>${HEAD}</tr></thead>
                 <tbody>${MAINTENANCE_PAGES.map(a => {
-                    const b = s[a.id];
+                    const b = s[a.id], c = colours(b, rows[a.id]);
                     return `<tr${b.show ? '' : ' class="muted"'}><td><a href="${esc(pageHref(h, a))}">${esc(pageName(a))}</a></td>
                         <td>${b.show ? 'Shown' : 'Off'}</td><td>${esc(b.what)}</td>
-                        <td>${esc(everyText(b.every))}, by ${esc(MONTHS[(+b.month || 1) - 1])}</td><td>${esc(warnText(b.warn))}</td>
-                        <td>${b.since ? `Count from ${esc(monthYear(b.since))}` : '—'}</td></tr>`;
+                        <td class="settings-green">${esc(c.green)}${b.show ? note(c.now.green) : ''}</td>
+                        <td>${esc(c.yellow)}${b.show ? note(c.now.yellow) : ''}</td>
+                        <td>${esc(c.red)}${b.show ? note(c.now.red) : ''}</td>
+                        <td>${b.since ? esc(monthYear(b.since)) : '—'}</td></tr>`;
                 }).join('')}</tbody>
             </table></div>
             ${preview(s)}`;
@@ -90,15 +117,18 @@ export async function renderSettings(el, list, h, top) {
             <div class="row table-tools"><span class="muted edit-hint">Editing — nothing is written until you press Save.
                 The banners below show how each would look today.</span></div>
             <div class="table-wrap"><table class="settings-table editing">
-                <thead><tr><th>Page</th><th>Banner</th><th>Name</th><th>Due</th><th>Turns yellow</th><th>While nothing's logged, count from</th></tr></thead>
+                <thead><tr>${HEAD}</tr></thead>
                 <tbody>${MAINTENANCE_PAGES.map(a => {
                     const b = s[a.id];
                     return `<tr data-id="${esc(a.id)}"><td>${esc(pageName(a))}</td>
                         <td><label class="check"><input type="checkbox" data-f="show"${b.show ? ' checked' : ''}> Show</label></td>
                         <td><input type="text" data-f="what" value="${esc(b.what)}" aria-label="Banner name"></td>
-                        <td class="nowrap"><select data-f="every" aria-label="How often">${options([...Array(10)].map((_, i) => [i + 1, everyText(i + 1)]), b.every)}</select>
-                            by <select data-f="month" aria-label="Due by">${options(MONTHS.map((m, i) => [i + 1, m]), b.month)}</select></td>
-                        <td><select data-f="warn" aria-label="Turns yellow">${options(WARN.some(([v]) => v === +b.warn) ? WARN : [...WARN, [+b.warn, warnText(b.warn)]], b.warn)}</select></td>
+                        <td class="settings-green"><span data-green></span><span data-now="green"></span></td>
+                        <td><select data-f="warn" aria-label="Turns yellow">${options(WARN.some(([v]) => v === String(b.warn || '')) ? WARN : [...WARN, [b.warn, warnText(b.warn)]], b.warn || '')}</select>
+                            <span data-now="yellow"></span></td>
+                        <td><div class="nowrap"><select data-f="month" aria-label="Turns red on the 1st of">${options(MONTHS.map((m, i) => [i + 1, m]), b.month)}</select> 1,</div>
+                            <select data-f="every" aria-label="How often" class="settings-every">${options(EVERY, b.every)}</select>
+                            <span data-now="red"></span></td>
                         <td><input type="month" data-f="since" value="${esc(b.since || '')}" aria-label="Count from"></td></tr>`;
                 }).join('')}</tbody>
             </table></div>
@@ -110,9 +140,18 @@ export async function renderSettings(el, list, h, top) {
             const f = name => tr.querySelector(`[data-f=${name}]`);
             const a = MAINTENANCE_PAGES.find(x => x.id === tr.dataset.id);
             return [a.id, { show: f('show').checked, what: f('what').value.trim() || bannerSettings({}, a).what,
-                every: +f('every').value, month: +f('month').value, warn: +f('warn').value, since: f('since').value }];
+                every: +f('every').value, month: +f('month').value, warn: f('warn').value, since: f('since').value }];
         }));
-        const drawPreview = () => { box.querySelector('[data-preview]').innerHTML = preview(read()); };
+        /** The preview, and each row's words and dates, for what's in the form now. */
+        const drawPreview = () => {
+            const settings = read();
+            box.querySelectorAll('tbody tr').forEach(tr => {
+                const b = settings[tr.dataset.id], c = colours(b, rows[tr.dataset.id]);
+                tr.querySelector('[data-green]').textContent = c.green;
+                tr.querySelectorAll('[data-now]').forEach(n => { n.innerHTML = b.show ? note(c.now[n.dataset.now]) : ''; });
+            });
+            box.querySelector('[data-preview]').innerHTML = preview(settings);
+        };
         draft = { start: JSON.stringify(read()), read: () => JSON.stringify(read()) };
         drawPreview();
         box.querySelector('tbody').addEventListener('input', drawPreview);

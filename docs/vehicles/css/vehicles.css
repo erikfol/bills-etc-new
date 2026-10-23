@@ -59,12 +59,18 @@ a.place.project-card:hover { border-color: var(--blue); background: var(--hover)
 /* House → ⚙ Settings: the last tab, at the right end; the maintenance banner settings */
 .subnav a.subnav-end { margin-left: auto; }
 .settings-table td { padding: 7px 8px; vertical-align: middle; }
+.settings-table th { white-space: normal; vertical-align: bottom; }
+.settings-table.editing td { padding: 6px 4px; }
 .settings-table td.nowrap, .settings-table td:first-child { white-space: nowrap; }
-.settings-table input[type=text] { width: 100%; min-width: 170px; }
+.settings-table input[type=text] { width: 100%; min-width: 120px; }
+.settings-table td.settings-green { min-width: 120px; }
+.settings-table select.settings-every { margin-top: 4px; max-width: 100%; }
+.settings-table .nowrap { white-space: nowrap; }
 .settings-table label.check { white-space: nowrap; }
 .settings-table input[type=month] { /* like the app's other inputs */
     font: inherit; font-size: 0.9em; padding: 6px 10px; border: 1px solid var(--line-strong); border-radius: 6px; background: #f8faff;
 }
+.settings-when { font-size: 0.85em; margin-top: 3px; } /* "Next: Sep 1, 2026" under a Turns … rule */
 .settings-preview { font-size: 0.95em; margin: 18px 0 6px; }
 .settings-page { margin: 10px 0 4px; font-size: 0.88em; }
 .settings-page + .banner { margin-bottom: 8px; }

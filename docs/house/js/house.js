@@ -216,17 +216,20 @@ export const MAINTENANCE_PAGES = AREAS.flatMap(t => t.parts || [t]).filter(a => 
 /**
  * The due banner settings of maintenance page `a` on house `h`: what's saved under House → ⚙ Settings
  * (house.banners[<page id>]) over the page's starting `banner`. { show, what (the banner's name), every (years),
- * month (due by, 1 = January), warn (days before it's due to turn yellow, 0 = never), since ('YYYY-MM' to count from
- * while nothing's logged) }.
+ * month (due by, 1 = January), warn (how long before it's due to turn yellow: '2w' weeks, '1m' months, '' never),
+ * since ('YYYY-MM' to count from while nothing's logged) }.
  */
-export const bannerSettings = (h, a) => ({ show: false, what: `${a.label} maintenance`, every: 1, month: 1, warn: 0, since: '',
-    ...a.banner, ...h.banners?.[a.id] });
+export function bannerSettings(h, a) {
+    const b = { show: false, what: `${a.label} maintenance`, every: 1, month: 1, warn: '', since: '', ...a.banner, ...h.banners?.[a.id] };
+    if (typeof b.warn === 'number') b.warn = { 14: '2w', 30: '1m', 61: '2m', 91: '3m', 182: '6m' }[b.warn] || ''; // saved as days at first
+    return b;
+}
 
 /**
  * A due banner from the maintenance rows with a YYYY-MM-DD Date and its settings `b` (bannerSettings): it's due by the
  * 1st of b.month, b.every years after the year of the last entry (or of b.since while there's none; with neither, this
- * year for a yearly one). { level, due (Date), last } — level 'due' (red) from then, 'soon' (yellow) b.warn days before,
- * else 'ok' (green); last = the latest entry (may be missing).
+ * year for a yearly one). { level, due (Date), yellow (Date, or null for no yellow), last } — level 'due' (red) from
+ * `due`, 'soon' (yellow) from `yellow` (b.warn before it), else 'ok' (green); last = the latest entry (may be missing).
  * Uses nothing outside itself: the phone copy (shared/js/phonecopy.js) embeds it as text.
  */
 export function maintenanceStatus(rows, b, today = new Date()) {
@@ -234,7 +237,8 @@ export function maintenanceStatus(rows, b, today = new Date()) {
     const every = Math.max(1, Math.round(+b.every) || 1);
     const from = last?.Date || (/^\d{4}-\d{2}/.test(b.since || '') ? b.since : '');
     const due = new Date((from ? +from.slice(0, 4) : today.getFullYear() - every) + every, (+b.month || 1) - 1, 1);
+    const w = /^(\d+)([wm])$/.exec(String(b.warn || '')), n = w ? +w[1] : 0;
+    const yellow = !n ? null : w[2] === 'm' ? new Date(due.getFullYear(), due.getMonth() - n, 1) : new Date(due.getFullYear(), due.getMonth(), 1 - 7 * n);
     const day = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-    const warnFrom = new Date(due.getFullYear(), due.getMonth(), due.getDate() - (+b.warn || 0));
-    return { level: day >= due ? 'due' : +b.warn > 0 && day >= warnFrom ? 'soon' : 'ok', due, last };
+    return { level: day >= due ? 'due' : yellow && day >= yellow ? 'soon' : 'ok', due, yellow, last };
 }
