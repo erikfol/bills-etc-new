@@ -33,11 +33,8 @@ export const SECTIONS = [
     ] },
     { id: 'hsa', label: 'Health Savings Account (HSA)', path: `${HEALTH_DIR}/hsa.csv`, account: `${HEALTH_DIR}/hsa.json`, columns: [
         { name: 'Date', kind: 'date' },
-        { name: 'Type', kind: 'suggest', suggestions: ['Contribution', 'Employer contribution', 'Payment', 'Reimbursement', 'Interest', 'Fee'] },
+        { name: 'Type', kind: 'suggest', suggestions: ['Deposit', 'Charge'] }, // or anything typed in
         { name: 'Description', kind: 'text' },
-        { name: 'Location', kind: 'suggest' }, // who was paid (doctor, dentist, pharmacy); blank for money put in
-        { name: 'Money In', kind: 'money' },
-        { name: 'Money Out', kind: 'money' },
         { name: 'Additional Notes', kind: 'text' },
     ] },
 ];
