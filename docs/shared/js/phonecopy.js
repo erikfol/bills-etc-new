@@ -79,7 +79,7 @@ export async function collectData(progress = () => {}) {
             if (a.projects) { // the Projects tab, each project with its images and the Future Updates linked to it
                 const future = await house.loadTable(h, house.FUTURE_UPDATES, false), projects = [];
                 for (const p of house.houseProjects(h)) projects.push({ title: p.title, status: p.status || '', text: p.text || '',
-                    materials: (p.materials || []).map(r => ({ ...r, Cost: house.materialCost(r) })), specs: p.specs || [], costs: p.costs || [], images: await images(house.projectDir(h, p), tick),
+                    materials: (p.materials || []).map(r => ({ ...r, Cost: house.materialCost(r) })), specs: p.specs || [], images: await images(house.projectDir(h, p), tick),
                     updates: future.filter(r => r.Project === p.title) });
                 areas.push({ label: a.label, tab: '', projects });
                 continue;
@@ -137,6 +137,7 @@ function viewer(D, ageText, houseAge, appointmentStatus, maintenanceStatus) { //
     const showDate = v => { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(v || ''); return m ? `${MON[+m[2] - 1]} ${+m[3]}, ${m[1]}` : (v || ''); };
     const num = v => { const s = String(v ?? '').replace(/[$,]/g, '').trim(); return s === '' ? NaN : Number(s); };
     const money = n => (n < 0 ? '-' : '') + '$' + Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const linkText = u => { try { return new URL(u).hostname.replace(/^www\./, ''); } catch { return u; } }; // 'homedepot.com'
     const caption = n => n.replace(/\.[^.]+$/, '').replace(/^\d+[-_ ]*/, '').replace(/[-_]+/g, ' ');
     const main = document.getElementById('main');
     const pick = document.getElementById('page');
@@ -298,17 +299,16 @@ function viewer(D, ageText, houseAge, appointmentStatus, maintenanceStatus) { //
         <details class="guide"><summary>${/^done$/i.test(x.status || '') ? `<s>${esc(x.title)}</s>` : esc(x.title)}${x.status ? ` <span class="tag">${esc(x.status)}</span>` : ''}</summary>
             <div class="steps">${x.cost ? `<p><b>Estimated cost:</b> ${esc(x.cost)}</p>` : ''}${stepsHtml(x.text || '')}</div></details>`).join('');
 
-    /** One project: plan & notes, materials, measurements & specs, cost estimates with their total, images, linked future updates. */
+    /** One project: its estimated total, plan & notes, materials, measurements & specs, images, linked future updates. */
     const projectHtml = p => {
         const sum = (rows, col) => rows.reduce((t, r) => t + (Number.isNaN(num(r[col])) ? 0 : num(r[col])), 0);
-        const total = sum(p.materials, 'Cost') + sum(p.costs, 'Estimate');
+        const total = sum(p.materials, 'Cost');
         const specs = p.specs.filter(f => f.value);
         return `<details class="guide"><summary>${/^done$/i.test(p.status) ? `<s>${esc(p.title)}</s>` : esc(p.title)}${p.status ? ` <span class="tag">${esc(p.status)}</span>` : ''}</summary>
             <div class="steps"><p><b>Estimated total:</b> ${money(total)}</p>
                 ${p.text ? `<h3>Plan &amp; notes</h3>${stepsHtml(p.text)}` : ''}
-                ${p.materials.length ? `<h3>Materials</h3>${p.materials.map(r => `<div class="sub">${esc([r.Brand, r.Item].filter(Boolean).join(' ') || '—')}${[r.Quantity, r['Size / Spec']].filter(Boolean).length ? `: ${esc([r.Quantity, r['Size / Spec']].filter(Boolean).join(', '))}` : ''}${Number.isNaN(num(r.Price)) ? '' : ` — ${money(num(r.Price))}${num(r.Cost) !== num(r.Price) ? ` each, ${money(num(r.Cost))}` : ''}`}${r.Source ? ` (${esc(r.Source)})` : ''}${r.Notes ? ` — ${esc(r.Notes)}` : ''}</div>`).join('')}` : ''}
+                ${p.materials.length ? `<h3>Materials</h3>${p.materials.map(r => `<div class="sub">${esc([r.Brand, r.Item].filter(Boolean).join(' ') || '—')}${[r.Quantity, r['Size / Spec']].filter(Boolean).length ? `: ${esc([r.Quantity, r['Size / Spec']].filter(Boolean).join(', '))}` : ''}${Number.isNaN(num(r.Price)) ? '' : ` — ${money(num(r.Price))}${num(r.Cost) !== num(r.Price) ? ` each, ${money(num(r.Cost))}` : ''}`}${r.Source ? ` (${esc(r.Source)})` : ''}${/^https?:\/\//i.test(r.Link || '') ? ` · <a href="${esc(r.Link)}" target="_blank" rel="noopener">${esc(linkText(r.Link))}</a>` : r.Link ? ` · ${esc(r.Link)}` : ''}${r.Notes ? ` — ${esc(r.Notes)}` : ''}</div>`).join('')}` : ''}
                 ${specs.length ? `<h3>Measurements &amp; specs</h3>${infoList(specs)}` : ''}
-                ${p.costs.length ? `<h3>Cost estimates</h3>${p.costs.map(r => `<div class="sub">${esc(r.Item || '—')}: ${Number.isNaN(num(r.Estimate)) ? esc(r.Estimate || '') : money(num(r.Estimate))}${r.Source ? ` (${esc(r.Source)})` : ''}${r.Notes ? ` — ${esc(r.Notes)}` : ''}</div>`).join('')}` : ''}
                 ${p.updates.length ? `<h3>Future updates</h3>${p.updates.map(r => `<div class="sub">${esc(r.Update || '')}${r['Planned Date'] ? ` — planned ${esc(showDate(r['Planned Date']))}` : ''}</div>`).join('')}` : ''}
             </div>${p.images.length ? gallery(p.images) : ''}</details>`;
     };

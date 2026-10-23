@@ -1,8 +1,9 @@
 // Editable record table shared by the Home-page sections (Health, Vehicles): read-only with Excel-style sort and
-// filter on every column until Edit is pressed; then every cell is an input, rows can be added and removed, and
-// Save hands the rows back to be written.
+// filter on every column until Edit is pressed; then every cell is an input, rows can be added and removed (and, if
+// the table keeps its own order, moved up and down), and Save hands the rows back to be written.
 import { esc, toast, money } from '../../bills-etc/js/util.js';
 import { dataTable, closeFilterMenu } from '../../bills-etc/js/datatable.js';
+import { moveButtons } from './infobox.js';
 
 const NEW_CHOICE = '__new__'; // a choice can't be named this, so it can't clash
 const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -14,6 +15,10 @@ export function showDate(v) {
     const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(v || '');
     return m ? `${MON[+m[2] - 1]} ${+m[3]}, ${m[1]}` : String(v ?? '');
 }
+
+/** A web address shown as its site ('homedepot.com'); isLink says whether it's safe to make a link of. */
+const isLink = v => /^https?:\/\//i.test(v || '');
+const linkText = v => { try { return new URL(v).hostname.replace(/^www\./, ''); } catch { return v; } };
 
 const numberOf = v => {
     const s = String(v ?? '').replace(/[$,]/g, '').trim();
@@ -37,20 +42,23 @@ export const newestFirst = columns => {
  *   columns: [{ name, kind }] — kind: 'date' (YYYY-MM-DD), 'end' (date; blank = ongoing), 'number',
  *            'money' (stored as a plain number, shown as $1,234.56; a Total line sums the rows shown),
  *            'choice' (dropdown, see choices; c.href(value) → a link for it in the read-only view, or null),
- *            'suggest' (free text offering values already used + c.suggestions), 'text' (multi-line);
+ *            'suggest' (free text offering values already used + c.suggestions), 'text' (multi-line),
+ *            'link' (a web address, shown as a link to it);
  *            c.calc(row) → a worked-out value: shown in the read-only view (and in a money Total), never edited or saved;
  *            c.total: false leaves a money column out of the Total line
  *   rows:    [{ [name]: string }]
  *   save:    async rows => void (rows already trimmed and without blank entries)
  *   choices: { [name]: { list: string[], noun: 'location', add: async name => void } } for 'choice' columns
  *            (without add the list is fixed: no "＋ New …" option)
+ *   reorder: the rows keep the order they're saved in — editing starts in the order the read-only view shows (so a
+ *            column sort can be kept), ↑ ↓ move a row and new entries go at the bottom
  * Returns { hasUnsavedEdits() }.
  */
-export function recordTable(container, { columns: cols, rows: initial, save, choices = {} }) {
+export function recordTable(container, { columns: cols, rows: initial, save, choices = {}, reorder = false }) {
     const tableNo = ++tableCount;
     const editCols = cols.filter(c => !c.calc); // the columns that are typed in and saved
     const valueOf = (c, r) => (c.calc ? c.calc(r) : r[c.name]);
-    const state = { rows: initial, draft: null, original: null };
+    const state = { rows: initial, draft: null, original: null, shown: null }; // shown: the rows in the read-only view's order
     const dlId = c => `dl-${tableNo}-${cols.indexOf(c)}`;
     container.innerHTML = `
         <div class="row table-tools" data-tools></div>
@@ -101,6 +109,10 @@ export function recordTable(container, { columns: cols, rows: initial, save, cho
                 return !v ? '' : href ? `<a class="cat-badge" href="${esc(href)}">${esc(v)}</a>` : `<span class="cat-badge">${esc(v)}</span>`;
             },
         };
+        if (c.kind === 'link') return {
+            ...base, value: get, text: v => (isLink(v) ? linkText(v) : String(v)),
+            cell: r => { const v = get(r); return isLink(v) ? `<a href="${esc(v)}" target="_blank" rel="noopener" title="${esc(v)}">${esc(linkText(v))} ↗</a>` : esc(v); },
+        };
         return { ...base, value: get, tdClass: () => 'text' };
     };
     const firstDate = cols.find(c => c.kind === 'date');
@@ -112,7 +124,9 @@ export function recordTable(container, { columns: cols, rows: initial, save, cho
         tbl.innerHTML = '';
         readEl.hidden = false;
         tools.innerHTML = `<button type="button" class="small" data-edit>✎ Edit</button>
-            <span class="muted edit-hint">Click a column name to sort, or ▾ to sort and filter. Turn on editing to add, change or remove entries.</span>`;
+            <span class="muted edit-hint">Click a column name to sort, or ▾ to sort and filter. ${reorder
+                ? 'Turn on editing to add, change, remove or reorder entries — it starts in the order shown, and Save keeps that order.'
+                : 'Turn on editing to add, change or remove entries.'}</span>`;
         tools.querySelector('[data-edit]').onclick = startEdit;
         dataTable(readEl, {
             columns: cols.map(column),
@@ -120,6 +134,7 @@ export function recordTable(container, { columns: cols, rows: initial, save, cho
             sort: firstDate ? { col: firstDate.name, dir: 'desc' } : null,
             empty: state.rows.length ? 'No entries match the filters' : 'No entries yet. Press Edit to add one.',
             footer: cols.some(c => c.kind === 'money') ? totalRow : undefined,
+            onChange: visible => { state.shown = visible; },
         });
     };
 
@@ -154,13 +169,14 @@ export function recordTable(container, { columns: cols, rows: initial, save, cho
             if (c.kind === 'number' || c.kind === 'money') return `<input type="text" inputmode="decimal" class="num-input" ${attrs} value="${esc(v)}">`;
             if (c.kind === 'choice') return `<select ${attrs}>${choiceOptions(c, v)}</select>`;
             if (c.kind === 'suggest') return `<input type="text" list="${dlId(c)}" ${attrs} value="${esc(v)}">`;
+            if (c.kind === 'link') return `<input type="url" placeholder="https://…" ${attrs} value="${esc(v)}">`;
             return `<textarea ${attrs} rows="1">${esc(v)}</textarea>`;
         };
         const lists = editCols.filter(c => c.kind === 'suggest').map(c =>
             `<datalist id="${dlId(c)}">${suggestions(c).map(v => `<option value="${esc(v)}">`).join('')}</datalist>`).join('');
         tbl.innerHTML = `<thead><tr>${editCols.map(c => `<th>${esc(c.name)}${c.kind === 'end' ? ' <span class="muted">(blank = ongoing)</span>' : ''}</th>`).join('')}<th>${lists}</th></tr></thead>
             <tbody>${state.draft.map((r, i) => `<tr>${editCols.map(c => `<td>${input(c, i, r[c.name])}</td>`).join('')}
-                <td class="remove"><button type="button" class="danger" data-remove="${i}" title="Remove this entry" aria-label="Remove this entry">✕</button></td></tr>`).join('')
+                <td class="remove">${reorder ? moveButtons() : ''}<button type="button" class="danger" data-remove="${i}" title="Remove this entry" aria-label="Remove this entry">✕</button></td></tr>`).join('')
                 || `<tr><td colspan="${editCols.length + 1}" class="muted">No entries. Press ＋ Add entry.</td></tr>`}</tbody>`;
         markChanged();
     };
@@ -175,13 +191,16 @@ export function recordTable(container, { columns: cols, rows: initial, save, cho
     };
 
     function startEdit() {
-        state.draft = state.rows.map((r, i) => ({ ...r, _from: i })).sort(newestFirst(cols));
+        // A reordered table starts as the read-only view showed it (sorted by a column, say), entries filtered out last.
+        const order = reorder && state.shown ? [...state.shown, ...state.rows.filter(r => !state.shown.includes(r))] : state.rows;
+        state.draft = order.map(r => ({ ...r, _from: state.rows.indexOf(r) }));
+        if (!reorder) state.draft.sort(newestFirst(cols));
         state.original = JSON.stringify(state.draft);
         closeFilterMenu();
         readEl.hidden = true;
         readEl.innerHTML = '';
         editWrap.hidden = false;
-        tools.innerHTML = `<span class="muted edit-hint">Editing — changed cells are highlighted. Nothing is written until you press Save.</span>`;
+        tools.innerHTML = `<span class="muted edit-hint">Editing — changed cells are highlighted.${reorder ? ' ↑ ↓ move an entry.' : ''} Nothing is written until you press Save.</span>`;
         actions.hidden = false;
         drawEdit();
     }
@@ -216,6 +235,15 @@ export function recordTable(container, { columns: cols, rows: initial, save, cho
         markChanged();
     });
     tbl.addEventListener('click', e => {
+        const m = e.target.closest('[data-move]');
+        if (m) { // ↑ / ↓: swap with the entry above or below, keeping the button focused so clicks can repeat
+            const i = [...tbl.tBodies[0].rows].indexOf(m.closest('tr')), j = i + Number(m.dataset.move);
+            if (j < 0 || j >= state.draft.length) return;
+            [state.draft[i], state.draft[j]] = [state.draft[j], state.draft[i]];
+            drawEdit();
+            tbl.tBodies[0].rows[j].querySelector(`[data-move="${m.dataset.move}"]`).focus();
+            return;
+        }
         const b = e.target.closest('[data-remove]');
         if (!b) return;
         state.draft.splice(+b.dataset.remove, 1);
@@ -223,9 +251,10 @@ export function recordTable(container, { columns: cols, rows: initial, save, cho
     });
 
     container.querySelector('[data-add]').onclick = () => {
-        state.draft.unshift({ ...Object.fromEntries(editCols.map(c => [c.name, ''])), _from: null });
+        const row = { ...Object.fromEntries(editCols.map(c => [c.name, ''])), _from: null };
+        if (reorder) state.draft.push(row); else state.draft.unshift(row);
         drawEdit();
-        tbl.querySelector('[data-k]')?.focus();
+        (reorder ? tbl.tBodies[0].lastElementChild : tbl).querySelector('[data-k]')?.focus();
     };
     container.querySelector('[data-cancel]').onclick = () => {
         if (hasUnsavedEdits() && !confirm('Discard your changes?')) return;

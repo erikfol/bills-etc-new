@@ -1,31 +1,27 @@
 // The Projects tab: the list of house projects (#<house>/projects) and one page per project (#<house>/projects/<id>) to
 // plan it — status, plan & notes (headings, bullets, a [ ]/[x] step checklist), materials (with prices), measurements &
-// specs, cost estimates, photos & sketches, and the Future updates linked to it (their Project column). Its estimated
-// total is the materials (each one's price times its quantity) plus the cost estimates.
+// specs, photos & sketches, and the Future updates linked to it (their Project column). Its estimated total is what the
+// materials cost (each one's price times its quantity).
 import { esc, toast, money } from '../../../bills-etc/js/util.js';
 import { recordTable, showDate } from '../../../shared/js/recordtable.js';
 import { infoBox } from '../../../shared/js/infobox.js';
 import { renderGallery } from '../../../vehicles/js/views/gallery.js';
 import { textHtml } from '../../../vehicles/js/views/guides.js';
 import {
-    HOUSE_DIR, HOUSE_PATH, IMPROVEMENT_STATUSES, FUTURE_UPDATES, MATERIAL_COLUMNS, COST_COLUMNS, PROJECT_SPECS, houseProjects, projectDir,
+    HOUSE_DIR, HOUSE_PATH, IMPROVEMENT_STATUSES, FUTURE_UPDATES, MATERIAL_COLUMNS, PROJECT_SPECS, houseProjects, projectDir,
     materialCost, saveHouses, loadTable, saveTable,
 } from '../house.js';
 
 let draft = null; // { start, read } while the project's heading or its plan is being edited
 let materials = null; // the Materials table
 let specs = null; // the Measurements & specs box
-let costs = null; // the Cost estimates table
 
 export const projectUnsaved = () => (!!draft && draft.read() !== draft.start) || !!materials?.hasUnsavedEdits()
-    || !!specs?.hasUnsavedEdits() || !!costs?.hasUnsavedEdits();
-export const forgetProject = () => { draft = null; materials = null; specs = null; costs = null; };
+    || !!specs?.hasUnsavedEdits();
+export const forgetProject = () => { draft = null; materials = null; specs = null; };
 
 const isDone = p => /^done$/i.test((p.status || '').trim());
-const sum = (rows, col) => (rows || []).reduce((t, r) => t + (Number(r[col]) || 0), 0);
-const materialsTotal = p => (p.materials || []).reduce((t, r) => t + (Number(materialCost(r)) || 0), 0); // price × quantity
-const costsTotal = p => sum(p.costs, 'Estimate');
-const total = p => materialsTotal(p) + costsTotal(p);
+const total = p => (p.materials || []).reduce((t, r) => t + (Number(materialCost(r)) || 0), 0); // price × quantity
 const projectHref = (h, p) => `#${h.id}/projects/${p.id}`;
 
 /** '3 of 5 steps done' from the plan's [ ] / [x] lines, or ''. */
@@ -65,7 +61,7 @@ export function renderProjectList(el, list, h, top) {
             <div class="row table-tools">
                 <button type="button" class="small" id="p-add">＋ Add project</button>
                 <span class="muted edit-hint">${items.length ? 'Click a project to open it.' : 'No projects yet.'}
-                    Plan a project: its steps, sizes and specs, cost estimates, and photos or sketches.</span>
+                    Plan a project: its steps, materials, sizes and specs, and photos or sketches.</span>
             </div>
             <div id="p-new"></div>
             <div class="place-grid">${items.map(p => `
@@ -92,7 +88,7 @@ export function renderProjectList(el, list, h, top) {
             const title = f.title.value.trim();
             if (!title) return;
             const p = { id: newId(items, title), title, status: 'Idea', text: '', materials: [],
-                specs: PROJECT_SPECS.map(label => ({ label, value: '' })), costs: [] };
+                specs: PROJECT_SPECS.map(label => ({ label, value: '' })) };
             try {
                 await saveProjects(list, h, [...items, p]);
             } catch (err) { return toast(`Couldn't save: ${err.message}`, 'bad'); }
@@ -115,7 +111,6 @@ export async function renderProject(el, list, h, top, p) {
         ${section('Plan & notes', 'p-plan')}
         ${section('Materials', 'p-materials')}
         ${section('Measurements & specs', 'p-specs')}
-        ${section('Cost estimates', 'p-costs')}
         ${section('Photos & sketches', 'p-photos')}
         ${section('Future updates', 'p-updates')}`;
 
@@ -133,8 +128,7 @@ export async function renderProject(el, list, h, top, p) {
                 <span class="muted edit-hint">Change the name or status, or remove the project.</span></div>
             <dl class="info-grid">
                 <div class="info-item"><dt>Status</dt><dd>${p.status ? `<span class="cat-badge">${esc(p.status)}</span>` : '<span class="muted">—</span>'}</dd></div>
-                <div class="info-item"><dt>Estimated total</dt><dd>${esc(money(total(p)))}${total(p)
-                    ? `<div class="muted">materials ${esc(money(materialsTotal(p)))} + cost estimates ${esc(money(costsTotal(p)))}</div>` : ''}</dd></div>
+                <div class="info-item"><dt>Estimated total</dt><dd>${esc(money(total(p)))}</dd></div>
                 <div class="info-item"><dt>Steps</dt><dd>${esc(steps(p) || 'None yet — add [ ] steps to the plan')}</dd></div>
             </dl>`;
         head.querySelector('[data-edit]').onclick = editHead;
@@ -230,6 +224,7 @@ export async function renderProject(el, list, h, top, p) {
             : c.name === 'Price' ? [{ ...c, total: false }, { name: 'Total', kind: 'money', calc: materialCost }] // price × quantity
             : [c])),
         rows: filled(p.materials, MATERIAL_COLUMNS),
+        reorder: true,
         save: async rows => { await update({ materials: rows }); showHead(); }, // the total
     });
 
@@ -237,12 +232,6 @@ export async function renderProject(el, list, h, top, p) {
         info: p.specs || [],
         noun: 'project',
         save: async info => update({ specs: info }),
-    });
-
-    costs = recordTable(el.querySelector('#p-costs'), {
-        columns: COST_COLUMNS.map(c => (c.name === 'Source' ? { ...c, suggestions: places } : c)),
-        rows: filled(p.costs, COST_COLUMNS),
-        save: async rows => { await update({ costs: rows }); showHead(); }, // the total
     });
 
     renderGallery(el.querySelector('#p-photos'), projectDir(h, p), { noun: 'image' }).catch(err => {

@@ -77,8 +77,8 @@ export const AREAS = [
 export const FUTURE_UPDATES = AREAS.find(t => t.id === 'updates').parts.find(p => p.id === 'future-updates');
 
 // The Projects tab's projects, kept on the house in house.json as areas.projects.items:
-// [{ id, title, status, text (plan & notes), materials: [{ Brand, Item, Quantity, 'Size / Spec', Price (each), Source, Notes }],
-//    specs: [{ label, value }], costs: [{ Item, Estimate, Source, Notes }] }];
+// [{ id, title, status, text (plan & notes), materials: [{ Brand, Item, Quantity, 'Size / Spec', Price (each), Source, Link, Notes }],
+//    specs: [{ label, value }] }];
 // each project's photos and sketches in its own folder.
 export const houseProjects = h => h.areas?.projects?.items ?? [];
 export const projectDir = (h, p) => `${HOUSE_DIR}/projects/${h.id}-${p.id}`;
@@ -90,6 +90,7 @@ export const MATERIAL_COLUMNS = [
     { name: 'Size / Spec', kind: 'suggest' },
     { name: 'Price', kind: 'money' },
     { name: 'Source', kind: 'suggest' },
+    { name: 'Link', kind: 'link' },
     { name: 'Notes', kind: 'text' },
 ];
 
@@ -106,13 +107,6 @@ export const materialCost = r => {
     const price = String(r.Price ?? '').trim();
     return price === '' || Number.isNaN(Number(price)) ? '' : Number(price) * quantityOf(r.Quantity);
 };
-
-export const COST_COLUMNS = [
-    { name: 'Item', kind: 'text' },
-    { name: 'Estimate', kind: 'money' },
-    { name: 'Source', kind: 'suggest' },
-    { name: 'Notes', kind: 'text' },
-];
 
 // Offered in a future improvement's (and a project's) Status (anything else can be typed). 'Done' ones are shown crossed out.
 export const IMPROVEMENT_STATUSES = ['Idea', 'Researching', 'Getting quotes', 'Planned', 'In progress', 'Done'];
