@@ -10,7 +10,7 @@ import {
     loadVehicles, loadMaintenance, maintenanceColumns, photosDir, guideDir, noteDir, TYPES, hasMileageLog, loadMileage, MILEAGE_COLUMNS,
     latestMileage, mileageRate, mileageRateColumns,
 } from '../../vehicles/js/vehicles.js';
-import { SECTIONS, loadRecords } from '../../health/js/records.js';
+import { SECTIONS, loadRecords, loadAccount } from '../../health/js/records.js';
 import * as house from '../../house/js/house.js';
 import { loadPets, ageText, RECORD_COLUMNS, loadRecords as loadPetRecords, photosDir as petPhotosDir,
     APPOINTMENT_COLUMNS, loadAppointments, appointmentStatus } from '../../pets/js/pets.js';
@@ -112,7 +112,12 @@ export async function collectData(progress = () => {}) {
         houses.push({ name: h.name, info: h.info || [], places: h.places || [], photos: await images(house.photosDir(h), tick), areas });
     }
     const health = [];
-    for (const s of SECTIONS) health.push({ label: s.label, columns: s.columns, rows: await loadRecords(s, false) });
+    for (const s of SECTIONS) {
+        // the account's title and website only: its sign-in hint stays off the phone copy (the file lives on Google Drive)
+        const a = s.account ? await loadAccount(s, false) : null;
+        health.push({ label: s.label, columns: s.columns, rows: await loadRecords(s, false),
+            account: a && (a.title || a.url) ? { title: a.title || '', linkText: a.linkText || '', url: a.url || '' } : null });
+    }
     const pets = [];
     for (const p of await loadPets(false)) pets.push({ name: p.name, info: p.info || [], appointments: { columns: APPOINTMENT_COLUMNS, rows: await loadAppointments(p, false) }, records: { columns: RECORD_COLUMNS, rows: await loadPetRecords(p, false) }, photos: await images(petPhotosDir(p), tick) });
     return { made: new Date().toISOString(), vehicles, houses, health, pets };
@@ -359,6 +364,9 @@ function viewer(D, ageText, houseAge, appointmentStatus, maintenanceStatus) { //
 
     function drawHealth(h) {
         main.insertAdjacentHTML('beforeend', `<h1>${esc(h.label)}</h1>`);
+        const a = h.account;
+        if (a) main.insertAdjacentHTML('beforeend', `<div class="sec acct">${a.title ? `<b>${esc(a.title)}</b>` : ''}
+            ${/^https?:\/\//i.test(a.url) ? `<a href="${esc(a.url)}" target="_blank" rel="noopener">${esc(a.linkText || 'Website')} ↗</a>` : ''}</div>`);
         section(`Entries (${h.rows.length})`, true, el => records(el, h.columns, h.rows));
     }
 
@@ -416,6 +424,7 @@ input, select { font:inherit; font-size:15px; padding:8px 10px; border:1px solid
 .place:first-child { border-top:0; padding-top:0; }
 .place h3 { font-size:1em; }
 .place p { margin:4px 0; }
+.sec.acct { padding:12px 14px; display:flex; flex-wrap:wrap; gap:8px 14px; align-items:center; justify-content:space-between; }
 .place.crossed { opacity:0.6; }
 a { color:var(--accent); }
 a.btn { display:inline-block; text-decoration:none; border:1px solid var(--line); border-radius:8px; padding:6px 12px; }

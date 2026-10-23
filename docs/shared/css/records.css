@@ -41,3 +41,6 @@ td.move .move-btns { margin-right: 0; }
     background: var(--surface); border: 1px solid #f0d58a; border-left: 4px solid #f5b041; border-radius: 8px;
     padding: 10px 12px; box-shadow: 0 6px 20px rgba(0,0,0,0.15); font-size: 0.9em;
 }
+
+/* Health → HSA: the account's sign-in hint under its title (like a Loan/CC card's notes) */
+.acct-hint { color: var(--muted); margin: -4px 0 0; overflow-wrap: anywhere; }

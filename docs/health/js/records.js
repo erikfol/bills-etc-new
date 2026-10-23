@@ -31,7 +31,7 @@ export const SECTIONS = [
         { name: 'Out of Pocket', kind: 'money' },
         { name: 'Additional Notes', kind: 'text' },
     ] },
-    { id: 'hsa', label: 'Health Savings Account (HSA)', path: `${HEALTH_DIR}/hsa.csv`, columns: [
+    { id: 'hsa', label: 'Health Savings Account (HSA)', path: `${HEALTH_DIR}/hsa.csv`, account: `${HEALTH_DIR}/hsa.json`, columns: [
         { name: 'Date', kind: 'date' },
         { name: 'Type', kind: 'suggest', suggestions: ['Contribution', 'Employer contribution', 'Payment', 'Reimbursement', 'Interest', 'Fee'] },
         { name: 'Description', kind: 'text' },
@@ -57,6 +57,20 @@ export async function loadRecords(section, track = true) {
 export async function saveRecords(section, rows) {
     await writeTracked(section.path, toCSV(names(section), rows));
     window.dispatchEvent(new Event('data-saved')); // the phone copy (shared/js/phonecopy.js) updates itself
+}
+
+/**
+ * A section's account box (HSA): { title, hint, linkText, url } — who holds it, a sign-in hint and its website; {} until
+ * set. Kept in inputs/ like the records, never in the code (the site is public).
+ */
+export async function loadAccount(section, track = true) {
+    const text = track ? await readTracked(section.account) : await fs.readText(section.account);
+    return text === null ? {} : JSON.parse(text);
+}
+
+export async function saveAccount(section, account) {
+    await writeTracked(section.account, JSON.stringify(account, null, 2) + '\n');
+    window.dispatchEvent(new Event('data-saved'));
 }
 
 export async function loadLocations() {
