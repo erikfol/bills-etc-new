@@ -97,6 +97,7 @@ function accountBox(box, section, account, rows, ctx) {
         const a = account;
         head.innerHTML = `
             <h2>${esc(a.title)}
+                ${a.accountNumber ? `<span class="acct-num" title="Account number">Account: ${esc(a.accountNumber)}</span>` : ''}
                 <span class="spacer"></span>
                 ${a.url ? `<a class="ext-link" href="${esc(a.url)}" target="_blank" rel="noopener" title="${esc(a.url)}">${esc(a.linkText || 'Website')} ↗</a>` : ''}
                 <button type="button" class="small" data-edit>✎ Edit</button></h2>
@@ -143,6 +144,7 @@ function cleanUrl(url) {
 
 const ACCOUNT_FIELDS = [
     { key: 'title', label: 'Title', placeholder: 'e.g. HealthEquity' },
+    { key: 'accountNumber', label: 'Account number', placeholder: 'optional' },
     { key: 'hint', label: 'Hint', placeholder: 'optional: e.g. [UN: …] [PW: …]' },
     { key: 'linkText', label: 'Link text', placeholder: 'e.g. HealthEquity Online' },
     { key: 'url', label: 'Link', placeholder: 'optional: https://…' },

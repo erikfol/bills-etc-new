@@ -79,7 +79,7 @@ export async function saveRecords(section, rows) {
 }
 
 /**
- * A section's accounts (the HSA's): [{ id, title, hint, linkText, url, file }] — who holds it, a sign-in hint, its
+ * A section's accounts (the HSA's): [{ id, title, accountNumber, hint, linkText, url, file }] — who holds it, its number, a sign-in hint, its
  * website, and the CSV in inputs/health/ its entries are kept in. Kept in inputs/ like the records, never in the code
  * (the site is public).
  */
