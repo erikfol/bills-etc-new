@@ -74,7 +74,7 @@ export const AREAS = [
     { id: 'septic', label: 'Septic',
         fields: ['Tank Size', 'Tank Material', 'Tank Location', 'Leach Field Location', 'Installed', 'Pump Every', 'Notes'],
         actions: ['Pumped', 'Inspection', 'Effluent filter cleaned', 'Baffle repair', 'Riser / cover', 'Repair'],
-        maintenance: true },
+        maintenance: true, maintenanceNote: 'Must be pumped every 7 years by a professional' },
 ];
 
 /** Updates → Future Updates, whose Project column links a planned update to a project. */
