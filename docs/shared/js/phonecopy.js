@@ -10,7 +10,7 @@ import {
     loadVehicles, loadMaintenance, maintenanceColumns, photosDir, guideDir, noteDir, TYPES, hasMileageLog, loadMileage, MILEAGE_COLUMNS,
     latestMileage, mileageRate, mileageRateColumns,
 } from '../../vehicles/js/vehicles.js';
-import { SECTIONS, loadRecords, loadAccount } from '../../health/js/records.js';
+import { SECTIONS, loadRecords, loadAccounts, accountSection } from '../../health/js/records.js';
 import * as house from '../../house/js/house.js';
 import { loadPets, ageText, RECORD_COLUMNS, loadRecords as loadPetRecords, photosDir as petPhotosDir,
     APPOINTMENT_COLUMNS, loadAppointments, appointmentStatus } from '../../pets/js/pets.js';
@@ -113,11 +113,15 @@ export async function collectData(progress = () => {}) {
     }
     const health = [];
     for (const s of SECTIONS) {
-        // the account's title and website only: its sign-in hint stays off the phone copy (the file lives on Google Drive)
-        const a = s.account ? await loadAccount(s, false) : null;
-        const rows = await loadRecords(s, false);
-        health.push({ label: s.label, columns: s.columns, rows, balance: s.balance ? s.balance(rows) : null,
-            account: a && (a.title || a.url) ? { title: a.title || '', linkText: a.linkText || '', url: a.url || '' } : null });
+        if (!s.accounts) { health.push({ label: s.label, columns: s.columns, rows: await loadRecords(s, false) }); continue; }
+        // the HSA: each account's title, website, balance and entries; its sign-in hint stays off the phone copy (the
+        // file lives on Google Drive)
+        const accounts = [];
+        for (const a of await loadAccounts(s, false)) {
+            const rows = await loadRecords(accountSection(s, a), false);
+            accounts.push({ title: a.title || '', linkText: a.linkText || '', url: a.url || '', balance: s.balance(rows), rows });
+        }
+        health.push({ label: s.label, columns: s.columns, accounts });
     }
     const pets = [];
     for (const p of await loadPets(false)) pets.push({ name: p.name, info: p.info || [], appointments: { columns: APPOINTMENT_COLUMNS, rows: await loadAppointments(p, false) }, records: { columns: RECORD_COLUMNS, rows: await loadPetRecords(p, false) }, photos: await images(petPhotosDir(p), tick) });
@@ -365,11 +369,15 @@ function viewer(D, ageText, houseAge, appointmentStatus, maintenanceStatus) { //
 
     function drawHealth(h) {
         main.insertAdjacentHTML('beforeend', `<h1>${esc(h.label)}</h1>`);
-        const a = h.account || {}, b = h.balance;
-        if (h.account || b) main.insertAdjacentHTML('beforeend', `<div class="sec acct"><div>${a.title ? `<b>${esc(a.title)}</b>` : ''}
-            ${b ? `<div class="sub">Total balance <b class="${b.balance < 0 ? 'neg' : 'pos'}">${money(b.balance)}</b> (${money(b.deposits)} deposits − ${money(b.charges)} charges)</div>` : ''}</div>
-            ${/^https?:\/\//i.test(a.url || '') ? `<a href="${esc(a.url)}" target="_blank" rel="noopener">${esc(a.linkText || 'Website')} ↗</a>` : ''}</div>`);
-        section(`Entries (${h.rows.length})`, true, el => records(el, h.columns, h.rows));
+        if (!h.accounts) return section(`Entries (${h.rows.length})`, true, el => records(el, h.columns, h.rows));
+        if (!h.accounts.length) main.insertAdjacentHTML('beforeend', '<p class="muted">No accounts yet.</p>');
+        for (const a of h.accounts) {
+            const b = a.balance;
+            main.insertAdjacentHTML('beforeend', `<div class="sec acct"><div><b>${esc(a.title)}</b>
+                <div class="sub">Total balance <b class="${b.balance < 0 ? 'neg' : 'pos'}">${money(b.balance)}</b> (${money(b.deposits)} deposits − ${money(b.charges)} charges)</div></div>
+                ${/^https?:\/\//i.test(a.url) ? `<a href="${esc(a.url)}" target="_blank" rel="noopener">${esc(a.linkText || 'Website')} ↗</a>` : ''}</div>`);
+            section(`${esc(a.title)} entries (${a.rows.length})`, false, el => records(el, h.columns, a.rows));
+        }
     }
 
     function drawPet(p) {

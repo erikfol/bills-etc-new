@@ -31,7 +31,8 @@ export const SECTIONS = [
         { name: 'Out of Pocket', kind: 'money' },
         { name: 'Additional Notes', kind: 'text' },
     ] },
-    { id: 'hsa', label: 'Health Savings Account (HSA)', path: `${HEALTH_DIR}/hsa.csv`, account: `${HEALTH_DIR}/hsa.json`, balance: accountBalance, columns: [
+    // Several accounts (FLORES, WealthCare…), each with its own entries file; see loadAccounts.
+    { id: 'hsa', label: 'Health Savings Account (HSA)', accounts: `${HEALTH_DIR}/hsa.json`, balance: accountBalance, columns: [
         { name: 'Date', kind: 'date' },
         { name: 'Type', kind: 'suggest', suggestions: ['Deposit', 'Charge'] }, // or anything typed in
         { name: 'Description', kind: 'text' },
@@ -78,18 +79,36 @@ export async function saveRecords(section, rows) {
 }
 
 /**
- * A section's account box (HSA): { title, hint, linkText, url } — who holds it, a sign-in hint and its website; {} until
- * set. Kept in inputs/ like the records, never in the code (the site is public).
+ * A section's accounts (the HSA's): [{ id, title, hint, linkText, url, file }] — who holds it, a sign-in hint, its
+ * website, and the CSV in inputs/health/ its entries are kept in. Kept in inputs/ like the records, never in the code
+ * (the site is public).
  */
-export async function loadAccount(section, track = true) {
-    const text = track ? await readTracked(section.account) : await fs.readText(section.account);
-    return text === null ? {} : JSON.parse(text);
+export async function loadAccounts(section, track = true) {
+    const text = track ? await readTracked(section.accounts) : await fs.readText(section.accounts);
+    if (text === null) return [];
+    const data = JSON.parse(text);
+    if (Array.isArray(data.accounts)) return data.accounts;
+    // the first version held one account, with its entries in hsa.csv
+    return data.title || data.url ? [{ id: slug(data.title) || 'account', file: 'hsa.csv', ...data }] : [];
 }
 
-export async function saveAccount(section, account) {
-    await writeTracked(section.account, JSON.stringify(account, null, 2) + '\n');
+export async function saveAccounts(section, list) {
+    await writeTracked(section.accounts, JSON.stringify({ accounts: list }, null, 2) + '\n');
     window.dispatchEvent(new Event('data-saved'));
 }
+
+const slug = s => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+
+/** A new account called `title`, with an id and an entries file of its own ('WealthCare' → hsa-wealthcare.csv). */
+export function newAccount(section, list, title) {
+    const base = slug(title) || 'account';
+    let id = base;
+    for (let n = 2; list.some(a => a.id === id); n++) id = `${base}-${n}`;
+    return { id, title, file: `${section.id}-${id}.csv` };
+}
+
+/** The section as one account's table: same columns, that account's file. */
+export const accountSection = (section, account) => ({ ...section, path: `${HEALTH_DIR}/${account.file}` });
 
 export async function loadLocations() {
     const text = await readTracked(LOCATIONS_PATH);
