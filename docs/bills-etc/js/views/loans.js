@@ -530,7 +530,8 @@ function renderAccount(sec, account, rawPayments, rawActivity, { first, last, re
                     <div class="t-pay short-table"></div>
                     ${loan ? `<p class="note" style="margin-top:6px">Each payment pays the month's interest${T.escrow ? ' and escrow' : ''} first; the rest lowers the balance. Interest marked ~ is estimated (balance × ${esc(String(T.apr || 0))}% ÷ 12): type the amount from your statement in Edit to make it exact.</p>`
                         : payments.some(p => p.projected) ? `<p class="note" style="margin-top:6px">Planned payments show the balance as if each one before it is made, with a month's interest each: ${esc(P.model?.text || interestModel(account, L).text)}.</p>` : ''}
-                    <div class="row" style="margin-top:10px"><button type="button" class="primary small" data-pay-open>+ Add payment</button></div>
+                    <div class="row" style="margin-top:10px"><button type="button" class="primary small" data-pay-open>+ Add payment</button>
+                        <button type="button" class="small" data-edit-rows="pay" title="Change or remove payments">✎ Edit payments</button></div>
                     <form class="add-bill pay-form" hidden>
                         <h3>Add a payment</h3>
                         <div class="add-grid">
@@ -551,7 +552,8 @@ function renderAccount(sec, account, rawPayments, rawActivity, { first, last, re
                 <div>
                     <h3 class="chart-title">${loan ? 'Fees &amp; adjustments <span class="muted" style="font-weight:400">late fees, credits, other changes to the balance</span>' : 'Activity <span class="muted" style="font-weight:400">charges, interest, fees, credits</span>'}</h3>
                     <div class="t-act short-table"></div>
-                    <div class="row" style="margin-top:10px"><button type="button" class="primary small" data-act-open>+ Add activity</button></div>
+                    <div class="row" style="margin-top:10px"><button type="button" class="primary small" data-act-open>+ Add activity</button>
+                        <button type="button" class="small" data-edit-rows="act" title="Change or remove activity">✎ Edit activity</button></div>
                     <form class="add-bill act-form" hidden>
                         <h3>Add activity</h3>
                         <div class="add-grid">
@@ -852,6 +854,12 @@ function renderAccount(sec, account, rawPayments, rawActivity, { first, last, re
     };
     let editEstimate = null;
     $('[data-edit]').addEventListener('click', () => { if (loan) editEstimate = bindLoanHints(ed.querySelector('.loan-fields')); });
+    // ✎ Edit payments / ✎ Edit activity (next to the Add buttons): the same edit mode, scrolled to that table.
+    sec.querySelectorAll('[data-edit-rows]').forEach(b => b.onclick = () => {
+        $('[data-edit]').click();
+        ed.querySelector(b.dataset.editRows === 'pay' ? '.pay-grid' : '.act-grid').closest('.table-wrap').previousElementSibling
+            .scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
     ed.addEventListener('click', async e => {
         if (e.target.closest('[data-add-pay-row]')) {
             const lastRow = [...ed.querySelectorAll('.pay-grid tbody tr')].at(-1);

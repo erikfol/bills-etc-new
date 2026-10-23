@@ -407,7 +407,7 @@ section.loan.collapsed h2 { margin-bottom: 8px; }
 .totals-table td, .totals-table th { padding: 7px 10px; }
 .totals-row { cursor: pointer; }
 .totals-row:hover td { background: #eef4ff; }
-section.loan { scroll-margin-top: 70px; }
+section.loan, .loan .edit-mode .chart-title { scroll-margin-top: 70px; }
 /* Savings */
 .sav-cards { grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
 .bucket-list { display: flex; flex-direction: column; gap: 2px; }
