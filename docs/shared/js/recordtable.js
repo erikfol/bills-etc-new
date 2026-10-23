@@ -1,6 +1,6 @@
 // Editable record table shared by the Home-page sections (Health, Vehicles): read-only with Excel-style sort and
-// filter on every column until Edit is pressed; then every cell is an input, rows can be added and removed (and, if
-// the table keeps its own order, moved up and down), and Save hands the rows back to be written.
+// filter on every column until Edit is pressed; then every cell is an input, rows can be added, removed and moved up
+// and down, and Save hands the rows back to be written. The rows keep the order they're saved in.
 import { esc, toast, money } from '../../bills-etc/js/util.js';
 import { dataTable, closeFilterMenu } from '../../bills-etc/js/datatable.js';
 import { moveButtons } from './infobox.js';
@@ -25,18 +25,6 @@ const numberOf = v => {
     return s === '' ? '' : Number(s);
 };
 
-/** Newest first by the date columns; entries without a date go last. */
-export const newestFirst = columns => {
-    const dates = columns.filter(c => c.kind === 'date' || c.kind === 'end').map(c => c.name);
-    return (a, b) => {
-        for (const d of dates) {
-            const cmp = (b[d] || '').localeCompare(a[d] || '');
-            if (cmp) return cmp;
-        }
-        return 0;
-    };
-};
-
 /**
  * Render into `container` (which it owns). Options:
  *   columns: [{ name, kind }] — kind: 'date' (YYYY-MM-DD), 'end' (date; blank = ongoing), 'number',
@@ -50,11 +38,11 @@ export const newestFirst = columns => {
  *   save:    async rows => void (rows already trimmed and without blank entries)
  *   choices: { [name]: { list: string[], noun: 'location', add: async name => void } } for 'choice' columns
  *            (without add the list is fixed: no "＋ New …" option)
- *   reorder: the rows keep the order they're saved in — editing starts in the order the read-only view shows (so a
- *            column sort can be kept), ↑ ↓ move a row and new entries go at the bottom
+ * Rows are shown in the order they're saved in. Editing starts in the order the read-only view shows (so a column sort
+ * can be kept), ↑ ↓ move a row, and a new entry goes at the top of a table with dates (the bottom of one without).
  * Returns { hasUnsavedEdits() }.
  */
-export function recordTable(container, { columns: cols, rows: initial, save, choices = {}, reorder = false }) {
+export function recordTable(container, { columns: cols, rows: initial, save, choices = {} }) {
     const tableNo = ++tableCount;
     const editCols = cols.filter(c => !c.calc); // the columns that are typed in and saved
     const valueOf = (c, r) => (c.calc ? c.calc(r) : r[c.name]);
@@ -124,14 +112,12 @@ export function recordTable(container, { columns: cols, rows: initial, save, cho
         tbl.innerHTML = '';
         readEl.hidden = false;
         tools.innerHTML = `<button type="button" class="small" data-edit>✎ Edit</button>
-            <span class="muted edit-hint">Click a column name to sort, or ▾ to sort and filter. ${reorder
-                ? 'Turn on editing to add, change, remove or reorder entries — it starts in the order shown, and Save keeps that order.'
-                : 'Turn on editing to add, change or remove entries.'}</span>`;
+            <span class="muted edit-hint">Click a column name to sort, or ▾ to sort and filter. Turn on editing to add,
+                change, remove or reorder entries — it starts in the order shown, and Save keeps that order.</span>`;
         tools.querySelector('[data-edit]').onclick = startEdit;
         dataTable(readEl, {
             columns: cols.map(column),
             rows: state.rows,
-            sort: firstDate ? { col: firstDate.name, dir: 'desc' } : null,
             empty: state.rows.length ? 'No entries match the filters' : 'No entries yet. Press Edit to add one.',
             footer: cols.some(c => c.kind === 'money') ? totalRow : undefined,
             onChange: visible => { state.shown = visible; },
@@ -174,10 +160,10 @@ export function recordTable(container, { columns: cols, rows: initial, save, cho
         };
         const lists = editCols.filter(c => c.kind === 'suggest').map(c =>
             `<datalist id="${dlId(c)}">${suggestions(c).map(v => `<option value="${esc(v)}">`).join('')}</datalist>`).join('');
-        tbl.innerHTML = `<thead><tr>${reorder ? '<th></th>' : ''}${editCols.map(c => `<th>${esc(c.name)}${c.kind === 'end' ? ' <span class="muted">(blank = ongoing)</span>' : ''}</th>`).join('')}<th>${lists}</th></tr></thead>
-            <tbody>${state.draft.map((r, i) => `<tr>${reorder ? `<td class="move">${moveButtons()}</td>` : ''}${editCols.map(c => `<td>${input(c, i, r[c.name])}</td>`).join('')}
+        tbl.innerHTML = `<thead><tr><th></th>${editCols.map(c => `<th>${esc(c.name)}${c.kind === 'end' ? ' <span class="muted">(blank = ongoing)</span>' : ''}</th>`).join('')}<th>${lists}</th></tr></thead>
+            <tbody>${state.draft.map((r, i) => `<tr><td class="move">${moveButtons()}</td>${editCols.map(c => `<td>${input(c, i, r[c.name])}</td>`).join('')}
                 <td class="remove"><button type="button" class="danger" data-remove="${i}" title="Remove this entry" aria-label="Remove this entry">✕</button></td></tr>`).join('')
-                || `<tr><td colspan="${editCols.length + (reorder ? 2 : 1)}" class="muted">No entries. Press ＋ Add entry.</td></tr>`}</tbody>`;
+                || `<tr><td colspan="${editCols.length + 2}" class="muted">No entries. Press ＋ Add entry.</td></tr>`}</tbody>`;
         markChanged();
     };
 
@@ -191,16 +177,15 @@ export function recordTable(container, { columns: cols, rows: initial, save, cho
     };
 
     function startEdit() {
-        // A reordered table starts as the read-only view showed it (sorted by a column, say), entries filtered out last.
-        const order = reorder && state.shown ? [...state.shown, ...state.rows.filter(r => !state.shown.includes(r))] : state.rows;
+        // Start as the read-only view showed it (sorted by a column, say), entries filtered out last.
+        const order = state.shown ? [...state.shown, ...state.rows.filter(r => !state.shown.includes(r))] : state.rows;
         state.draft = order.map(r => ({ ...r, _from: state.rows.indexOf(r) }));
-        if (!reorder) state.draft.sort(newestFirst(cols));
         state.original = JSON.stringify(state.draft);
         closeFilterMenu();
         readEl.hidden = true;
         readEl.innerHTML = '';
         editWrap.hidden = false;
-        tools.innerHTML = `<span class="muted edit-hint">Editing — changed cells are highlighted.${reorder ? ' ↑ ↓ move an entry.' : ''} Nothing is written until you press Save.</span>`;
+        tools.innerHTML = `<span class="muted edit-hint">Editing — changed cells are highlighted. ↑ ↓ move an entry. Nothing is written until you press Save.</span>`;
         actions.hidden = false;
         drawEdit();
     }
@@ -252,9 +237,9 @@ export function recordTable(container, { columns: cols, rows: initial, save, cho
 
     container.querySelector('[data-add]').onclick = () => {
         const row = { ...Object.fromEntries(editCols.map(c => [c.name, ''])), _from: null };
-        if (reorder) state.draft.push(row); else state.draft.unshift(row);
+        if (firstDate) state.draft.unshift(row); else state.draft.push(row); // dated tables keep the newest at the top
         drawEdit();
-        (reorder ? tbl.tBodies[0].lastElementChild : tbl).querySelector('[data-k]')?.focus();
+        (firstDate ? tbl.tBodies[0].firstElementChild : tbl.tBodies[0].lastElementChild).querySelector('[data-k]')?.focus();
     };
     container.querySelector('[data-cancel]').onclick = () => {
         if (hasUnsavedEdits() && !confirm('Discard your changes?')) return;

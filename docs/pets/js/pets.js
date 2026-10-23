@@ -2,7 +2,6 @@
 // inputs/ is kept out of git.
 import * as fs from '../../bills-etc/js/fs.js';
 import { parseCSV, toCSV } from '../../bills-etc/js/csv.js';
-import { newestFirst } from '../../shared/js/recordtable.js';
 import { readTracked, writeTracked } from '../../shared/js/fileguard.js';
 
 export const PETS_DIR = 'inputs/pets';
@@ -88,7 +87,7 @@ export async function loadRecords(p, track = true) {
 }
 
 export async function saveRecords(p, rows) {
-    await writeTracked(recordsPath(p), toCSV(RECORD_COLUMNS.map(c => c.name), [...rows].sort(newestFirst(RECORD_COLUMNS))));
+    await writeTracked(recordsPath(p), toCSV(RECORD_COLUMNS.map(c => c.name), rows));
     window.dispatchEvent(new Event('data-saved')); // the phone copy (shared/js/phonecopy.js) updates itself
 }
 
@@ -110,7 +109,7 @@ export async function loadAppointments(p, track = true) {
 }
 
 export async function saveAppointments(p, rows) {
-    await writeTracked(appointmentsPath(p), toCSV(APPOINTMENT_COLUMNS.map(c => c.name), [...rows].sort(newestFirst(APPOINTMENT_COLUMNS))));
+    await writeTracked(appointmentsPath(p), toCSV(APPOINTMENT_COLUMNS.map(c => c.name), rows));
     window.dispatchEvent(new Event('data-saved')); // the phone copy (shared/js/phonecopy.js) updates itself
 }
 

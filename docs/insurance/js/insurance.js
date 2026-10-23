@@ -2,7 +2,6 @@
 // one records CSV per policy next to it. inputs/ is kept out of git.
 import * as fs from '../../bills-etc/js/fs.js';
 import { parseCSV, toCSV } from '../../bills-etc/js/csv.js';
-import { newestFirst } from '../../shared/js/recordtable.js';
 import { readTracked, writeTracked } from '../../shared/js/fileguard.js';
 
 export const INSURANCE_DIR = 'inputs/insurance';
@@ -67,6 +66,6 @@ export async function loadRecords(p, track = true) {
 }
 
 export async function saveRecords(p, rows) {
-    await writeTracked(recordsPath(p), toCSV(RECORD_COLUMNS.map(c => c.name), [...rows].sort(newestFirst(RECORD_COLUMNS))));
+    await writeTracked(recordsPath(p), toCSV(RECORD_COLUMNS.map(c => c.name), rows));
     window.dispatchEvent(new Event('data-saved'));
 }

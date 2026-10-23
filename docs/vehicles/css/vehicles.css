@@ -6,16 +6,14 @@
 .info-item.wide { grid-column: 1 / -1; }
 .info-name { max-width: 420px; margin-bottom: 14px; }
 .info-edit td { padding: 4px 6px; vertical-align: top; }
-.info-edit td:first-child { width: 30%; }
+.info-edit td.move { width: 1%; white-space: nowrap; }
+.info-edit td.move + td { width: 30%; }
 .info-edit input, .info-edit textarea { width: 100%; }
 .info-edit textarea {
     font: inherit; font-size: 0.9em; resize: vertical;
     padding: 6px 10px; border: 1px solid var(--line-strong); border-radius: 6px; background: #f8faff;
 }
 .info-edit td.remove { width: 1%; white-space: nowrap; }
-/* ↑ ↓ buttons in edit lists (shared/js/infobox.js) */
-.move-btns { display: inline-flex; gap: 4px; margin-right: 6px; vertical-align: middle; }
-.move-btns button { padding: 3px 9px; }
 .info-edit td.remove button { padding: 3px 9px; }
 .new-vehicle { display: flex; flex-direction: column; gap: 12px; max-width: 420px; }
 

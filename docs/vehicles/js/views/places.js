@@ -50,9 +50,8 @@ export function renderPlaces(el, list, v, store = STORE) {
 
     const placeForm = p => `
         <div class="place-form">
-            <div class="row"><strong>Place</strong><span class="spacer"></span>
+            <div class="row">${moveButtons()}<strong>Place</strong><span class="spacer"></span>
                 <label class="crossed-check" title="Keep this place but strike it through"><input type="checkbox" data-crossed${p.crossed ? ' checked' : ''}> Crossed out</label>
-                ${moveButtons()}
                 <button type="button" class="danger small" data-remove title="Remove this place">✕ Remove</button></div>
             <div class="place-form-grid">
                 <label class="field">Name<input type="text" data-f="name" value="${esc(p.name)}"></label>

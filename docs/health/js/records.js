@@ -1,7 +1,6 @@
 // Health records: one CSV per section in inputs/health/ of the connected folder (kept out of git like all of inputs/).
 import * as fs from '../../bills-etc/js/fs.js';
 import { parseCSV, toCSV } from '../../bills-etc/js/csv.js';
-import { newestFirst } from '../../shared/js/recordtable.js';
 import { readTracked, writeTracked } from '../../shared/js/fileguard.js';
 
 export const HEALTH_DIR = 'inputs/health';
@@ -47,7 +46,7 @@ export async function loadRecords(section, track = true) {
 }
 
 export async function saveRecords(section, rows) {
-    await writeTracked(section.path, toCSV(names(section), [...rows].sort(newestFirst(section.columns))));
+    await writeTracked(section.path, toCSV(names(section), rows));
     window.dispatchEvent(new Event('data-saved')); // the phone copy (shared/js/phonecopy.js) updates itself
 }
 

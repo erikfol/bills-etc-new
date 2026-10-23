@@ -44,7 +44,7 @@ export function infoBox(el, { info, name = null, noun = 'item', save, remove = n
             <div class="row table-tools"><span class="muted edit-hint">Editing — nothing is written until you press Save. ↑ ↓ move a field.</span></div>
             ${name === null ? '' : `<label class="field info-name">Name (shown in the menu)<input type="text" data-name value="${esc(name)}"></label>`}
             <div class="table-wrap"><table class="info-edit">
-                <thead><tr><th>Field</th><th>Value</th><th></th></tr></thead>
+                <thead><tr><th></th><th>Field</th><th>Value</th><th></th></tr></thead>
                 <tbody></tbody>
             </table></div>
             <div class="row" style="margin-top:14px">
@@ -56,11 +56,12 @@ export function infoBox(el, { info, name = null, noun = 'item', save, remove = n
             </div>`;
         const body = el.querySelector('tbody');
         const fieldRow = f => `<tr>
+            <td class="move">${moveButtons()}</td>
             <td><input type="text" data-f="label" value="${esc(f.label)}" aria-label="Field name"></td>
             <td>${/notes/i.test(f.label)
                 ? `<textarea data-f="value" rows="2" aria-label="Value">${esc(f.value)}</textarea>`
                 : `<input type="text" data-f="value" value="${esc(f.value)}" aria-label="Value">`}</td>
-            <td class="remove">${moveButtons()}<button type="button" class="danger" data-remove title="Remove this field" aria-label="Remove this field">✕</button></td></tr>`;
+            <td class="remove"><button type="button" class="danger" data-remove title="Remove this field" aria-label="Remove this field">✕</button></td></tr>`;
         body.innerHTML = info.map(fieldRow).join('');
         const read = () => JSON.stringify({
             name: el.querySelector('[data-name]')?.value ?? null,

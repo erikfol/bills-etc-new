@@ -211,7 +211,7 @@ function viewer(D, ageText, houseAge, appointmentStatus, maintenanceStatus) { //
         const first = dates[0]?.name;
         const moneyCols = cols.filter(c => c.kind === 'money'), moneyCol = moneyCols[0]; // the first is shown in each card's heading
         el.innerHTML = `<div class="tools"><input type="search" placeholder="Search" aria-label="Search">
-            <select aria-label="Order"><option value="desc">Newest first</option><option value="asc">Oldest first</option></select></div>
+            <select aria-label="Order"><option value="saved">Your order</option><option value="desc">Newest first</option><option value="asc">Oldest first</option></select></div>
             <div class="cards"></div><div class="total"></div>`;
         const q = el.querySelector('input'), order = el.querySelector('select'), list = el.querySelector('.cards'), total = el.querySelector('.total');
         const text = r => cols.map(c => (c.kind === 'date' || c.kind === 'end' ? showDate(r[c.name]) + ' ' : '') + (r[c.name] || '')).join(' ').toLowerCase();
@@ -228,7 +228,7 @@ function viewer(D, ageText, houseAge, appointmentStatus, maintenanceStatus) { //
         const draw = () => {
             const words = q.value.trim().toLowerCase().split(/\s+/).filter(Boolean);
             const shown = rows.filter(r => { const t = text(r); return words.every(w => t.includes(w)); });
-            if (first) {
+            if (first && order.value !== 'saved') { // 'saved': the order they're in on the computer
                 const sign = order.value === 'asc' ? 1 : -1;
                 shown.sort((a, b) => (!a[first] || !b[first]) ? (!a[first]) - (!b[first]) : sign * a[first].localeCompare(b[first]));
             }

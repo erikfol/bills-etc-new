@@ -14,7 +14,10 @@
 .record-table .changed { background: #fffbea !important; border-color: #f5e1a4 !important; }
 .record-table td.remove, .record-table td.move { width: 1%; white-space: nowrap; }
 .record-table td.remove button { padding: 3px 9px; }
-.record-table td.move .move-btns { margin-right: 0; }
+/* ↑ ↓ buttons in edit lists (shared/js/infobox.js), first in each row of a table being edited */
+.move-btns { display: inline-flex; gap: 4px; margin-right: 6px; vertical-align: middle; }
+.move-btns button { padding: 3px 9px; }
+td.move .move-btns { margin-right: 0; }
 .record-table.editing input.num-input { width: 110px; text-align: right; }
 .record-table.editing input[list] { min-width: 150px; }
 

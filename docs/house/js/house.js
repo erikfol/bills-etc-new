@@ -3,7 +3,6 @@
 // a Maintenance table). An area is one page: a tab, or one part (pill) of a tab. inputs/ is kept out of git.
 import * as fs from '../../bills-etc/js/fs.js';
 import { parseCSV, toCSV } from '../../bills-etc/js/csv.js';
-import { newestFirst } from '../../shared/js/recordtable.js';
 import { readTracked, writeTracked } from '../../shared/js/fileguard.js';
 
 export const HOUSE_DIR = 'inputs/house';
@@ -193,7 +192,7 @@ async function readRows(path, cols, track) {
 }
 
 async function writeRows(path, cols, rows) {
-    await writeTracked(path, toCSV(cols.map(c => c.name), [...rows].sort(newestFirst(cols))));
+    await writeTracked(path, toCSV(cols.map(c => c.name), rows));
     window.dispatchEvent(new Event('data-saved')); // the phone copy (shared/js/phonecopy.js) updates itself
 }
 

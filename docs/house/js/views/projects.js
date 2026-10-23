@@ -224,7 +224,6 @@ export async function renderProject(el, list, h, top, p) {
             : c.name === 'Price' ? [{ ...c, total: false }, { name: 'Total', kind: 'money', calc: materialCost }] // price × quantity
             : [c])),
         rows: filled(p.materials, MATERIAL_COLUMNS),
-        reorder: true,
         save: async rows => { await update({ materials: rows }); showHead(); }, // the total
     });
 

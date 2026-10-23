@@ -2,7 +2,6 @@
 // per vehicle next to it. inputs/ is kept out of git.
 import * as fs from '../../bills-etc/js/fs.js';
 import { parseCSV, toCSV } from '../../bills-etc/js/csv.js';
-import { newestFirst } from '../../shared/js/recordtable.js';
 import { readTracked, writeTracked } from '../../shared/js/fileguard.js';
 
 export const VEHICLES_DIR = 'inputs/vehicles';
@@ -96,6 +95,6 @@ export async function loadMaintenance(v, track = true) {
 
 export async function saveMaintenance(v, rows) {
     const cols = maintenanceColumns(v);
-    await writeTracked(maintenancePath(v), toCSV(cols.map(c => c.name), [...rows].sort(newestFirst(cols))));
+    await writeTracked(maintenancePath(v), toCSV(cols.map(c => c.name), rows));
     window.dispatchEvent(new Event('data-saved')); // the phone copy (shared/js/phonecopy.js) updates itself
 }
